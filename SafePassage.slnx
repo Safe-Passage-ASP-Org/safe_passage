@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/backend/">
+    <Project Path="backend/SafePassage.Api.csproj" />
+  </Folder>
+  <Folder Name="/frontend-web/">
+    <Project Path="frontend-web/SafePassage.Web.csproj" />
+  </Folder>
+</Solution>

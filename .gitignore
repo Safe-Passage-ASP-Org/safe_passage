@@ -1,0 +1,24 @@
+## .NET and Visual Studio
+bin/
+obj/
+*.user
+*.suo
+.vs/
+.vscode/
+
+## SQLite Local Database (ignore local db file so members don't overwrite each other)
+*.db
+*.db-shm
+*.db-wal
+Data/*.db
+
+## Node.js & React Native
+node_modules/
+.expo/
+dist/
+npm-debug.log*
+yarn-debug.log*
+
+## OS Generated Files
+.DS_Store
+Thumbs.db
