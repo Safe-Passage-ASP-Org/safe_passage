@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Company Finance App (Test App)",
+    "slug": "company-finance-test-app",
+    "scheme": "company-finance-test",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "plugins": ["expo-status-bar"],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.safepassage.companyfinance.test"
+    },
+    "android": {
+      "package": "com.safepassage.companyfinance.test",
+      "usesCleartextTraffic": true
+    }
+  }
+}

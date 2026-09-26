@@ -1,0 +1,66 @@
+@page "/alerts"
+@rendermode InteractiveServer
+
+<PageTitle>Security Alerts – Safe Passage</PageTitle>
+
+<div class="sp-page-header">
+    <h1 class="sp-page-title">Security Alerts</h1>
+    <p class="sp-page-subtitle">Active threats, anomalies, and security incidents requiring administrator attention.</p>
+</div>
+
+<!-- Alert list placeholder -->
+<div class="d-flex flex-column gap-3">
+
+    <div class="sp-card border-start border-danger border-3">
+        <div class="d-flex align-items-center gap-3">
+            <span style="font-size:1.5rem">🔴</span>
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="fw-semibold">Brute Force Attempt Detected</span>
+                    <span class="badge-danger">Critical</span>
+                </div>
+                <p class="text-muted mb-0 small">185.220.101.5 attempted 47 failed logins on <strong>admin@safe-passage.io</strong> in the last 5 minutes.</p>
+                <p class="text-muted small">Today at 13:31</p>
+            </div>
+            <div class="ms-auto">
+                <button class="btn btn-sm btn-danger" disabled>Block IP</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="sp-card border-start border-warning border-3">
+        <div class="d-flex align-items-center gap-3">
+            <span style="font-size:1.5rem">🟡</span>
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="fw-semibold">Unrecognized Device Registration</span>
+                    <span class="badge-warning">Medium</span>
+                </div>
+                <p class="text-muted mb-0 small">A new device from <strong>Moscow, RU</strong> is pending approval for user <strong>john.doe</strong>.</p>
+                <p class="text-muted small">Today at 12:58</p>
+            </div>
+            <div class="ms-auto d-flex gap-2">
+                <button class="btn btn-sm btn-outline-success" disabled>Approve</button>
+                <button class="btn btn-sm btn-outline-danger" disabled>Deny</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="sp-card border-start border-warning border-3">
+        <div class="d-flex align-items-center gap-3">
+            <span style="font-size:1.5rem">🟡</span>
+            <div>
+                <div class="d-flex align-items-center gap-2 mb-1">
+                    <span class="fw-semibold">MFA Bypass Attempt</span>
+                    <span class="badge-warning">Medium</span>
+                </div>
+                <p class="text-muted mb-0 small">User <strong>contractor.ext@partner.com</strong> denied 3 MFA requests from an unknown location.</p>
+                <p class="text-muted small">Today at 11:14</p>
+            </div>
+            <div class="ms-auto">
+                <button class="btn btn-sm btn-outline-secondary" disabled>Investigate</button>
+            </div>
+        </div>
+    </div>
+
+</div>

@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f1f4f1">
+  <title>Company HR System | Test Portal</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17251f;
+      --ink-soft: #53645b;
+      --muted: #738078;
+      --line: #dce4de;
+      --paper: #ffffff;
+      --canvas: #f1f4f1;
+      --green: #14745b;
+      --green-dark: #0f493b;
+      --green-pale: #e8f3ee;
+      --amber: #bf8133;
+      --red: #aa403b;
+      --red-pale: #f9ece9;
+      --shadow: 0 20px 65px rgba(29, 48, 38, .10);
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--canvas);
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
+    body { min-width: 320px; min-height: 100vh; margin: 0; }
+    button, input { font: inherit; }
+    button { cursor: pointer; }
+    button:disabled { cursor: wait; opacity: .72; }
+
+    .page { min-height: 100vh; display: flex; flex-direction: column; padding: 0 5.5vw; }
+    .topbar { height: 76px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); }
+    .brand { display: flex; align-items: center; gap: 11px; text-decoration: none; color: var(--ink); }
+    .brand-mark { width: 35px; height: 35px; display: grid; place-items: center; border-radius: 9px; background: var(--green-dark); color: #fff; }
+    .brand-mark svg { width: 19px; height: 19px; }
+    .brand-name { font-size: 14px; font-weight: 750; }
+    .brand-caption { margin-top: 2px; color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
+    .environment { display: inline-flex; align-items: center; gap: 8px; padding: 7px 10px; border: 1px solid #cfdbd2; border-radius: 5px; color: #54645b; font-size: 10px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+    .environment::before { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); content: ""; }
+
+    main { width: min(100%, 1090px); flex: 1; display: grid; grid-template-columns: minmax(0, .92fr) minmax(390px, 1.08fr); align-items: center; gap: clamp(38px, 7vw, 105px); margin: 0 auto; padding: 64px 0; }
+    .context { align-self: center; }
+    .eyebrow { margin: 0 0 16px; color: var(--green); font-size: 10px; font-weight: 800; letter-spacing: .15em; text-transform: uppercase; }
+    h1 { max-width: 440px; margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(35px, 4.5vw, 54px); font-weight: 400; line-height: 1.06; }
+    .intro { max-width: 390px; margin: 18px 0 0; color: var(--ink-soft); font-size: 14px; line-height: 1.7; }
+    .flow { margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--line); }
+    .flow-title { margin-bottom: 15px; color: var(--muted); font-size: 10px; font-weight: 750; letter-spacing: .11em; text-transform: uppercase; }
+    .flow-list { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .flow-step { display: flex; align-items: center; gap: 8px; color: #637168; font-size: 11px; }
+    .flow-number { width: 23px; height: 23px; display: grid; flex: 0 0 23px; place-items: center; border: 1px solid #cbd7ce; border-radius: 50%; color: var(--green); font-size: 10px; font-weight: 750; }
+    .connection { display: flex; align-items: center; gap: 8px; margin-top: 30px; color: var(--muted); font-size: 11px; }
+    .connection svg { width: 14px; height: 14px; color: var(--green); }
+    .connection code { color: #42564a; font-family: Consolas, "Courier New", monospace; font-size: 10px; }
+
+    .panel { min-height: 460px; display: flex; align-items: center; justify-content: center; padding: clamp(25px, 4vw, 48px); border: 1px solid #e0e6e1; border-radius: 8px; background: var(--paper); box-shadow: var(--shadow); }
+    .state { width: 100%; max-width: 390px; animation: arrive .24s ease-out both; }
+    @keyframes arrive { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+    .state[hidden] { display: none; }
+    .panel-kicker { margin: 0 0 9px; color: var(--green); font-size: 10px; font-weight: 800; letter-spacing: .13em; text-transform: uppercase; }
+    h2 { margin: 0; font-size: 24px; font-weight: 650; line-height: 1.2; }
+    .state-copy { margin: 9px 0 25px; color: var(--ink-soft); font-size: 13px; line-height: 1.6; }
+    .field { display: grid; gap: 7px; margin: 0 0 17px; }
+    .field label { font-size: 11px; font-weight: 700; }
+    .field input { width: 100%; height: 44px; padding: 0 12px; border: 1px solid #cbd6ce; border-radius: 5px; outline: none; background: #fff; color: var(--ink); font-size: 13px; transition: border-color .15s, box-shadow .15s; }
+    .field input::placeholder { color: #9aa59e; }
+    .field input:focus { border-color: var(--green); box-shadow: 0 0 0 3px rgba(20, 116, 91, .12); }
+    .submit { width: 100%; min-height: 45px; display: flex; align-items: center; justify-content: center; gap: 9px; margin-top: 8px; border: 0; border-radius: 5px; background: var(--green-dark); color: #fff; font-size: 12px; font-weight: 750; transition: background .15s, transform .15s; }
+    .submit:hover:not(:disabled) { transform: translateY(-1px); background: #0a5b47; }
+    .submit svg { width: 15px; height: 15px; }
+    .form-error { margin: 13px 0 0; padding: 10px 11px; border: 1px solid #ecc7c2; border-radius: 5px; background: var(--red-pale); color: #913c37; font-size: 11px; line-height: 1.5; }
+    .form-error[hidden] { display: none; }
+    .fine-print { margin: 18px 0 0; color: #849087; font-size: 10px; line-height: 1.5; text-align: center; }
+
+    .waiting { text-align: center; }
+    .spinner-wrap { width: 68px; height: 68px; display: grid; place-items: center; margin: 0 auto 25px; border-radius: 50%; background: var(--green-pale); }
+    .spinner { width: 34px; height: 34px; border: 3px solid #bfd9cc; border-top-color: var(--green); border-radius: 50%; animation: spin .85s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .waiting h2 { max-width: 300px; margin: 0 auto; font-size: 21px; }
+    .waiting .state-copy { max-width: 310px; margin: 12px auto 0; }
+    .waiting-detail { display: inline-flex; align-items: center; gap: 7px; margin-top: 23px; padding: 8px 10px; border-radius: 4px; background: #f4f7f4; color: #627169; font-size: 10px; }
+    .waiting-detail svg { width: 13px; height: 13px; color: var(--green); }
+    .session-expiry { margin-top: 16px; color: #8b968e; font-size: 10px; }
+    .text-action { display: block; margin: 21px auto 0; padding: 6px; border: 0; background: transparent; color: #63746a; font-size: 11px; text-decoration: underline; text-underline-offset: 3px; }
+
+    .outcome { text-align: center; }
+    .outcome-mark { width: 58px; height: 58px; display: grid; place-items: center; margin: 0 auto 21px; border-radius: 50%; background: var(--green-pale); color: var(--green); }
+    .outcome-mark svg { width: 27px; height: 27px; }
+    .outcome.denied .outcome-mark { background: var(--red-pale); color: var(--red); }
+    .outcome h2 { font-size: 23px; }
+    .outcome .state-copy { max-width: 340px; margin: 10px auto 20px; }
+    .token-label { display: flex; align-items: center; justify-content: space-between; margin: 20px 0 7px; color: #637168; font-size: 10px; font-weight: 750; letter-spacing: .07em; text-align: left; text-transform: uppercase; }
+    .copy-button { display: inline-flex; align-items: center; gap: 5px; padding: 4px 6px; border: 0; border-radius: 3px; background: transparent; color: var(--green); font-size: 10px; font-weight: 700; letter-spacing: 0; text-transform: none; }
+    .copy-button:hover { background: var(--green-pale); }
+    .copy-button svg { width: 12px; height: 12px; }
+    .token { width: 100%; min-height: 98px; resize: vertical; padding: 10px; border: 1px solid var(--line); border-radius: 5px; background: #f7f9f7; color: #42564a; font-family: Consolas, "Courier New", monospace; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; }
+    .retry { min-height: 40px; padding: 0 16px; border: 1px solid #cbd8cf; border-radius: 5px; background: white; color: #34483c; font-size: 11px; font-weight: 700; }
+    .retry:hover { background: #f3f7f4; }
+
+    footer { width: min(100%, 1090px); display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 auto; padding: 17px 0 21px; border-top: 1px solid var(--line); color: #758178; font-size: 10px; }
+    footer .footer-right { display: flex; align-items: center; gap: 7px; }
+    footer svg { width: 13px; height: 13px; color: var(--green); }
+
+    @media (max-width: 820px) {
+      .page { padding: 0 24px; }
+      main { grid-template-columns: 1fr; gap: 30px; max-width: 540px; padding: 42px 0; }
+      .context { text-align: center; }
+      h1, .intro { margin-right: auto; margin-left: auto; }
+      .flow { margin-top: 25px; text-align: left; }
+      .connection { justify-content: center; margin-top: 18px; }
+      .panel { min-height: 410px; }
+    }
+    @media (max-width: 500px) {
+      .page { padding: 0 17px; }
+      .topbar { height: 64px; }
+      .environment { padding: 6px 8px; font-size: 9px; }
+      main { gap: 23px; padding: 30px 0; }
+      h1 { font-size: 36px; }
+      .intro { font-size: 13px; }
+      .flow-list { gap: 4px; }
+      .flow-step { align-items: flex-start; flex-direction: column; gap: 5px; font-size: 10px; }
+      .panel { min-height: 390px; padding: 26px 21px; }
+      footer { align-items: flex-start; flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <header class="topbar">
+      <a class="brand" href="#" aria-label="Company HR System test portal">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 6v5c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6l8-3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg>
+        </span>
+        <span><span class="brand-name">Company HR System</span><span class="brand-caption" style="display:block">Test Portal</span></span>
+      </a>
+      <span class="environment">Protected application</span>
+    </header>
+
+    <main>
+      <section class="context" aria-labelledby="page-title">
+        <p class="eyebrow">Safe Passage · Access Check</p>
+        <h1 id="page-title">Your workday,<br>securely in reach.</h1>
+        <p class="intro">Sign in to the Company HR System. Safe Passage will verify your credentials and request confirmation from your registered device.</p>
+        <div class="flow" aria-label="Sign-in status">
+          <div class="flow-title">Secure sign-in</div>
+          <div class="flow-list">
+            <div class="flow-step"><span class="flow-number">01</span><span>Credentials</span></div>
+            <div class="flow-step"><span class="flow-number">02</span><span>Device check</span></div>
+            <div class="flow-step"><span class="flow-number">03</span><span>Access token</span></div>
+          </div>
+        </div>
+        <div class="connection">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="10" width="14" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/><path d="M12 14v3"/></svg>
+          <span>Identity provider</span><code id="api-origin">localhost:5000</code>
+        </div>
+      </section>
+
+      <section class="panel" aria-live="polite" aria-atomic="true">
+        <div class="state" id="login-state">
+          <p class="panel-kicker">Employee access</p>
+          <h2>Sign in to continue</h2>
+          <p class="state-copy">Use your Safe Passage account credentials to begin.</p>
+          <form id="login-form" novalidate>
+            <div class="field">
+              <label for="username">Username</label>
+              <input id="username" name="username" autocomplete="username" required maxlength="100" placeholder="Your username">
+            </div>
+            <div class="field">
+              <label for="password">Password</label>
+              <input id="password" name="password" type="password" autocomplete="current-password" required maxlength="1024" placeholder="Your password">
+            </div>
+            <button class="submit" id="login-button" type="submit">
+              <span>Login</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+            </button>
+            <p class="form-error" id="login-error" role="alert" hidden></p>
+          </form>
+          <p class="fine-print">Your password is sent only to the configured Safe Passage API over this connection.</p>
+        </div>
+
+        <div class="state waiting" id="waiting-state" hidden>
+          <div class="spinner-wrap" role="status" aria-label="Waiting for mobile confirmation"><span class="spinner" aria-hidden="true"></span></div>
+          <p class="panel-kicker">MFA challenge sent</p>
+          <h2>Waiting for Mobile Confirmation...</h2>
+          <p class="state-copy">Check your Safe Passage App and approve this sign-in request.</p>
+          <div class="waiting-detail">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="2.5" width="12" height="19" rx="2"/><path d="M10 18.5h4"/></svg>
+            <span>Confirmation requested on your registered device</span>
+          </div>
+          <p class="session-expiry" id="session-expiry"></p>
+          <button class="text-action" id="cancel-button" type="button">Cancel sign-in</button>
+        </div>
+
+        <div class="state outcome" id="success-state" hidden>
+          <div class="outcome-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 4 4L19 6"/></svg></div>
+          <p class="panel-kicker">Identity verified</p>
+          <h2>Access Granted! Welcome to the HR System</h2>
+          <p class="state-copy">Your mobile confirmation was approved. The bearer token below was issued by Safe Passage.</p>
+          <label class="token-label" for="access-token">JWT access token <button class="copy-button" id="copy-button" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3"/></svg><span>Copy</span></button></label>
+          <textarea class="token" id="access-token" readonly spellcheck="false" aria-label="JWT access token"></textarea>
+          <button class="retry" id="success-reset" type="button" style="margin-top:17px">Return to sign in</button>
+        </div>
+
+        <div class="state outcome denied" id="denied-state" hidden>
+          <div class="outcome-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 6-12 12M6 6l12 12"/></svg></div>
+          <p class="panel-kicker" style="color:var(--red)">Request denied</p>
+          <h2>Authentication Blocked</h2>
+          <p class="state-copy" id="denied-message">The sign-in request was denied from your Safe Passage App.</p>
+          <button class="retry" id="denied-reset" type="button">Return to sign in</button>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <span>Company HR System · Test Portal</span>
+      <span class="footer-right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 20 6v5c0 5-3.4 8.4-8 10-4.6-1.6-8-5-8-10V6l8-3Z"/><path d="m8.5 12 2.2 2.2 4.8-5"/></svg> Authentication by Safe Passage</span>
+    </footer>
+  </div>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const apiOverride = new URLSearchParams(window.location.search).get("api");
+      const apiBaseUrl = (apiOverride || "http://localhost:5000").replace(/\/+$/, "");
+      const pollIntervalMs = 2000;
+      const pollRequestTimeoutMs = 1700;
+      let activeSessionToken = null;
+      let pollGeneration = 0;
+
+      const loginState = document.getElementById("login-state");
+      const waitingState = document.getElementById("waiting-state");
+      const successState = document.getElementById("success-state");
+      const deniedState = document.getElementById("denied-state");
+      const loginForm = document.getElementById("login-form");
+      const loginButton = document.getElementById("login-button");
+      const loginError = document.getElementById("login-error");
+      const tokenField = document.getElementById("access-token");
+      const apiOrigin = document.getElementById("api-origin");
+
+      apiOrigin.textContent = apiBaseUrl.replace(/^https?:\/\//, "");
+
+      function showState(state) {
+        for (const panel of [loginState, waitingState, successState, deniedState]) {
+          panel.hidden = panel !== state;
+        }
+      }
+
+      function parseBody(text) {
+        if (!text) return {};
+        try { return JSON.parse(text); }
+        catch { return { detail: text }; }
+      }
+
+      function apiMessage(data, fallback) {
+        return data.detail || data.title || data.message || fallback;
+      }
+
+      function showLoginError(message) {
+        loginError.textContent = message;
+        loginError.hidden = false;
+      }
+
+      function clearLoginError() {
+        loginError.textContent = "";
+        loginError.hidden = true;
+      }
+
+      function showGranted(token) {
+        if (!token) {
+          showState(loginState);
+          showLoginError("Safe Passage approved the sign-in but did not return an access token.");
+          return;
+        }
+        tokenField.value = token;
+        showState(successState);
+      }
+
+      function getStatusName(data) {
+        return String(data.status || data.mfaStatus || "").toUpperCase();
+      }
+
+      async function pollForApproval(sessionToken, generation) {
+        const encodedSessionToken = encodeURIComponent(sessionToken);
+        const statusUrl = `${apiBaseUrl}/api/auth/mfa/status/${encodedSessionToken}`;
+
+        while (generation === pollGeneration) {
+          const requestStartedAt = Date.now();
+          const controller = new AbortController();
+          const abortTimer = window.setTimeout(() => controller.abort(), pollRequestTimeoutMs);
+
+          try {
+            const response = await fetch(statusUrl, {
+              method: "GET",
+              headers: { "Accept": "application/json" },
+              cache: "no-store",
+              signal: controller.signal
+            });
+            const data = parseBody(await response.text());
+
+            if (generation !== pollGeneration) return;
+            if (!response.ok && response.status !== 202) {
+              showState(loginState);
+              showLoginError(apiMessage(data, `Status check failed (${response.status}).`));
+              return;
+            }
+
+            const status = getStatusName(data);
+            if (status === "APPROVED") {
+              showGranted(data.accessToken || data.token);
+              return;
+            }
+            if (status === "DENIED") {
+              document.getElementById("denied-message").textContent = "The sign-in request was denied from your Safe Passage App.";
+              showState(deniedState);
+              return;
+            }
+            if (status === "EXPIRED") {
+              document.getElementById("denied-message").textContent = "This sign-in request expired. Return to sign in and try again.";
+              showState(deniedState);
+              return;
+            }
+          } catch (error) {
+            if (generation !== pollGeneration) return;
+            if (error.name !== "AbortError") {
+              showState(loginState);
+              showLoginError(`Could not reach Safe Passage at ${apiBaseUrl}. Check the API URL, CORS settings, and that the backend is running.`);
+              return;
+            }
+          } finally {
+            window.clearTimeout(abortTimer);
+          }
+
+          const elapsed = Date.now() - requestStartedAt;
+          await new Promise(resolve => window.setTimeout(resolve, Math.max(0, pollIntervalMs - elapsed)));
+        }
+      }
+
+      loginForm.addEventListener("submit", async event => {
+        event.preventDefault();
+        clearLoginError();
+        if (!loginForm.reportValidity()) return;
+
+        const username = document.getElementById("username").value.trim();
+        const password = document.getElementById("password").value;
+        loginButton.disabled = true;
+        loginButton.querySelector("span").textContent = "Checking credentials...";
+
+        try {
+          const response = await fetch(`${apiBaseUrl}/api/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "Accept": "application/json" },
+            body: JSON.stringify({ username, password })
+          });
+          const data = parseBody(await response.text());
+
+          if (!response.ok && response.status !== 202) {
+            showLoginError(apiMessage(data, `Login failed (${response.status}).`));
+            return;
+          }
+
+          if (data.mfaRequired === false) {
+            showGranted(data.accessToken);
+            return;
+          }
+          if (!data.sessionToken) {
+            showLoginError("The API response did not include an MFA session token.");
+            return;
+          }
+
+          activeSessionToken = data.sessionToken;
+          const generation = ++pollGeneration;
+          const expiryText = data.expiresAt ? `Request expires ${new Date(data.expiresAt).toLocaleTimeString()}.` : "This request will expire soon.";
+          document.getElementById("session-expiry").textContent = expiryText;
+          showState(waitingState);
+          void pollForApproval(activeSessionToken, generation);
+        } catch (error) {
+          showLoginError(`Could not reach Safe Passage at ${apiBaseUrl}. Check the API URL, CORS settings, and that the backend is running.`);
+        } finally {
+          loginButton.disabled = false;
+          loginButton.querySelector("span").textContent = "Login";
+        }
+      });
+
+      function resetPortal() {
+        pollGeneration++;
+        activeSessionToken = null;
+        tokenField.value = "";
+        loginForm.reset();
+        clearLoginError();
+        showState(loginState);
+        document.getElementById("username").focus();
+      }
+
+      document.getElementById("cancel-button").addEventListener("click", resetPortal);
+      document.getElementById("success-reset").addEventListener("click", resetPortal);
+      document.getElementById("denied-reset").addEventListener("click", resetPortal);
+      document.getElementById("copy-button").addEventListener("click", async event => {
+        const label = event.currentTarget.querySelector("span");
+        try {
+          await navigator.clipboard.writeText(tokenField.value);
+          label.textContent = "Copied";
+        } catch {
+          tokenField.focus();
+          tokenField.select();
+          document.execCommand("copy");
+          label.textContent = "Copied";
+        }
+        window.setTimeout(() => { label.textContent = "Copy"; }, 1600);
+      });
+    })();
+  </script>
+</body>
+</html>

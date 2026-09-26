@@ -114,7 +114,7 @@ export default function App() {
           name="MfaApproval"
           component={MfaApprovalScreen}
           options={{ presentation: 'modal' }}
-        />
+ll         />
       </Stack.Navigator>
     </NavigationContainer>
   );

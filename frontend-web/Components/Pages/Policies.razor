@@ -1,0 +1,51 @@
+@page "/policies"
+@rendermode InteractiveServer
+
+<PageTitle>Security Policies – Safe Passage</PageTitle>
+
+<div class="sp-page-header">
+    <h1 class="sp-page-title">Security Policies</h1>
+    <p class="sp-page-subtitle">Define and enforce conditional access, device trust, and risk-based authentication policies.</p>
+</div>
+
+<div class="policy-layout">
+    <section class="sp-card policy-form-card">
+        <div class="policy-heading"><div><span>BASELINE POLICY</span><h2>Authentication &amp; access</h2><p>Set organization-wide requirements for identity and device security.</p></div><span class="policy-live"><i></i>Enforced</span></div>
+        <form @onsubmit="SavePolicy" @onsubmit:preventDefault="true">
+            <div class="policy-control password-control">
+                <div class="policy-control-copy"><strong>Minimum password length</strong><p>Require at least this many characters in account passwords.</p></div>
+                <label class="password-input"><input type="number" min="8" max="64" @bind="MinimumPasswordLength" /><span>characters</span></label>
+            </div>
+            <div class="policy-control">
+                <div class="policy-control-copy"><strong>Require uppercase</strong><p>Passwords must contain at least one uppercase letter.</p></div>
+                <label class="policy-toggle"><input type="checkbox" @bind="RequireUppercase" /><span></span><b>@(RequireUppercase ? "On" : "Off")</b></label>
+            </div>
+            <div class="policy-control">
+                <div class="policy-control-copy"><strong>Administrator MFA</strong><p>Administrators must use multi-factor authentication to sign in.</p></div>
+                <label class="policy-toggle"><input type="checkbox" @bind="RequireAdminMfa" /><span></span><b>@(RequireAdminMfa ? "On" : "Off")</b></label>
+            </div>
+            <div class="policy-control">
+                <div class="policy-control-copy"><strong>Trusted devices for sensitive apps</strong><p>Only trusted devices can access applications marked sensitive.</p></div>
+                <label class="policy-toggle"><input type="checkbox" @bind="TrustedDevicesForSensitiveApps" /><span></span><b>@(TrustedDevicesForSensitiveApps ? "On" : "Off")</b></label>
+            </div>
+            <div class="policy-footer"><span class="policy-saved">@(HasSaved ? "Changes saved locally" : "Unsaved changes")</span><button type="submit" class="policy-save">Save policy</button></div>
+        </form>
+    </section>
+    <aside class="policy-side-note"><span class="policy-shield">✓</span><h2>Organization baseline</h2><p>These settings apply across all connected applications. Per-application access rules can add stricter requirements.</p><div><span>Policy status</span><strong>Active</strong></div><div><span>Last updated</span><strong>@(HasSaved ? "Just now" : "Sep 18, 2026")</strong></div></aside>
+</div>
+
+<style>
+    .policy-layout{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:16px;align-items:start}.policy-form-card{overflow:hidden}.policy-heading{display:flex;justify-content:space-between;align-items:flex-start;padding:21px 23px;border-bottom:1px solid #e8edf1}.policy-heading>div>span{font-size:10px;color:#087f75;font-weight:750}.policy-heading h2{font-size:18px;margin:5px 0}.policy-heading p{font-size:12px;color:#64748b;margin:0;max-width:480px;line-height:1.5}.policy-live{display:flex;align-items:center;gap:6px;color:#087f5b;font-size:10px;font-weight:700;padding:6px 8px;border-radius:4px;background:#edf7f2;white-space:nowrap}.policy-live i{width:6px;height:6px;border-radius:50%;background:#099268}.policy-control{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 23px;border-bottom:1px solid #edf0f2}.policy-control-copy strong{font-size:13px}.policy-control-copy p{margin:5px 0 0;color:#64748b;font-size:11px;line-height:1.45}.password-input{display:flex;align-items:center;gap:7px;white-space:nowrap;color:#64748b;font-size:11px}.password-input input{width:76px;border:1px solid #cbd5dc;border-radius:5px;padding:8px 9px;font-size:13px;font-weight:650;color:#172b32}.password-input input:focus{outline:2px solid #b7e1d8;border-color:#087f75}.policy-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;flex-shrink:0}.policy-toggle input{position:absolute;opacity:0;width:1px;height:1px}.policy-toggle>span{width:34px;height:19px;border-radius:12px;background:#cbd5dc;position:relative;transition:background .15s}.policy-toggle>span:after{content:"";position:absolute;width:15px;height:15px;left:2px;top:2px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.18);transition:transform .15s}.policy-toggle input:checked+span{background:#087f75}.policy-toggle input:checked+span:after{transform:translateX(15px)}.policy-toggle input:focus-visible+span{outline:2px solid #65b9a8;outline-offset:2px}.policy-toggle b{font-size:10px;color:#64748b;min-width:19px}.policy-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 23px}.policy-saved{font-size:11px;color:#64748b}.policy-save{border:0;border-radius:5px;padding:9px 15px;background:#087f75;color:#fff;font-size:12px;font-weight:650;cursor:pointer}.policy-save:hover{background:#06665f}.policy-side-note{padding:18px;background:#e9f3f0;border:1px solid #d5e6df;border-radius:7px}.policy-shield{display:grid;place-items:center;width:29px;height:29px;border-radius:6px;background:#fff;color:#087f75;font-weight:800}.policy-side-note h2{font-size:14px;margin:13px 0 6px}.policy-side-note p{font-size:11px;color:#526b64;line-height:1.55;margin:0 0 16px}.policy-side-note div{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid #d5e6df;font-size:10px}.policy-side-note div span{color:#607a72}.policy-side-note div strong{color:#334e47}
+    @@media(max-width:800px){.policy-layout{grid-template-columns:1fr}.policy-side-note{display:none}}
+    @@media(max-width:560px){.policy-heading,.policy-control{padding:16px}.policy-control{align-items:flex-start}.policy-control-copy{max-width:70%}.policy-heading p{max-width:280px}.policy-live{font-size:0;padding:8px}.policy-live i{width:7px;height:7px}.policy-footer{padding:14px 16px}}
+</style>
+
+@code {
+    private int MinimumPasswordLength = 14;
+    private bool RequireUppercase = true;
+    private bool RequireAdminMfa = true;
+    private bool TrustedDevicesForSensitiveApps = true;
+    private bool HasSaved;
+
+    private void SavePolicy() => HasSaved = true;
+}

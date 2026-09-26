@@ -1,7 +1,39 @@
-﻿@page "/"
+@page "/"
+@rendermode InteractiveServer
 
-<PageTitle>Home</PageTitle>
+<PageTitle>Dashboard – Safe Passage</PageTitle>
 
-<h1>Hello, world!</h1>
+<div class="sp-page-header">
+    <h1 class="sp-page-title">Dashboard</h1>
+    <p class="sp-page-subtitle">Platform-wide security overview and real-time status.</p>
+</div>
 
-Welcome to your new app.
+<!-- Stat Cards -->
+<div class="sp-stat-grid">
+    <div class="sp-stat-card">
+        <span class="sp-stat-label">Total Users</span>
+        <span class="sp-stat-value">1,284</span>
+        <span class="sp-stat-change">↑ 12 this week</span>
+    </div>
+    <div class="sp-stat-card">
+        <span class="sp-stat-label">Active Devices</span>
+        <span class="sp-stat-value">3,741</span>
+        <span class="sp-stat-change">↑ 48 today</span>
+    </div>
+    <div class="sp-stat-card">
+        <span class="sp-stat-label">MFA Requests (24h)</span>
+        <span class="sp-stat-value">892</span>
+        <span class="sp-stat-change">↑ 5% vs yesterday</span>
+    </div>
+    <div class="sp-stat-card">
+        <span class="sp-stat-label">Security Alerts</span>
+        <span class="sp-stat-value" style="color:var(--sp-danger)">3</span>
+        <span class="sp-stat-change" style="color:var(--sp-warning)">Needs attention</span>
+    </div>
+</div>
+
+<!-- Placeholder content card -->
+<div class="sp-card">
+    <h5 class="mb-3 fw-semibold">Recent Security Events</h5>
+    <p class="text-muted">📊 Live event feed will be populated here once the backend is connected.</p>
+</div>

@@ -1,6 +1,61 @@
 @SafePassage.Api_HostAddress = http://localhost:5143
+@sessionToken = replace-with-session-token-from-login
+@userToken = replace-with-user-jwt
+@adminToken = replace-with-admin-jwt
+@deviceRecordId = replace-with-device-record-guid
 
-GET {{SafePassage.Api_HostAddress}}/weatherforecast/
+### Start sign-in and trigger a mock push notification
+POST {{SafePassage.Api_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+	"username": "avery.chen",
+	"password": "replace-with-test-password",
+	"deviceId": "replace-with-device-fingerprint"
+}
+
+### Approve MFA from the mobile app (signature validation is simulated)
+POST {{SafePassage.Api_HostAddress}}/api/auth/mfa/approve
+Content-Type: application/json
+
+{
+	"sessionToken": "{{sessionToken}}",
+	"isSignatureValid": true
+}
+
+### Deny MFA from the mobile app
+POST {{SafePassage.Api_HostAddress}}/api/auth/mfa/deny
+Content-Type: application/json
+
+{
+	"sessionToken": "{{sessionToken}}"
+}
+
+### Long-poll MFA status; returns a JWT after approval
+GET {{SafePassage.Api_HostAddress}}/api/auth/mfa/status/{{sessionToken}}
 Accept: application/json
 
-###
+### Register a device for administrator approval
+POST {{SafePassage.Api_HostAddress}}/api/devices/register
+Authorization: Bearer {{userToken}}
+Content-Type: application/json
+
+{
+	"deviceId": "replace-with-device-fingerprint",
+	"deviceName": "Pixel 9",
+	"deviceType": "Mobile",
+	"os": "Android 15"
+}
+
+### List registered devices (administrator)
+GET {{SafePassage.Api_HostAddress}}/api/devices
+Authorization: Bearer {{adminToken}}
+Accept: application/json
+
+### Trust and activate a device (administrator)
+PUT {{SafePassage.Api_HostAddress}}/api/devices/{{deviceRecordId}}/trust
+Authorization: Bearer {{adminToken}}
+
+### Revoke a device (administrator)
+PUT {{SafePassage.Api_HostAddress}}/api/devices/{{deviceRecordId}}/revoke
+Authorization: Bearer {{adminToken}}

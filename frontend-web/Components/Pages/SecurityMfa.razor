@@ -1,0 +1,41 @@
+@page "/security-mfa"
+@rendermode InteractiveServer
+
+<PageTitle>Security &amp; MFA – Safe Passage</PageTitle>
+
+<div class="sp-page-header">
+    <h1 class="sp-page-title">Security &amp; MFA</h1>
+    <p class="sp-page-subtitle">Configure multi-factor authentication methods, enforcement rules, and OOB push settings.</p>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="sp-stat-card">
+            <span class="sp-stat-label">MFA Enrolled Users</span>
+            <span class="sp-stat-value">1,102 <small class="fs-6 text-muted">/ 1,284</small></span>
+            <span class="sp-stat-change">85.8% coverage</span>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="sp-stat-card">
+            <span class="sp-stat-label">Approvals (24h)</span>
+            <span class="sp-stat-value">834</span>
+            <span class="sp-stat-change" style="color:var(--sp-success)">↑ 93.5% approve rate</span>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="sp-stat-card">
+            <span class="sp-stat-label">Denied (24h)</span>
+            <span class="sp-stat-value" style="color:var(--sp-danger)">58</span>
+            <span class="sp-stat-change" style="color:var(--sp-danger)">6.5% deny rate</span>
+        </div>
+    </div>
+</div>
+
+<div class="sp-card d-flex flex-column align-items-center justify-content-center py-5 text-center">
+    <div class="sp-placeholder-icon">🛡️</div>
+    <h5 class="fw-semibold mb-2">Security &amp; MFA Configuration</h5>
+    <p class="text-muted" style="max-width:420px">
+        OOB push notification settings, biometric enforcement toggles, TOTP, and fallback options will be configured here.
+    </p>
+</div>
