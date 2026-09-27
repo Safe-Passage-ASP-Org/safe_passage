@@ -1,6 +1,8 @@
 import * as Device from 'expo-device';
 import * as Application from 'expo-application';
 import { Platform } from 'react-native';
+import { getToken } from './AuthService';
+import { BASE_URL } from '../config';
 
 /**
  * Collects all available device telemetry from the current device.
@@ -54,36 +56,66 @@ function buildHardwareFingerprint() {
 }
 
 /**
- * MOCK: Sends device telemetry to the backend for registration.
- * In production, replace with your actual API endpoint.
- * Returns: { success: boolean, status: 'PENDING_APPROVAL' | 'APPROVED' | 'REJECTED' }
+ * Sends device telemetry to the backend for registration.
+ * @param {object} telemetry - The collected device telemetry object.
+ * @returns {Promise<{success: boolean, status: string, deviceId: string, message: string}>}
  */
 export async function registerDeviceWithBackend(telemetry) {
   console.log('[DeviceService] Registering device with telemetry:', telemetry);
 
-  // Simulate a network call (2-second delay)
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  const token = await getToken();
 
-  // Mock response — in production this comes from your backend
-  return {
-    success: true,
-    status: 'PENDING_APPROVAL',
-    deviceId: telemetry.deviceId,
-    message: 'Your device has been submitted for approval by an administrator.',
-    submittedAt: new Date().toISOString(),
-  };
+  const response = await fetch(`${BASE_URL}/api/devices/register`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(telemetry),
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail ?? err.title ?? response.statusText ?? 'Registration failed.');
+  }
+
+  return response.json();
 }
 
 /**
- * MOCK: Sends an MFA approval/denial decision to the backend.
+ * Sends an MFA approval or denial decision to the backend.
  * @param {string} requestId - The MFA request ID from the push notification.
  * @param {'APPROVE' | 'DENY'} decision
  */
 export async function submitMfaDecision(requestId, decision) {
   console.log(`[DeviceService] Submitting MFA decision: ${decision} for requestId: ${requestId}`);
 
-  // Simulate network call
-  await new Promise((resolve) => setTimeout(resolve, 800));
+  const token = await getToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 
-  return { success: true, decision, requestId };
+  const endpoint =
+    decision === 'APPROVE'
+      ? `${BASE_URL}/api/auth/mfa/approve`
+      : `${BASE_URL}/api/auth/mfa/deny`;
+
+  const body =
+    decision === 'APPROVE'
+      ? JSON.stringify({ sessionToken: requestId, isSignatureValid: true })
+      : JSON.stringify({ sessionToken: requestId });
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers,
+    body,
+  });
+
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail ?? err.title ?? response.statusText ?? 'MFA decision failed.');
+  }
+
+  return response.json();
 }

@@ -1,0 +1,342 @@
+================================================================================
+          SAFE PASSAGE — COMPLETE ROADMAP FROM 50% TO 100% WORKING APK
+================================================================================
+
+--------------------------------------------------------------------------------
+PART 1: WHY IS THE APP CURRENTLY AT 50%?
+--------------------------------------------------------------------------------
+
+Think of building an enterprise app like building a sports car:
+
+WHAT IS DONE (THE FIRST 50%):
+1. Complete Car Body & Interior (All screens: Login, Dashboard, MFA, Devices, 
+   Activity, Settings, dark theme, navigation tabs).
+2. Steering & Controls (Buttons, forms, validation, secure JWT storage, telemetry).
+3. The Engine Block (The C# ASP.NET Core REST API backend with all database 
+   models, auth controllers, and token services).
+4. Safety & Fallbacks (Bypassed Expo Go restrictions, smooth one-tap MFA flow).
+
+WHAT IS MISSING (THE REMAINING 50% TO REACH 100%):
+1. LIVE DATABASE SEEDING: The C# backend is running in-memory or empty LocalDB. 
+   There are no real pre-seeded users (like admin/user accounts) in a persistent database.
+2. REAL-TIME PUSH/SIGNALING: Right now, you tap "Pending Request" on the mobile 
+   app manually. At 100%, when someone logs in on a computer web browser, the 
+   phone MUST automatically ring/vibrate with a pop-up alert without touching it.
+3. LIVE DATA CONNECTIVITY: DevicesScreen and ActivityScreen need real backend records
+   returned from database queries instead of default mock arrays.
+4. ZERO-TRUST SECURITY CHECKS: A real security APK checks if the phone is rooted,
+   jailbroken, or lacks a lock screen before trusting it.
+5. STANDALONE INSTALLABLE APK: Right now, the app runs inside "Expo Go" over a local 
+   bundler. A 100% complete project has an independent `.apk` file that you can 
+   install directly on any Android phone without a computer or terminal running.
+
+================================================================================
+PART 2: CHRONOLOGICAL STEP-BY-STEP ROADMAP (FROM 50% TO 100%)
+================================================================================
+
+--------------------------------------------------------------------------------
+PHASE 1: DATABASE PERSISTENCE & USER SEEDING (Reaches ~60%)
+--------------------------------------------------------------------------------
+
+[TASK 1.1] 🧑 MANUAL: Prepare SQL LocalDB / SQLite Database
+WHY: The C# backend needs a real database file so user accounts and devices stay 
+     saved even after rebooting.
+WHAT YOU DO:
+  1. Open PowerShell.
+  2. Navigate to backend: `cd c:\Users\Delta\safe_passage\backend`
+  3. Run: `dotnet ef database update`
+  4. (If it asks to install EF tools, run: `dotnet tool install --global dotnet-ef` first).
+
+---
+
+[TASK 1.2] 🤖 AI PROMPT: Seed Initial Test Users and Trusted Devices
+Copy and paste this prompt to AI:
+```
+In my backend C# project at c:\Users\Delta\safe_passage\backend\Data\ApplicationDbContext.cs,
+add automatic database seeding in the OnModelCreating method:
+1. Seed a default test user:
+   - Username: "john.doe"
+   - Email: "john.doe@enterprise.com"
+   - Password hash for: "Password123!" using ASP.NET Identity PasswordHasher
+   - FullName: "John Doe"
+   - IsActive: true
+2. Seed an initial active device for this user:
+   - DeviceName: "Primary Android Phone"
+   - OS: "Android 14"
+   - TrustStatus: DeviceTrustStatus.Trusted
+   - Status: DeviceStatus.Active
+3. Seed 3 default activity log entries so the mobile activity screen has history.
+Ensure HasData is properly configured without violating foreign key constraints.
+```
+
+---
+
+[TASK 1.3] 🤖 AI PROMPT: Add Database Health & Activity Endpoint
+Copy and paste this prompt to AI:
+```
+In c:\Users\Delta\safe_passage\backend\Controllers, check if there is an ActivityController.
+If not, create ActivityController.cs that exposes:
+- GET /api/activity (Requires [Authorize] JWT)
+- Returns the list of recent ActivityLog records for the authenticated user from ApplicationDbContext,
+  ordered by CreatedAt descending, mapped to:
+  { id, action, target, time (formatted relative like "5m ago"), status, icon, color }.
+```
+
+--------------------------------------------------------------------------------
+PHASE 2: REAL-TIME NOTIFICATION & WEBSOCKET TRIGGER (Reaches ~70%)
+--------------------------------------------------------------------------------
+
+[TASK 2.1] 🤖 AI PROMPT: Setup SignalR Real-Time Notification Hub in Backend
+WHY: When an admin or web user tries to sign in, the backend must instantly "ping"
+     the mobile app over WebSockets.
+Copy and paste this prompt to AI:
+```
+In c:\Users\Delta\safe_passage\backend:
+1. Add a SignalR Hub named MfaHub at Hubs/MfaHub.cs with methods:
+   - JoinDeviceGroup(string deviceId)
+   - SendMfaChallenge(string deviceId, object challengeDetails)
+2. In Program.cs:
+   - Add builder.Services.AddSignalR();
+   - Map hub endpoint: app.MapHub<MfaHub>("/hubs/mfa");
+3. In AuthFlowService.cs:
+   - Inject IHubContext<MfaHub>
+   - When a login triggers MFA, broadcast the challenge directly to the user's device group.
+```
+
+---
+
+[TASK 2.2] 🧑 MANUAL: Install SignalR Client on Mobile
+WHAT YOU DO:
+  1. Open your mobile PowerShell terminal.
+  2. Run:
+     ```powershell
+     cd c:\Users\Delta\safe_passage\mobile
+     npm install @microsoft/signalr
+     ```
+
+---
+
+[TASK 2.3] 🤖 AI PROMPT: Connect Mobile App to Real-Time SignalR Hub
+Copy and paste this prompt to AI:
+```
+In c:\Users\Delta\safe_passage\mobile\services, create a new service RealtimeService.js:
+1. Use @microsoft/signalr HubConnectionBuilder to connect to:
+   http://localhost:5143/hubs/mfa
+2. Automatically pass the JWT token from AuthService.getToken() during connection.
+3. Listen for event "ReceiveMfaChallenge":
+   - When triggered, automatically call navigationRef.navigate('MfaApproval', { details })
+4. Provide startConnection(deviceId) and stopConnection() methods with automatic reconnect.
+5. In mobile/App.js, start the RealtimeService connection after successful login so incoming
+   login attempts from the web trigger the approval modal automatically.
+```
+
+--------------------------------------------------------------------------------
+PHASE 3: COMPLETE BACKEND WIRING & LIVE SCREENS (Reaches ~80%)
+--------------------------------------------------------------------------------
+
+[TASK 3.1] 🤖 AI PROMPT: Implement Live Device Listing & Revoke in Backend
+Copy and paste this prompt to AI:
+```
+In c:\Users\Delta\safe_passage\backend\Controllers\DeviceController.cs:
+Ensure the following endpoints exist and use ApplicationDbContext:
+1. GET /api/devices: Returns all devices belonging to the logged-in user.
+2. DELETE /api/devices/{id}: Deactivates or removes a registered device.
+3. POST /api/devices/register: Saves the telemetry from the mobile app into the database
+   with DeviceTrustStatus.Pending until approved by admin.
+```
+
+---
+
+[TASK 3.2] 🤖 AI PROMPT: Wire Mobile DevicesScreen to Live API with Pull-to-Refresh
+Copy and paste this prompt to AI:
+```
+In c:\Users\Delta\safe_passage\mobile\screens\DevicesScreen.js:
+1. Add pull-to-refresh functionality using RefreshControl on the ScrollView.
+2. Add a swipe-to-delete or "Revoke Device" button on device cards that calls
+   DELETE http://localhost:5143/api/devices/{id}.
+3. Ensure after "Register this Device" succeeds, it automatically refetches the live list
+   from the backend so the new device appears immediately as 'Pending'.
+```
+
+---
+
+[TASK 3.3] 🤖 AI PROMPT: Wire Mobile ActivityScreen to Live API with Pull-to-Refresh
+Copy and paste this prompt to AI:
+```
+In c:\Users\Delta\safe_passage\mobile\screens\ActivityScreen.js:
+1. Add RefreshControl to FlatList so pulling down refreshes the live activity logs from
+   GET http://localhost:5143/api/activity.
+2. Ensure badges correctly map status ('Success' = green check, 'Denied' = red cross).
+```
+
+--------------------------------------------------------------------------------
+PHASE 4: ZERO-TRUST DEVICE COMPLIANCE CHECKS (Reaches ~90%)
+--------------------------------------------------------------------------------
+
+[TASK 4.1] 🧑 MANUAL: Install Root & Security Detection Library
+WHY: Enterprise authenticators verify the phone has not been hacked or compromised.
+WHAT YOU DO:
+  In your mobile PowerShell terminal, run:
+  ```powershell
+  cd c:\Users\Delta\safe_passage\mobile
+  npx expo install expo-cellular expo-network
+  ```
+
+---
+
+[TASK 4.2] 🤖 AI PROMPT: Add Zero-Trust Posture Assessment to Telemetry
+Copy and paste this prompt to AI:
+```
+In c:\Users\Delta\safe_passage\mobile\services\DeviceService.js:
+Update collectDeviceTelemetry() to include security posture checks:
+1. isDeviceSecure: Check if device lock/PIN is configured.
+2. networkType: Use expo-network to detect if on VPN, WiFi, or Cellular.
+3. ipAddress: Capture local network IP.
+4. Pass these fields in the telemetry payload to the backend.
+In backend DeviceManagementService.cs, evaluate these fields: if a device has no lock
+or is marked insecure, flag its trust score as 'Untrusted' or 'Requires Review'.
+```
+
+---
+
+[TASK 4.3] 🤖 AI PROMPT: Display Security Posture on Mobile Dashboard
+Copy and paste this prompt to AI:
+```
+In c:\Users\Delta\safe_passage\mobile\screens\DashboardScreen.js:
+Add a "Device Health / Zero Trust Posture" card underneath the main Security Status:
+- Shows "OS Up to Date: Yes"
+- Shows "Network: Encrypted"
+- Shows "Device Integrity: Verified"
+Calculate this dynamically based on telemetry from DeviceService.
+```
+
+--------------------------------------------------------------------------------
+PHASE 5: STANDALONE APK COMPILATION & PACKAGING (Reaches ~98%)
+--------------------------------------------------------------------------------
+
+[TASK 5.1] 🧑 MANUAL: Configure Standalone Android App Identity
+WHY: An APK needs a unique package identifier and name on Android.
+WHAT YOU DO:
+  Open `c:\Users\Delta\safe_passage\mobile\app.json`.
+  Make sure it has:
+  ```json
+  {
+    "expo": {
+      "name": "Safe Passage",
+      "slug": "safe-passage",
+      "version": "1.0.0",
+      "orientation": "portrait",
+      "icon": "./assets/icon.png",
+      "userInterfaceStyle": "dark",
+      "splash": {
+        "backgroundColor": "#020617"
+      },
+      "android": {
+        "package": "com.safepassage.authenticator",
+        "adaptiveIcon": {
+          "backgroundColor": "#020617"
+        }
+      }
+    }
+  }
+  ```
+
+---
+
+[TASK 5.2] 🧑 MANUAL: Install EAS CLI (Expo Application Services)
+WHY: EAS is the official tool that compiles React Native source code into a real `.apk`.
+WHAT YOU DO:
+  In PowerShell, run:
+  ```powershell
+  npm install -g eas-cli
+  ```
+
+---
+
+[TASK 5.3] 🧑 MANUAL: Create Free Expo Account & Log In
+WHAT YOU DO:
+  1. Go to https://expo.dev and create a free account (takes 1 minute).
+  2. In your PowerShell terminal, run:
+     ```powershell
+     eas login
+     ```
+     Type your email/username and password.
+
+---
+
+[TASK 5.4] 🤖 AI PROMPT: Generate EAS Build Configuration for APK Output
+Copy and paste this prompt to AI:
+```
+In c:\Users\Delta\safe_passage\mobile, create a file eas.json configured to build
+a standalone, directly installable Android APK file (not an AAB for the store):
+{
+  "cli": {
+    "version": ">= 15.0.0"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      }
+    },
+    "production": {}
+  },
+  "submit": {
+    "production": {}
+  }
+}
+```
+
+---
+
+[TASK 5.5] 🧑 MANUAL: Trigger the Cloud APK Build
+WHY: Compiles your code in the cloud into a pure `.apk` installer file.
+WHAT YOU DO:
+  In your mobile PowerShell terminal, run:
+  ```powershell
+  cd c:\Users\Delta\safe_passage\mobile
+  eas build -p android --profile preview
+  ```
+  - It will ask: "Generate a new Android Keystore?" -> Press **Enter** (Yes).
+  - The build starts on Expo's cloud servers (takes ~5–10 minutes).
+  - When finished, it prints a **direct download link** ending in `.apk`.
+
+--------------------------------------------------------------------------------
+PHASE 6: PHYSICAL INSTALLATION & 100% VERIFICATION (Reaches 100%)
+--------------------------------------------------------------------------------
+
+[TASK 6.1] 🧑 MANUAL: Install the APK on Your Physical Phone
+WHAT YOU DO:
+  1. Open the `.apk` download link on your Android phone's web browser.
+  2. Download `SafePassage.apk`.
+  3. Tap the downloaded file -> tap **"Install"** (Allow install from this source if prompted).
+  4. Notice the **Safe Passage** app icon now sits on your phone home screen just like
+     WhatsApp, YouTube, or Microsoft Authenticator!
+
+---
+
+[TASK 6.2] 🧑 MANUAL: Final 100% End-to-End Test
+WHAT YOU DO:
+  1. Launch Safe Passage directly from your phone's app drawer (Expo Go is NOT needed).
+  2. Log in with `john.doe` and `Password123!`.
+  3. Verify Dashboard shows protected status.
+  4. Tap "Register this Device" -> see your phone registered in the database.
+  5. Check Activity tab -> verify real logs.
+  6. Trigger an MFA sign-in -> tap **Approve** -> see green success confirmation.
+  7. Congratulations! You now have a 100% completed, standalone enterprise security APK.
+
+================================================================================
+SUMMARY CHECKLIST: YOUR PATH TO 100%
+================================================================================
+[x] 50%  — Full UI, Navigation, Telemetry, One-Tap Approval & Mock API Layer (DONE)
+[ ] 60%  — Database Persistence & User Seeding (Tasks 1.1 - 1.3)
+[ ] 70%  — SignalR Real-Time Push Notification Engine (Tasks 2.1 - 2.3)
+[ ] 80%  — Live Device & Activity Synchronization (Tasks 3.1 - 3.3)
+[ ] 90%  — Zero-Trust Device Health Checks (Tasks 4.1 - 4.3)
+[ ] 100% — Standalone .APK Compiled & Installed on Device (Tasks 5.1 - 6.2)
+================================================================================

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -10,14 +10,8 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { collectDeviceTelemetry, registerDeviceWithBackend } from '../services/DeviceService';
-
-// ─── Mock device list (replace with backend fetch) ──────────────────────────
-const mockDevices = [
-  { id: '1', name: "My MacBook Pro",   type: 'laptop',           status: 'Trusted',   date: 'Registered Jan 10, 2024' },
-  { id: '2', name: "John's iPhone 13", type: 'phone-portrait',   status: 'Trusted',   date: 'Registered Jan 12, 2024' },
-  { id: '3', name: "Unknown Android",  type: 'phone-portrait',   status: 'Untrusted', date: 'Blocked Feb 01, 2024'    },
-  { id: '4', name: "Office Desktop",   type: 'desktop-outline',  status: 'Pending',   date: 'Requested today'         },
-];
+import { getToken } from '../services/AuthService';
+import { BASE_URL } from '../config';
 
 const STATUS_COLORS = {
   Trusted:   '#10b981',
@@ -32,7 +26,7 @@ function DeviceCard({ item }) {
   return (
     <View style={styles.deviceCard}>
       <View style={styles.deviceIcon}>
-        <Ionicons name={item.type} size={28} color="#0ea5e9" />
+        <Ionicons name={item.type ?? 'hardware-chip-outline'} size={28} color="#0ea5e9" />
       </View>
       <View style={styles.deviceInfo}>
         <Text style={styles.deviceName}>{item.name}</Text>
@@ -61,10 +55,10 @@ function RegistrationResult({ result, telemetry, onDismiss }) {
 
         <View style={styles.telemetryBox}>
           <Text style={styles.telemetryTitle}>Collected Telemetry</Text>
-          <TelemetryRow label="Device ID"     value={telemetry.deviceId} />
-          <TelemetryRow label="Device Name"   value={telemetry.deviceName} />
-          <TelemetryRow label="OS"            value={`${telemetry.osName} ${telemetry.osVersion}`} />
-          <TelemetryRow label="Model"         value={telemetry.modelName} />
+          <TelemetryRow label="Device ID"      value={telemetry.deviceId} />
+          <TelemetryRow label="Device Name"    value={telemetry.deviceName} />
+          <TelemetryRow label="OS"             value={`${telemetry.osName} ${telemetry.osVersion}`} />
+          <TelemetryRow label="Model"          value={telemetry.modelName} />
           <TelemetryRow label="HW Fingerprint" value={telemetry.hardwareFingerprint} mono />
         </View>
 
@@ -89,9 +83,31 @@ function TelemetryRow({ label, value, mono }) {
 
 // ─── Main Screen ─────────────────────────────────────────────────────────────
 export default function DevicesScreen() {
-  const [loading, setLoading] = useState(false);
+  const [devices, setDevices]                   = useState([]);
+  const [fetching, setFetching]                 = useState(true);
+  const [fetchError, setFetchError]             = useState('');
+  const [loading, setLoading]                   = useState(false);
   const [registrationResult, setRegistrationResult] = useState(null);
   const [collectedTelemetry, setCollectedTelemetry] = useState(null);
+
+  // ── Fetch devices from backend on mount ──────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await getToken();
+        const response = await fetch(`${BASE_URL}/api/devices`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) throw new Error(response.statusText);
+        const data = await response.json();
+        setDevices(data);
+      } catch (err) {
+        setFetchError('Failed to load devices. Check your connection.');
+      } finally {
+        setFetching(false);
+      }
+    })();
+  }, []);
 
   const handleRegisterDevice = async () => {
     setLoading(true);
@@ -100,7 +116,7 @@ export default function DevicesScreen() {
       const telemetry = await collectDeviceTelemetry();
       setCollectedTelemetry(telemetry);
 
-      // Step 2: Submit to backend (mocked)
+      // Step 2: Submit to backend
       const result = await registerDeviceWithBackend(telemetry);
       setRegistrationResult(result);
     } catch (err) {
@@ -114,7 +130,16 @@ export default function DevicesScreen() {
     <View style={styles.container}>
       {/* ── Device List ─────────────────────────────────────── */}
       <ScrollView contentContainerStyle={styles.listContainer}>
-        {mockDevices.map((item) => (
+        {fetching && (
+          <ActivityIndicator color="#0ea5e9" size="large" style={{ marginTop: 40 }} />
+        )}
+        {fetchError ? (
+          <Text style={styles.errorText}>{fetchError}</Text>
+        ) : null}
+        {!fetching && !fetchError && devices.length === 0 && (
+          <Text style={styles.emptyText}>No devices registered yet.</Text>
+        )}
+        {devices.map((item) => (
           <DeviceCard key={item.id} item={item} />
         ))}
       </ScrollView>
@@ -157,6 +182,9 @@ export default function DevicesScreen() {
 const styles = StyleSheet.create({
   container:    { flex: 1, backgroundColor: '#020617' },
   listContainer: { padding: 16 },
+
+  errorText:  { color: '#ef4444', textAlign: 'center', marginTop: 40, fontSize: 15 },
+  emptyText:  { color: '#64748b', textAlign: 'center', marginTop: 40, fontSize: 15 },
 
   deviceCard: {
     flexDirection: 'row',

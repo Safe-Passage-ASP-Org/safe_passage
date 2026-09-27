@@ -9,13 +9,12 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { authenticateWithBiometrics, checkBiometricCapability } from '../services/BiometricService';
 import { submitMfaDecision } from '../services/DeviceService';
 
 export default function MfaApprovalScreen({ route, navigation }) {
   const [approving, setApproving] = useState(false);
   const [denying,   setDenying]   = useState(false);
-  const [biometricStatus, setBiometricStatus] = useState(null); // 'success' | 'failed' | null
+  const [approved,  setApproved]  = useState(false);
 
   const details = route.params?.details ?? {
     location:  'San Francisco, CA, USA',
@@ -25,41 +24,15 @@ export default function MfaApprovalScreen({ route, navigation }) {
     requestId: 'mock-req-001',
   };
 
-  // ── Approve: requires biometric auth ──────────────────────────────────────
+  // ── Approve: Direct one-tap verification ──────────────────────────────────
   const handleApprove = async () => {
     setApproving(true);
-    setBiometricStatus(null);
-
-    // 1. Check capability first to give a helpful error if not enrolled
-    const capability = await checkBiometricCapability();
-    if (!capability.isAvailable) {
-      setApproving(false);
-      Alert.alert(
-        'Biometrics Unavailable',
-        capability.isEnrolled === false
-          ? 'No biometrics enrolled on this device. Please set up Face ID or Fingerprint in Settings.'
-          : 'This device does not support biometric authentication.',
-        [{ text: 'OK' }]
-      );
-      return;
-    }
-
-    // 2. Prompt biometrics
-    const authResult = await authenticateWithBiometrics(
-      'Confirm your identity to approve this sign-in request.'
-    );
-
-    if (!authResult.success) {
-      setApproving(false);
-      setBiometricStatus('failed');
-      Alert.alert('Authentication Failed', authResult.message ?? 'Biometric check failed. Approval not sent.');
-      return;
-    }
-
-    // 3. Biometrics passed — submit approval to backend
-    setBiometricStatus('success');
     try {
       await submitMfaDecision(details.requestId, 'APPROVE');
+
+      // Show success screen for 1.5 seconds then go back
+      setApproved(true);
+      await new Promise((r) => setTimeout(r, 1500));
       navigation.goBack();
     } catch (err) {
       Alert.alert('Error', 'Could not send approval. Please try again.');
@@ -68,7 +41,7 @@ export default function MfaApprovalScreen({ route, navigation }) {
     }
   };
 
-  // ── Deny: no biometrics required ─────────────────────────────────────────
+  // ── Deny ─────────────────────────────────────────────────────────────────
   const handleDeny = async () => {
     setDenying(true);
     try {
@@ -80,6 +53,19 @@ export default function MfaApprovalScreen({ route, navigation }) {
       navigation.goBack();
     }
   };
+
+  // ── Success screen ────────────────────────────────────────────────────────
+  if (approved) {
+    return (
+      <SafeAreaView style={styles.successContainer}>
+        <View style={styles.successIconWrapper}>
+          <Ionicons name="shield-checkmark" size={72} color="#10b981" />
+        </View>
+        <Text style={styles.successTitle}>Sign-in Approved!</Text>
+        <Text style={styles.successSubtitle}>Returning to dashboard…</Text>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.container}>
@@ -105,14 +91,6 @@ export default function MfaApprovalScreen({ route, navigation }) {
           <DetailRow icon="time"      label="Time"              value={details.time} last />
         </View>
 
-        {/* ── Biometric hint ────────────────────────────────────── */}
-        <View style={styles.biometricHint}>
-          <Ionicons name="finger-print" size={16} color="#94a3b8" />
-          <Text style={styles.biometricHintText}>
-            Approving requires biometric verification (Face ID / Fingerprint)
-          </Text>
-        </View>
-
         {/* ── Action Buttons ────────────────────────────────────── */}
         <View style={styles.actions}>
           {/* Approve */}
@@ -126,7 +104,7 @@ export default function MfaApprovalScreen({ route, navigation }) {
             ) : (
               <Ionicons name="checkmark-circle" size={26} color="white" style={styles.btnIcon} />
             )}
-            <Text style={styles.buttonText}>{approving ? 'Verifying…' : 'Approve'}</Text>
+            <Text style={styles.buttonText}>{approving ? 'Approving…' : 'Approve'}</Text>
           </TouchableOpacity>
 
           {/* Deny */}
@@ -144,13 +122,6 @@ export default function MfaApprovalScreen({ route, navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── Biometric result feedback ─────────────────────────── */}
-        {biometricStatus === 'failed' && (
-          <View style={styles.biometricFeedback}>
-            <Ionicons name="close-circle" size={18} color="#ef4444" />
-            <Text style={styles.biometricFeedbackText}>Biometric check failed. Approval not sent.</Text>
-          </View>
-        )}
       </View>
     </SafeAreaView>
   );
@@ -174,6 +145,35 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#020617' },
   content:   { flex: 1, padding: 24, justifyContent: 'center' },
 
+  // ── Success state ──────────────────────────────────────────────────────────
+  successContainer: {
+    flex: 1,
+    backgroundColor: '#020617',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  successIconWrapper: {
+    backgroundColor: '#10b98120',
+    padding: 32,
+    borderRadius: 60,
+    marginBottom: 24,
+    borderWidth: 1,
+    borderColor: '#10b98140',
+  },
+  successTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#f8fafc',
+    textAlign: 'center',
+  },
+  successSubtitle: {
+    color: '#94a3b8',
+    marginTop: 12,
+    textAlign: 'center',
+    fontSize: 15,
+  },
+
+  // ── Normal state ──────────────────────────────────────────────────────────
   header:      { alignItems: 'center', marginBottom: 28 },
   warningIcon: {
     backgroundColor: '#f59e0b15',
@@ -197,7 +197,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#0f172a',
     borderRadius: 16,
     padding: 20,
-    marginBottom: 16,
+    marginBottom: 24,
     borderWidth: 1,
     borderColor: '#1e293b',
   },
@@ -215,15 +215,6 @@ const styles = StyleSheet.create({
   detailLabel:    { fontSize: 12, color: '#64748b', marginBottom: 2 },
   detailValue:    { fontSize: 16, color: '#e2e8f0', fontWeight: '500' },
 
-  biometricHint: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 20,
-    gap: 6,
-  },
-  biometricHintText: { color: '#64748b', fontSize: 13 },
-
   actions:  { gap: 14 },
   button: {
     flexDirection: 'row',
@@ -237,13 +228,4 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   btnIcon:        { marginRight: 10 },
   buttonText:     { color: '#ffffff', fontSize: 20, fontWeight: 'bold' },
-
-  biometricFeedback: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 14,
-    gap: 6,
-  },
-  biometricFeedbackText: { color: '#ef4444', fontSize: 14 },
 });

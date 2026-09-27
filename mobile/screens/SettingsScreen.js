@@ -1,13 +1,22 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { logout } from '../services/AuthService';
 
 export default function SettingsScreen({ navigation }) {
-  const [biometricsEnabled, setBiometricsEnabled] = useState(true);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout();
     navigation.replace('Login');
+  };
+
+  const handleChangePin = () => {
+    Alert.alert(
+      'Change PIN',
+      'PIN management will be available in a future update.',
+      [{ text: 'OK' }]
+    );
   };
 
   return (
@@ -23,19 +32,7 @@ export default function SettingsScreen({ navigation }) {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Security</Text>
         <View style={styles.card}>
-          <View style={styles.settingRow}>
-            <View style={styles.settingInfo}>
-              <Ionicons name="finger-print" size={24} color="#0ea5e9" style={styles.settingIcon} />
-              <Text style={styles.settingText}>Enforce Biometrics</Text>
-            </View>
-            <Switch
-              value={biometricsEnabled}
-              onValueChange={setBiometricsEnabled}
-              trackColor={{ false: '#1e293b', true: '#0ea5e9' }}
-              thumbColor={biometricsEnabled ? '#ffffff' : '#94a3b8'}
-            />
-          </View>
-          <TouchableOpacity style={styles.settingRow}>
+          <TouchableOpacity style={[styles.settingRow, styles.lastSettingRow]} onPress={handleChangePin}>
             <View style={styles.settingInfo}>
               <Ionicons name="keypad" size={24} color="#0ea5e9" style={styles.settingIcon} />
               <Text style={styles.settingText}>Change PIN</Text>

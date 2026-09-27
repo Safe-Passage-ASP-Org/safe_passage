@@ -1,16 +1,32 @@
-import React from 'react';
-import { View, Text, StyleSheet, FlatList } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-
-const mockActivity = [
-  { id: '1', action: 'Successful Login', target: 'Web Portal', time: '10 mins ago', icon: 'log-in', color: '#10b981' },
-  { id: '2', action: 'App Access Granted', target: 'Salesforce', time: '1 hour ago', icon: 'apps', color: '#0ea5e9' },
-  { id: '3', action: 'MFA Approved', target: 'VPN Gateway', time: '3 hours ago', icon: 'shield-checkmark', color: '#10b981' },
-  { id: '4', action: 'Login Denied', target: 'AWS Console', time: 'Yesterday', icon: 'close-circle', color: '#ef4444' },
-  { id: '5', action: 'Device Registered', target: 'iPhone 13', time: '2 days ago', icon: 'hardware-chip', color: '#f59e0b' },
-];
+import { getToken } from '../services/AuthService';
+import { BASE_URL } from '../config';
 
 export default function ActivityScreen() {
+  const [activity, setActivity] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [error, setError]       = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await getToken();
+        const response = await fetch(`${BASE_URL}/api/activity`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (!response.ok) throw new Error(response.statusText);
+        const data = await response.json();
+        setActivity(data);
+      } catch (err) {
+        setError('Failed to load activity. Check your connection.');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
   const renderItem = ({ item }) => (
     <View style={styles.activityItem}>
       <View style={[styles.iconContainer, { backgroundColor: `${item.color}20` }]}>
@@ -27,12 +43,23 @@ export default function ActivityScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.timelineContainer}>
-        <FlatList
-          data={mockActivity}
-          keyExtractor={item => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContent}
-        />
+        {loading && (
+          <ActivityIndicator color="#0ea5e9" size="large" style={{ marginTop: 40 }} />
+        )}
+        {error ? (
+          <Text style={styles.errorText}>{error}</Text>
+        ) : null}
+        {!loading && !error && activity.length === 0 && (
+          <Text style={styles.emptyText}>No activity yet.</Text>
+        )}
+        {!loading && !error && activity.length > 0 && (
+          <FlatList
+            data={activity}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            contentContainerStyle={styles.listContent}
+          />
+        )}
       </View>
     </View>
   );
@@ -53,6 +80,20 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   listContent: {
+    padding: 16,
+  },
+  errorText: {
+    color: '#ef4444',
+    textAlign: 'center',
+    marginTop: 20,
+    fontSize: 15,
+    padding: 16,
+  },
+  emptyText: {
+    color: '#64748b',
+    textAlign: 'center',
+    marginTop: 20,
+    fontSize: 15,
     padding: 16,
   },
   activityItem: {
