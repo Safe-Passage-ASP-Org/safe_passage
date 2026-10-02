@@ -1,10 +1,11 @@
-// Central configuration for Safe Passage Mobile
+const defaultApiUrl = 'http://192.168.254.134:5143';
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
 
-// Current active URL (Wi-Fi IP for physical phone testing):
-export const BASE_URL = 'http://192.168.254.134:5143';
+export const BASE_URL = (configuredApiUrl || defaultApiUrl).replace(/\/+$/, '');
+export const MOBILE_APPLICATION_ID = '44444444-4444-4444-4444-444444444444';
 
-// ==========================================
-// LAPTOP LAPTOP LAPTOP
-// Uncomment the line below for local browser/emulator testing if needed:
-// export const BASE_URL = 'http://localhost:5143';
-// ==========================================
+export function getApplicationHeaders(deviceId) {
+	const headers = { 'X-Application-Id': MOBILE_APPLICATION_ID };
+	if (deviceId) headers['X-Device-Id'] = deviceId;
+	return headers;
+}

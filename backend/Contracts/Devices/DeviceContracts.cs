@@ -20,6 +20,19 @@ public sealed record DeviceRegistrationRequest
     /// <summary>Operating system and version reported by the device.</summary>
     [Required, StringLength(100, MinimumLength = 1)]
     public required string OS { get; init; }
+
+    /// <summary>Base64-encoded uncompressed P-256 signing public key for this installation.</summary>
+    [Required, StringLength(128, MinimumLength = 88)]
+    public required string SigningPublicKey { get; init; }
+}
+
+public sealed record DeviceSigningKeyRequest
+{
+    [Required, StringLength(256, MinimumLength = 1)]
+    public required string DeviceId { get; init; }
+
+    [Required, StringLength(128, MinimumLength = 88)]
+    public required string SigningPublicKey { get; init; }
 }
 
 /// <summary>Device data returned to an authorized API client.</summary>

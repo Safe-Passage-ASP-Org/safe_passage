@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SafePassage.Api.Data;
+using SafePassage.Api.Middleware;
 using SafePassage.Api.Models;
 
 namespace SafePassage.Api.Controllers;
 
 [Authorize]
+[SensitiveApplication]
 [ApiController]
 [Route("api/activity")]
 public sealed class ActivityController(ApplicationDbContext dbContext) : ControllerBase
@@ -16,15 +18,11 @@ public sealed class ActivityController(ApplicationDbContext dbContext) : Control
     public async Task<IActionResult> GetActivities(CancellationToken cancellationToken)
     {
         var claim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
-        Guid? userId = Guid.TryParse(claim, out var uid) ? uid : null;
+        if (!Guid.TryParse(claim, out var userId))
+            return Unauthorized();
 
-        var query = dbContext.ActivityLogs.AsNoTracking();
-        if (userId.HasValue)
-        {
-            query = query.Where(a => a.UserId == userId.Value || a.UserId == null);
-        }
-
-        var logs = await query
+        var logs = await dbContext.ActivityLogs.AsNoTracking()
+            .Where(activity => activity.UserId == userId)
             .ToListAsync(cancellationToken);
 
         var result = logs

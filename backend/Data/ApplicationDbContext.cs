@@ -59,6 +59,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(device => device.OS).HasMaxLength(100).IsRequired();
             entity.Property(device => device.Status).HasConversion<string>().HasMaxLength(32);
             entity.Property(device => device.TrustStatus).HasConversion<string>().HasMaxLength(32);
+            entity.Property(device => device.SigningPublicKey).HasMaxLength(128);
             entity.HasOne(device => device.User).WithMany(user => user.Devices)
                 .HasForeignKey(device => device.UserId).OnDelete(DeleteBehavior.Restrict);
         });

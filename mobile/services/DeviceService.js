@@ -2,7 +2,8 @@ import * as Device from 'expo-device';
 import * as Application from 'expo-application';
 import { Platform } from 'react-native';
 import { getToken } from './AuthService';
-import { BASE_URL } from '../config';
+import { getApprovalDeviceId, getDeviceSigningPublicKey, signMfaApproval } from './DeviceSigningService';
+import { BASE_URL, getApplicationHeaders } from '../config';
 
 /**
  * Collects all available device telemetry from the current device.
@@ -68,18 +69,21 @@ export async function registerDeviceWithBackend(telemetry) {
   console.log('[DeviceService] Registering device with telemetry:', telemetry);
 
   const token = await getToken();
+  const approvalDeviceId = await getApprovalDeviceId();
 
   const payload = {
     deviceId: telemetry.deviceId,
     deviceName: telemetry.deviceName,
     deviceType: telemetry.deviceType || 'Phone',
     os: telemetry.os || `${telemetry.osName} ${telemetry.osVersion}`.trim(),
+    signingPublicKey: await getDeviceSigningPublicKey(),
   };
 
   const response = await fetch(`${BASE_URL}/api/devices/register`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...getApplicationHeaders(approvalDeviceId ?? telemetry.deviceId),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     body: JSON.stringify(payload),
@@ -106,12 +110,12 @@ export async function registerDeviceWithBackend(telemetry) {
  * @param {string} requestId - The MFA request ID from the push notification.
  * @param {'APPROVE' | 'DENY'} decision
  */
-export async function submitMfaDecision(requestId, decision) {
-  console.log(`[DeviceService] Submitting MFA decision: ${decision} for requestId: ${requestId}`);
-
+export async function submitMfaDecision(requestId, deviceId, decision) {
   const token = await getToken();
+  const approvalDeviceId = deviceId ?? await getApprovalDeviceId();
   const headers = {
     'Content-Type': 'application/json',
+    ...getApplicationHeaders(approvalDeviceId),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 
@@ -120,10 +124,13 @@ export async function submitMfaDecision(requestId, decision) {
       ? `${BASE_URL}/api/auth/mfa/approve`
       : `${BASE_URL}/api/auth/mfa/deny`;
 
-  const body =
-    decision === 'APPROVE'
-      ? JSON.stringify({ sessionToken: requestId, isSignatureValid: true })
-      : JSON.stringify({ sessionToken: requestId });
+  const body = decision === 'APPROVE'
+    ? JSON.stringify({
+      sessionToken: requestId,
+      deviceId: approvalDeviceId,
+      signature: await signMfaApproval(requestId, approvalDeviceId),
+    })
+    : JSON.stringify({ sessionToken: requestId });
 
   const response = await fetch(endpoint, {
     method: 'POST',

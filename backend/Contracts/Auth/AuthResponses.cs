@@ -6,6 +6,7 @@ namespace SafePassage.Api.Contracts.Auth;
 public sealed record LoginResponse(
     bool MfaRequired,
     string? SessionToken,
+    string? ApprovalDeviceId,
     MfaSessionStatus? MfaStatus,
     DateTimeOffset? ExpiresAt,
     string? AccessToken,
@@ -22,4 +23,5 @@ public sealed record MfaStatusResponse(
     MfaSessionStatus Status,
     DateTimeOffset ExpiresAt,
     string? AccessToken,
-    string? TokenType);
+    string? TokenType,
+    string? DeviceId);

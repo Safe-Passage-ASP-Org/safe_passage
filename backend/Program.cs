@@ -48,14 +48,17 @@ builder.Services.AddScoped<INotificationService, MockNotificationService>();
 builder.Services.AddScoped<IDeviceManagementService, DeviceManagementService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 
-// 1. Enable CORS so Blazor & React Native can communicate with this API
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+if (allowedOrigins.Length == 0)
+    throw new InvalidOperationException("Configure at least one Cors:AllowedOrigins value for browser clients.");
+
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    options.AddPolicy("KnownOrigins", policy =>
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        policy.WithOrigins(allowedOrigins)
+              .WithMethods("GET", "POST", "PUT", "DELETE")
+              .WithHeaders("Authorization", "Content-Type", "X-Application-Id", "X-Device-Id");
     });
 });
 
@@ -95,16 +98,14 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-// Ensure database is created and seed initial test user, device, and activities.
-// Fail fast: swallowing this error used to leave the API listening with /api/status reporting
-// "Online" while every database-backed endpoint returned 500.
+// Apply schema migrations and seed the initial test user, device, and activities.
 using (var scope = app.Services.CreateScope())
 {
     var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.Database.EnsureCreated();
+        dbContext.Database.Migrate();
         var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>();
         DbInitializer.Initialize(dbContext, passwordHasher);
     }
@@ -121,7 +122,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // 4. Enable CORS Middleware (Must be before Authentication/Authorization)
-app.UseCors("AllowAll");
+app.UseCors("KnownOrigins");
 
 app.UseAuthentication();
 app.UseMiddleware<SecurityMiddleware>();

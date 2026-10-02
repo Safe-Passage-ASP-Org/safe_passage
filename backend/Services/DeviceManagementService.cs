@@ -10,7 +10,9 @@ public enum DeviceManagementFailure
     None,
     UserUnavailable,
     DuplicateDevice,
-    NotFound
+    NotFound,
+    InvalidSigningKey,
+    SigningKeyAlreadyRegistered
 }
 
 public sealed record DeviceManagementResult<T>(T? Response, DeviceManagementFailure Failure)
@@ -21,19 +23,26 @@ public sealed record DeviceManagementResult<T>(T? Response, DeviceManagementFail
 
 public interface IDeviceManagementService
 {
-    Task<IReadOnlyList<DeviceResponse>> GetAllAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyList<DeviceResponse>> GetAllAsync(Guid requesterId, bool includeAll, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> RegisterAsync(Guid userId, DeviceRegistrationRequest request, CancellationToken cancellationToken);
+    Task<DeviceManagementResult<DeviceResponse>> EnrollSigningKeyAsync(Guid userId, DeviceSigningKeyRequest request, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> TrustAsync(Guid id, Guid actorId, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> RevokeAsync(Guid id, Guid actorId, CancellationToken cancellationToken);
 }
 
 public sealed class DeviceManagementService(ApplicationDbContext dbContext) : IDeviceManagementService
 {
-    public async Task<IReadOnlyList<DeviceResponse>> GetAllAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<DeviceResponse>> GetAllAsync(
+        Guid requesterId,
+        bool includeAll,
+        CancellationToken cancellationToken)
     {
-        var devices = await dbContext.Devices.AsNoTracking()
-            .ToListAsync(cancellationToken);
+        var query = dbContext.Devices.AsNoTracking();
+        if (!includeAll)
+            query = query.Where(device => device.UserId == requesterId);
+
+        var devices = await query.ToListAsync(cancellationToken);
         return devices
             .OrderByDescending(device => device.RegistrationDate)
             .Select(ToResponse)
@@ -54,6 +63,9 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
         DeviceRegistrationRequest request,
         CancellationToken cancellationToken)
     {
+        if (!MfaApprovalSignature.IsValidPublicKey(request.SigningPublicKey))
+            return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.InvalidSigningKey);
+
         var userIsActive = await dbContext.Users.AnyAsync(
             user => user.Id == userId && user.IsActive,
             cancellationToken);
@@ -76,6 +88,7 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
             RegistrationDate = DateTimeOffset.UtcNow,
             Status = DeviceStatus.PendingApproval,
             TrustStatus = DeviceTrustStatus.Untrusted,
+            SigningPublicKey = request.SigningPublicKey,
             UserId = userId
         };
 
@@ -90,6 +103,36 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
             return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.DuplicateDevice);
         }
 
+        return DeviceManagementResult<DeviceResponse>.Success(ToResponse(device));
+    }
+
+    public async Task<DeviceManagementResult<DeviceResponse>> EnrollSigningKeyAsync(
+        Guid userId,
+        DeviceSigningKeyRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!MfaApprovalSignature.IsValidPublicKey(request.SigningPublicKey))
+            return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.InvalidSigningKey);
+
+        var device = await dbContext.Devices.SingleOrDefaultAsync(candidate =>
+            candidate.UserId == userId
+            && candidate.DeviceId == request.DeviceId
+            && candidate.Status == DeviceStatus.Active
+            && candidate.TrustStatus == DeviceTrustStatus.Trusted,
+            cancellationToken);
+        if (device is null)
+            return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.NotFound);
+
+        if (!string.IsNullOrWhiteSpace(device.SigningPublicKey))
+        {
+            return string.Equals(device.SigningPublicKey, request.SigningPublicKey, StringComparison.Ordinal)
+                ? DeviceManagementResult<DeviceResponse>.Success(ToResponse(device))
+                : DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.SigningKeyAlreadyRegistered);
+        }
+
+        device.SigningPublicKey = request.SigningPublicKey;
+        AddActivity(userId, "Device Signing Key Enrolled", device.DeviceId, ActivityLogStatus.Success);
+        await dbContext.SaveChangesAsync(cancellationToken);
         return DeviceManagementResult<DeviceResponse>.Success(ToResponse(device));
     }
 

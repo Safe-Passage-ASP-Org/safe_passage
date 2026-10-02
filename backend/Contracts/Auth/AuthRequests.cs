@@ -25,8 +25,13 @@ public sealed record MfaApprovalRequest
     [Required, StringLength(512, MinimumLength = 32)]
     public required string SessionToken { get; init; }
 
-    /// <summary>Temporary stand-in for cryptographic signature validation.</summary>
-    public bool IsSignatureValid { get; init; }
+    /// <summary>The registered device approving this challenge.</summary>
+    [Required, StringLength(256, MinimumLength = 1)]
+    public required string DeviceId { get; init; }
+
+    /// <summary>Base64-encoded P-256 ECDSA signature over the session and device ID.</summary>
+    [Required, StringLength(128, MinimumLength = 80)]
+    public required string Signature { get; init; }
 }
 
 /// <summary>Denial data returned by the mobile application.</summary>

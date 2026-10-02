@@ -9,11 +9,12 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getMfaStatus, getToken, saveAccessToken } from '../services/AuthService';
-import { BASE_URL } from '../config';
+import { getApprovalDeviceId, storeApprovalDeviceId } from '../services/DeviceSigningService';
+import { BASE_URL, getApplicationHeaders } from '../config';
 
-async function fetchRecentActivity(token) {
+async function fetchRecentActivity(token, deviceId) {
   const response = await fetch(`${BASE_URL}/api/activity`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}`, ...getApplicationHeaders(deviceId) },
   });
   if (!response.ok) throw new Error('Could not load activity.');
   return response.json();
@@ -21,6 +22,7 @@ async function fetchRecentActivity(token) {
 
 export default function DashboardScreen({ navigation, route }) {
   const sessionToken = route?.params?.sessionToken ?? null;
+  const approvalDeviceId = route?.params?.approvalDeviceId ?? null;
 
   const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -30,8 +32,9 @@ export default function DashboardScreen({ navigation, route }) {
     (async () => {
       try {
         const token = await getToken();
-        if (token) {
-          const data = await fetchRecentActivity(token);
+        const deviceId = approvalDeviceId ?? await getApprovalDeviceId();
+        if (token && deviceId) {
+          const data = await fetchRecentActivity(token, deviceId);
           if (active) setRecentActivity(data.slice(0, 3));
         }
       } catch (_) {
@@ -41,7 +44,7 @@ export default function DashboardScreen({ navigation, route }) {
     })();
 
     return () => { active = false; };
-  }, []);
+  }, [approvalDeviceId]);
 
   useEffect(() => {
     if (!sessionToken) return undefined;
@@ -52,14 +55,16 @@ export default function DashboardScreen({ navigation, route }) {
     (async () => {
       try {
         while (active) {
-          const result = await getMfaStatus(sessionToken, controller.signal);
+          const result = await getMfaStatus(sessionToken, controller.signal, approvalDeviceId);
           const status = String(result.status ?? '').toLowerCase();
 
           if (status === 'approved') {
             await saveAccessToken(result.accessToken);
+            const approvedDeviceId = result.deviceId ?? approvalDeviceId;
+            await storeApprovalDeviceId(approvedDeviceId);
             if (!active) return;
-            navigation.setParams({ sessionToken: null });
-            const activity = await fetchRecentActivity(result.accessToken);
+            navigation.setParams({ sessionToken: null, approvalDeviceId: approvedDeviceId });
+            const activity = await fetchRecentActivity(result.accessToken, approvedDeviceId);
             if (active) setRecentActivity(activity.slice(0, 3));
             return;
           }
@@ -82,7 +87,7 @@ export default function DashboardScreen({ navigation, route }) {
       active = false;
       controller.abort();
     };
-  }, [navigation, sessionToken]);
+  }, [approvalDeviceId, navigation, sessionToken]);
 
   const handleOpenMfa = () => {
     navigation.navigate('MfaApproval', {
@@ -91,8 +96,8 @@ export default function DashboardScreen({ navigation, route }) {
         ip: 'Current network IP',
         os: 'Your device',
         time: new Date().toLocaleTimeString(),
-        // Use the demo token seeded in the DB so approve/deny actually works
         requestId: sessionToken ?? 'mock-req-001',
+        deviceId: approvalDeviceId,
       },
     });
   };

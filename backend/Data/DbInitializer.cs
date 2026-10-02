@@ -11,9 +11,24 @@ public static class DbInitializer
     public static readonly Guid TestUserId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     public static readonly Guid TestDeviceId = Guid.Parse("22222222-2222-2222-2222-222222222222");
     public static readonly Guid PendingMfaSessionId = Guid.Parse("33333333-3333-3333-3333-333333333333");
+    public static readonly Guid MobileApplicationId = Guid.Parse("44444444-4444-4444-4444-444444444444");
+    public static readonly Guid AdminApplicationId = Guid.Parse("55555555-5555-5555-5555-555555555555");
 
     public static void Initialize(ApplicationDbContext dbContext, IPasswordHasher<User> passwordHasher)
     {
+        EnsureApplication(dbContext, MobileApplicationId, "Safe Passage Mobile", "Safe Passage mobile client.");
+        EnsureApplication(dbContext, AdminApplicationId, "Safe Passage Admin", "Safe Passage administration portal.");
+        EnsurePolicy(
+            dbContext,
+            "Require MFA and trusted devices",
+            "Authentication",
+            "{\"requiresTrustedDevice\":true,\"allowTrustedDeviceMfaBypass\":false,\"requiresStepUp\":true,\"requireMfa\":true}");
+        EnsurePolicy(
+            dbContext,
+            "Trusted device access",
+            "Device",
+            "{\"requiresTrustedDevice\":true,\"allowTrustedDeviceMfaBypass\":false,\"requiresStepUp\":true,\"requireMfa\":true}");
+
         // 1. Ensure test user exists
         var user = dbContext.Users.FirstOrDefault(u => u.Username == "john.doe");
         if (user is null)
@@ -52,7 +67,7 @@ public static class DbInitializer
             dbContext.SaveChanges();
         }
 
-        // 3. Ensure a pending demo MFA session exists so the mobile Pending Request works with real DB
+        // 3. Create a short-lived demo MFA session once; never reset its state on startup.
         var hashedDemoToken = HashSessionToken("mock-req-001");
         var mfaSession = dbContext.MfaSessions.FirstOrDefault(m => m.SessionToken == hashedDemoToken);
         if (mfaSession is null)
@@ -64,17 +79,16 @@ public static class DbInitializer
                 DeviceId = device.Id,
                 SessionToken = hashedDemoToken,
                 Status = MfaSessionStatus.Pending,
-                ExpiresAt = DateTimeOffset.UtcNow.AddDays(365), // Long-lived for demo stability
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
                 CreatedAt = DateTimeOffset.UtcNow
             };
             dbContext.MfaSessions.Add(mfaSession);
             dbContext.SaveChanges();
         }
-        else if (mfaSession.Status != MfaSessionStatus.Pending)
+        else if (mfaSession.Status == MfaSessionStatus.Pending
+            && mfaSession.ExpiresAt > DateTimeOffset.UtcNow.AddMinutes(5))
         {
-            // Reset to pending if previously approved/denied so the demo always works
-            mfaSession.Status = MfaSessionStatus.Pending;
-            mfaSession.ExpiresAt = DateTimeOffset.UtcNow.AddDays(365);
+            mfaSession.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
             dbContext.SaveChanges();
         }
 
@@ -117,5 +131,30 @@ public static class DbInitializer
     private static string HashSessionToken(string token)
     {
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+    }
+
+    private static void EnsureApplication(ApplicationDbContext dbContext, Guid id, string name, string description)
+    {
+        if (dbContext.Applications.Any(application => application.Id == id || application.Name == name))
+            return;
+
+        dbContext.Applications.Add(new Application { Id = id, Name = name, Description = description });
+        dbContext.SaveChanges();
+    }
+
+    private static void EnsurePolicy(ApplicationDbContext dbContext, string name, string type, string rulesJson)
+    {
+        if (dbContext.SecurityPolicies.Any(policy => policy.PolicyName == name))
+            return;
+
+        dbContext.SecurityPolicies.Add(new SecurityPolicy
+        {
+            Id = Guid.NewGuid(),
+            PolicyName = name,
+            PolicyType = type,
+            IsEnforced = true,
+            RulesJson = rulesJson
+        });
+        dbContext.SaveChanges();
     }
 }

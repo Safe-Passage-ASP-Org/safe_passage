@@ -44,8 +44,8 @@ WHY: The C# backend needs a real database file so user accounts and devices stay
 WHAT YOU DO:
   1. Open PowerShell.
   2. Navigate to backend: `cd c:\Users\Delta\safe_passage\backend`
-  3. Run: `dotnet ef database update`
-  4. (If it asks to install EF tools, run: `dotnet tool install --global dotnet-ef` first).
+  3. Run `dotnet tool restore` once to install the repository-pinned EF tools.
+  4. Run: `dotnet ef database update`
 
 ---
 

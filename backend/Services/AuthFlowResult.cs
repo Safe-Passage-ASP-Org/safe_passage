@@ -13,7 +13,8 @@ public enum AuthFlowFailure
     SessionExpired,
     InvalidSessionState,
     UserUnavailable,
-    DeviceUnavailable
+    DeviceUnavailable,
+    DeviceSigningKeyNotRegistered
 }
 
 public sealed record AuthFlowResult<T>(T? Response, AuthFlowFailure Failure)

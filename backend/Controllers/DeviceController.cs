@@ -2,11 +2,13 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SafePassage.Api.Contracts.Devices;
+using SafePassage.Api.Middleware;
 using SafePassage.Api.Services;
 
 namespace SafePassage.Api.Controllers;
 
     [Authorize]
+    [SensitiveApplication]
 [Route("api/devices")]
 public sealed class DeviceController(IDeviceManagementService deviceManagement) : ControllerBase
 {
@@ -39,11 +41,28 @@ public sealed class DeviceController(IDeviceManagementService deviceManagement) 
         if (!TryGetUserId(out var userId))
             return Unauthorized();
 
-        var devices = await deviceManagement.GetAllAsync(cancellationToken);
-        if (IsAdministrator())
-            return Ok(devices);
+        var devices = await deviceManagement.GetAllAsync(userId, IsAdministrator(), cancellationToken);
+        return Ok(devices);
+    }
 
-        return Ok(devices.Where(d => d.UserId == userId).ToList());
+    /// <summary>Enrolls the first signing public key for this user's active trusted device.</summary>
+    [HttpPut("signing-key")]
+    [ProducesResponseType<DeviceResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<DeviceResponse>> EnrollSigningKey(
+        [FromBody] DeviceSigningKeyRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var result = await deviceManagement.EnrollSigningKeyAsync(userId, request, cancellationToken);
+        return result.Failure == DeviceManagementFailure.None
+            ? Ok(result.Response)
+            : ToProblem(result.Failure);
     }
 
     /// <summary>Returns one registered device to its owner or an administrator.</summary>
@@ -115,6 +134,8 @@ public sealed class DeviceController(IDeviceManagementService deviceManagement) 
         {
             DeviceManagementFailure.UserUnavailable => (StatusCodes.Status403Forbidden, "Account unavailable", "The account is not active."),
             DeviceManagementFailure.DuplicateDevice => (StatusCodes.Status409Conflict, "Device already registered", "This hardware fingerprint is already registered."),
+            DeviceManagementFailure.InvalidSigningKey => (StatusCodes.Status400BadRequest, "Invalid signing key", "The supplied signing key is not a valid P-256 public key."),
+            DeviceManagementFailure.SigningKeyAlreadyRegistered => (StatusCodes.Status409Conflict, "Signing key already enrolled", "A different signing key is already bound to this device."),
             DeviceManagementFailure.NotFound => (StatusCodes.Status404NotFound, "Device not found", "The requested device does not exist."),
             _ => (StatusCodes.Status500InternalServerError, "Device operation failed", "The device operation could not be completed.")
         };

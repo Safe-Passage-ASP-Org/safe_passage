@@ -24,6 +24,7 @@ public sealed class Device
     public DateTimeOffset? LastActiveDate { get; set; }
     public DeviceStatus Status { get; set; } = DeviceStatus.PendingApproval;
     public DeviceTrustStatus TrustStatus { get; set; } = DeviceTrustStatus.Untrusted;
+    public string? SigningPublicKey { get; set; }
     public Guid UserId { get; set; }
 
     public User User { get; set; } = null!;

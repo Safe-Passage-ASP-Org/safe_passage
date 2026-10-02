@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { login } from '../services/AuthService';
+import { collectDeviceTelemetry } from '../services/DeviceService';
 
 export default function LoginScreen({ navigation }) {
   const [username, setUsername] = useState('');
@@ -28,11 +29,15 @@ export default function LoginScreen({ navigation }) {
     setErrorMessage('');
 
     try {
-      const result = await login(username.trim(), password);
-      // Pass the MFA sessionToken (if any) into the Dashboard
+      const telemetry = await collectDeviceTelemetry();
+      const result = await login(username.trim(), password, telemetry.deviceId);
       navigation.replace('Main', {
         screen: 'Dashboard',
-        params: { sessionToken: result?.sessionToken ?? null },
+        params: {
+          sessionToken: result?.sessionToken ?? null,
+          approvalDeviceId: result?.approvalDeviceId ?? telemetry.deviceId,
+          deviceId: telemetry.deviceId,
+        },
       });
     } catch (err) {
       setErrorMessage(err.message ?? 'Login failed. Please try again.');

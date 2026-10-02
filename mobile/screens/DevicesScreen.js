@@ -11,12 +11,14 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { collectDeviceTelemetry, registerDeviceWithBackend } from '../services/DeviceService';
 import { getToken } from '../services/AuthService';
-import { BASE_URL } from '../config';
+import { getApprovalDeviceId } from '../services/DeviceSigningService';
+import { BASE_URL, getApplicationHeaders } from '../config';
 
 const STATUS_COLORS = {
   Trusted:   '#10b981',
   Untrusted: '#ef4444',
   Pending:   '#f59e0b',
+  Disabled:  '#ef4444',
 };
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
@@ -24,7 +26,15 @@ const STATUS_COLORS = {
 function DeviceCard({ item }) {
   const name = item.name ?? item.deviceName ?? 'Unknown Device';
   const date = item.date ?? (item.registrationDate ? `Registered ${new Date(item.registrationDate).toLocaleDateString()}` : 'Registered');
-  const status = item.trustStatus === 'Trusted' || item.status === 'Active' ? 'Trusted' : (item.status === 'PendingApproval' ? 'Pending' : (item.status ?? 'Untrusted'));
+  const deviceStatus = String(item.status ?? '').toUpperCase();
+  const trustStatus = String(item.trustStatus ?? '').toUpperCase();
+  const status = trustStatus === 'TRUSTED' || deviceStatus === 'ACTIVE'
+    ? 'Trusted'
+    : deviceStatus === 'PENDING_APPROVAL' || deviceStatus === 'PENDINGAPPROVAL'
+      ? 'Pending'
+      : deviceStatus === 'DISABLED'
+        ? 'Disabled'
+        : 'Untrusted';
   const color = STATUS_COLORS[status] ?? '#64748b';
   const icon = item.type ?? (item.deviceType?.toLowerCase().includes('phone') ? 'phone-portrait' : 'hardware-chip-outline');
 
@@ -100,8 +110,10 @@ export default function DevicesScreen() {
     (async () => {
       try {
         const token = await getToken();
+        const deviceId = await getApprovalDeviceId();
+        if (!token || !deviceId) throw new Error('Sign in on an enrolled device.');
         const response = await fetch(`${BASE_URL}/api/devices`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: { Authorization: `Bearer ${token}`, ...getApplicationHeaders(deviceId) },
         });
         if (!response.ok) throw new Error(response.statusText);
         const data = await response.json();

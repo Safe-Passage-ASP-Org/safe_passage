@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Clipboard from 'expo-clipboard';
 import { logout, getToken } from '../services/AuthService';
+import { getApprovalDeviceId, getDeviceSigningPublicKey } from '../services/DeviceSigningService';
 
 /**
  * Decode the payload from a JWT token without verifying the signature.
@@ -69,6 +71,18 @@ export default function SettingsScreen({ navigation }) {
     );
   };
 
+  const handleCopyEnrollmentInfo = async () => {
+    try {
+      const deviceId = await getApprovalDeviceId();
+      if (!deviceId) throw new Error('Sign in first to identify the trusted MFA device.');
+      const signingPublicKey = await getDeviceSigningPublicKey();
+      await Clipboard.setStringAsync(JSON.stringify({ deviceId, signingPublicKey }));
+      Alert.alert('Enrollment info copied', 'Use this public key to enroll the trusted device. The private key stays on this phone.');
+    } catch (error) {
+      Alert.alert('Could not copy enrollment info', error.message);
+    }
+  };
+
   const displayName = userInfo?.name ?? 'John Doe';
   const displayEmail = userInfo?.email ?? 'john.doe@enterprise.com';
   const displayInitials = userInfo?.initials ?? 'JD';
@@ -104,6 +118,13 @@ export default function SettingsScreen({ navigation }) {
               <Text style={styles.settingText}>Change PIN</Text>
             </View>
             <Ionicons name="chevron-forward" size={20} color="#64748b" />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.settingRow, styles.lastSettingRow]} onPress={handleCopyEnrollmentInfo}>
+            <View style={styles.settingInfo}>
+              <Ionicons name="key" size={24} color="#0ea5e9" style={styles.settingIcon} />
+              <Text style={styles.settingText}>Copy device enrollment info</Text>
+            </View>
+            <Ionicons name="copy-outline" size={20} color="#64748b" />
           </TouchableOpacity>
         </View>
       </View>

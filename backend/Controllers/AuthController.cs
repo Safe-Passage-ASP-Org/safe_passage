@@ -97,6 +97,7 @@ public sealed class AuthController(IAuthFlowService authFlow) : ControllerBase
             AuthFlowFailure.InvalidSessionState => (StatusCodes.Status409Conflict, "MFA session is not pending", "The MFA session has already been completed."),
             AuthFlowFailure.UserUnavailable => (StatusCodes.Status403Forbidden, "Account unavailable", "The account is no longer active."),
             AuthFlowFailure.DeviceUnavailable => (StatusCodes.Status409Conflict, "MFA device unavailable", "The registered device is no longer active."),
+            AuthFlowFailure.DeviceSigningKeyNotRegistered => (StatusCodes.Status409Conflict, "Device key enrollment required", "The approving device must be enrolled with a signing key before it can approve MFA."),
             _ => (StatusCodes.Status500InternalServerError, "Authentication error", "The authentication request could not be completed.")
         };
 

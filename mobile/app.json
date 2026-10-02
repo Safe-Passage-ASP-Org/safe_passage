@@ -24,7 +24,6 @@
       },
       "permissions": [
         "android.permission.INTERNET",
-        "android.permission.USE_FINGERPRINT",
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE"
       ]

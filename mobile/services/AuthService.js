@@ -1,5 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
-import { BASE_URL } from '../config';
+import { BASE_URL, getApplicationHeaders } from '../config';
+import { storeApprovalDeviceId } from './DeviceSigningService';
 
 const TOKEN_KEY = 'auth_token';
 
@@ -9,17 +10,18 @@ const TOKEN_KEY = 'auth_token';
  * Throws an Error with a user-friendly message on failure.
  * @param {string} username
  * @param {string} password
+ * @param {string} deviceId
  * @returns {Promise<{accessToken?: string, mfaRequired: boolean, sessionToken?: string}>}
  */
-export async function login(username, password) {
+export async function login(username, password, deviceId) {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
 
   let response;
   try {
     response = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
+      headers: { 'Content-Type': 'application/json', ...getApplicationHeaders(deviceId) },
+      body: JSON.stringify({ username, password, deviceId }),
     });
   } catch (networkError) {
     throw new Error('Cannot reach the server. Check your connection.');
@@ -32,17 +34,20 @@ export async function login(username, password) {
   }
 
   const accessToken = data.accessToken ?? data.token;
-  if (accessToken) await saveAccessToken(accessToken);
+  if (accessToken) {
+    await saveAccessToken(accessToken);
+  }
+  await storeApprovalDeviceId(data.approvalDeviceId ?? deviceId);
 
   return data;
 }
 
-export async function getMfaStatus(sessionToken, signal) {
+export async function getMfaStatus(sessionToken, signal, deviceId) {
   let response;
   try {
     response = await fetch(
       `${BASE_URL}/api/auth/mfa/status/${encodeURIComponent(sessionToken)}`,
-      { headers: { Accept: 'application/json' }, signal },
+      { headers: { Accept: 'application/json', ...getApplicationHeaders(deviceId) }, signal },
     );
   } catch (networkError) {
     if (networkError.name === 'AbortError') throw networkError;

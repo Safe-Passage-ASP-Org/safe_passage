@@ -64,6 +64,7 @@ public sealed class AuthFlowService(
                 return AuthFlowResult<LoginResponse>.Success(new(
                     false,
                     null,
+                    trustedDevice.DeviceId,
                     null,
                     null,
                     jwtTokenService.CreateAccessToken(user),
@@ -127,6 +128,7 @@ public sealed class AuthFlowService(
         return AuthFlowResult<LoginResponse>.Success(new(
             true,
             sessionToken,
+            device.DeviceId,
             MfaSessionStatus.Pending,
             expiresAt,
             null,
@@ -142,18 +144,26 @@ public sealed class AuthFlowService(
         if (session is null)
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.SessionNotFound);
 
-        if (!request.IsSignatureValid)
-        {
-            AddActivity(session.UserId, "MFA Approval Rejected", "Invalid approval signature", ActivityLogStatus.Denied);
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.InvalidApprovalSignature);
-        }
-
         if (await ExpireIfNeededAsync(session, cancellationToken))
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.SessionExpired);
 
         if (session.Status != MfaSessionStatus.Pending)
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.InvalidSessionState);
+
+        var device = await dbContext.Devices.SingleOrDefaultAsync(candidate => candidate.Id == session.DeviceId, cancellationToken);
+        if (device is null || device.Status != DeviceStatus.Active || device.TrustStatus != DeviceTrustStatus.Trusted)
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
+
+        if (string.IsNullOrWhiteSpace(device.SigningPublicKey))
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceSigningKeyNotRegistered);
+
+        if (!string.Equals(device.DeviceId, request.DeviceId, StringComparison.Ordinal)
+            || !MfaApprovalSignature.Verify(device.SigningPublicKey, request.SessionToken, request.DeviceId, request.Signature))
+        {
+            AddActivity(session.UserId, "MFA Approval Rejected", "Invalid device-bound approval signature", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.InvalidApprovalSignature);
+        }
 
         var user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Id == session.UserId, cancellationToken);
         if (user is null || !user.IsActive)
@@ -162,15 +172,6 @@ public sealed class AuthFlowService(
             AddActivity(session.UserId, "Security Alert: MFA Denied", "Account unavailable during MFA", ActivityLogStatus.Denied);
             await dbContext.SaveChangesAsync(cancellationToken);
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.UserUnavailable);
-        }
-
-        var device = await dbContext.Devices.SingleOrDefaultAsync(candidate => candidate.Id == session.DeviceId, cancellationToken);
-        if (device is null || device.Status != DeviceStatus.Active)
-        {
-            session.Status = MfaSessionStatus.Denied;
-            AddActivity(session.UserId, "Security Alert: MFA Denied", "MFA device is no longer active", ActivityLogStatus.Denied);
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
         }
 
         session.Status = MfaSessionStatus.Approved;
@@ -231,15 +232,23 @@ public sealed class AuthFlowService(
                 if (user is null || !user.IsActive)
                     return AuthFlowResult<MfaStatusResponse>.Failed(AuthFlowFailure.UserUnavailable);
 
+                var deviceId = await dbContext.Devices.AsNoTracking()
+                    .Where(candidate => candidate.Id == session.DeviceId && candidate.Status == DeviceStatus.Active)
+                    .Select(candidate => candidate.DeviceId)
+                    .SingleOrDefaultAsync(cancellationToken);
+                if (deviceId is null)
+                    return AuthFlowResult<MfaStatusResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
+
                 return AuthFlowResult<MfaStatusResponse>.Success(new(
                     MfaSessionStatus.Approved,
                     session.ExpiresAt,
                     jwtTokenService.CreateAccessToken(user),
-                    "Bearer"));
+                    "Bearer",
+                    deviceId));
             }
 
             if (session.Status != MfaSessionStatus.Pending || DateTimeOffset.UtcNow >= deadline)
-                return AuthFlowResult<MfaStatusResponse>.Success(new(session.Status, session.ExpiresAt, null, null));
+                return AuthFlowResult<MfaStatusResponse>.Success(new(session.Status, session.ExpiresAt, null, null, null));
 
             await Task.Delay(PollInterval, cancellationToken);
         }

@@ -28,7 +28,7 @@ export default function MfaApprovalScreen({ route, navigation }) {
   const handleApprove = async () => {
     setApproving(true);
     try {
-      await submitMfaDecision(details.requestId, 'APPROVE');
+      await submitMfaDecision(details.requestId, details.deviceId, 'APPROVE');
 
       // Show success screen for 1.5 seconds then go back
       setApproved(true);
@@ -45,7 +45,7 @@ export default function MfaApprovalScreen({ route, navigation }) {
   const handleDeny = async () => {
     setDenying(true);
     try {
-      await submitMfaDecision(details.requestId, 'DENY');
+      await submitMfaDecision(details.requestId, details.deviceId, 'DENY');
     } catch (_) {
       // Best-effort; still dismiss
     } finally {

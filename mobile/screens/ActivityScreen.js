@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { getToken } from '../services/AuthService';
-import { BASE_URL } from '../config';
+import { getApprovalDeviceId } from '../services/DeviceSigningService';
+import { BASE_URL, getApplicationHeaders } from '../config';
 
 export default function ActivityScreen() {
   const [activity, setActivity] = useState([]);
@@ -13,8 +14,10 @@ export default function ActivityScreen() {
     (async () => {
       try {
         const token = await getToken();
+        const deviceId = await getApprovalDeviceId();
+        if (!token || !deviceId) throw new Error('Sign in on an enrolled device.');
         const response = await fetch(`${BASE_URL}/api/activity`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
+          headers: { Authorization: `Bearer ${token}`, ...getApplicationHeaders(deviceId) },
         });
         if (!response.ok) throw new Error(response.statusText);
         const data = await response.json();
