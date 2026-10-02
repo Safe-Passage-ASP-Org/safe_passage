@@ -18,14 +18,18 @@ export async function collectDeviceTelemetry() {
   // Build a mock hardware fingerprint from stable hardware properties
   const hardwareFingerprint = buildHardwareFingerprint();
 
+  const os = `${Device.osName || (Platform.OS === 'android' ? 'Android' : 'iOS')} ${Device.osVersion || ''}`.trim();
+  const deviceName = Device.deviceName ?? `${Device.manufacturer || ''} ${Device.modelName || 'Device'}`.trim() || 'Android Device';
+
   return {
-    deviceId: deviceId ?? 'UNKNOWN_DEVICE_ID',
-    deviceName: Device.deviceName ?? 'Unknown Device',
-    osName: Device.osName ?? Platform.OS,
+    deviceId: deviceId || 'DEVICE-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
+    deviceName,
+    deviceType: 'Phone',
+    os,
+    osName: Device.osName ?? (Platform.OS === 'android' ? 'Android' : 'iOS'),
     osVersion: Device.osVersion ?? 'Unknown',
     manufacturer: Device.manufacturer ?? 'Unknown',
     modelName: Device.modelName ?? 'Unknown Model',
-    deviceType: Device.deviceType,
     hardwareFingerprint,
     appVersion: Application.nativeApplicationVersion ?? '1.0.0',
     buildVersion: Application.nativeBuildVersion ?? '1',
@@ -65,13 +69,20 @@ export async function registerDeviceWithBackend(telemetry) {
 
   const token = await getToken();
 
+  const payload = {
+    deviceId: telemetry.deviceId,
+    deviceName: telemetry.deviceName,
+    deviceType: telemetry.deviceType || 'Phone',
+    os: telemetry.os || `${telemetry.osName} ${telemetry.osVersion}`.trim(),
+  };
+
   const response = await fetch(`${BASE_URL}/api/devices/register`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(telemetry),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -79,7 +90,15 @@ export async function registerDeviceWithBackend(telemetry) {
     throw new Error(err.detail ?? err.title ?? response.statusText ?? 'Registration failed.');
   }
 
-  return response.json();
+  const data = await response.json().catch(() => ({}));
+  return {
+    success: true,
+    status: data.status === 'PendingApproval' ? 'PENDING_APPROVAL' : (data.status || 'PENDING_APPROVAL'),
+    deviceId: data.deviceId ?? telemetry.deviceId,
+    message: 'Your device has been submitted for administrator approval.',
+    submittedAt: data.registrationDate ?? new Date().toISOString(),
+    raw: data,
+  };
 }
 
 /**

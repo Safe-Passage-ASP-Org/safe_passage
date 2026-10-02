@@ -28,8 +28,12 @@ export default function LoginScreen({ navigation }) {
     setErrorMessage('');
 
     try {
-      await login(username.trim(), password);
-      navigation.replace('Main');
+      const result = await login(username.trim(), password);
+      // Pass the MFA sessionToken (if any) into the Dashboard
+      navigation.replace('Main', {
+        screen: 'Dashboard',
+        params: { sessionToken: result?.sessionToken ?? null },
+      });
     } catch (err) {
       setErrorMessage(err.message ?? 'Login failed. Please try again.');
     } finally {

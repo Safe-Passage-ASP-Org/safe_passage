@@ -30,12 +30,21 @@ public sealed class DeviceController(IDeviceManagementService deviceManagement) 
         return ToProblem(result.Failure);
     }
 
-    /// <summary>Lists registered devices for administrators.</summary>
-    [Authorize(Roles = "Admin,Administrator,Super Admin")]
+    /// <summary>Lists registered devices for the user (or all devices for administrators).</summary>
+    [Authorize]
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<DeviceResponse>>(StatusCodes.Status200OK)]
-    public async Task<ActionResult<IReadOnlyList<DeviceResponse>>> GetAll(CancellationToken cancellationToken) =>
-        Ok(await deviceManagement.GetAllAsync(cancellationToken));
+    public async Task<ActionResult<IReadOnlyList<DeviceResponse>>> GetAll(CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var devices = await deviceManagement.GetAllAsync(cancellationToken);
+        if (IsAdministrator())
+            return Ok(devices);
+
+        return Ok(devices.Where(d => d.UserId == userId).ToList());
+    }
 
     /// <summary>Returns one registered device to its owner or an administrator.</summary>
     [Authorize(Roles = "Admin,Administrator,Super Admin")]

@@ -1,47 +1,116 @@
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useEffect } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+} from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { getToken } from '../services/AuthService';
+import { BASE_URL } from '../config';
 
-export default function DashboardScreen({ navigation }) {
+export default function DashboardScreen({ navigation, route }) {
+  // The session token is passed from LoginScreen when MFA is required
+  const sessionToken = route?.params?.sessionToken ?? null;
+
+  const [recentActivity, setRecentActivity] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const token = await getToken();
+        const response = await fetch(`${BASE_URL}/api/activity`, {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (response.ok) {
+          const data = await response.json();
+          setRecentActivity(data.slice(0, 3));
+        }
+      } catch (_) {
+        // Non-critical — just show nothing
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleOpenMfa = () => {
+    navigation.navigate('MfaApproval', {
+      details: {
+        location: 'Your current location',
+        ip: 'Current network IP',
+        os: 'Your device',
+        time: new Date().toLocaleTimeString(),
+        // Use the demo token seeded in the DB so approve/deny actually works
+        requestId: sessionToken ?? 'mock-req-001',
+      },
+    });
+  };
+
   return (
     <ScrollView style={styles.container}>
+      {/* ── Security Status Card ─────────────────────────────── */}
       <View style={styles.statusCard}>
         <Ionicons name="shield-checkmark" size={48} color="#10b981" />
         <Text style={styles.statusTitle}>Security Status</Text>
         <Text style={styles.statusValue}>Protected</Text>
       </View>
 
+      {/* ── Pending MFA Request ───────────────────────────────── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Pending Requests</Text>
-        <TouchableOpacity style={styles.alertCard} onPress={() => navigation.navigate('MfaApproval')}>
+        <TouchableOpacity style={styles.alertCard} onPress={handleOpenMfa}>
           <View style={styles.alertIcon}>
             <Ionicons name="warning" size={24} color="#f59e0b" />
           </View>
           <View style={styles.alertContent}>
-            <Text style={styles.alertTitle}>MFA Request</Text>
-            <Text style={styles.alertDesc}>San Francisco, CA • Windows 11</Text>
+            <Text style={styles.alertTitle}>MFA Approval Request</Text>
+            <Text style={styles.alertDesc}>Tap to review and approve or deny this sign-in</Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color="#64748b" />
         </TouchableOpacity>
       </View>
 
+      {/* ── Recent Activity ──────────────────────────────────── */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Recent Alerts</Text>
         <View style={styles.card}>
-          <View style={styles.alertRow}>
-            <Ionicons name="checkmark-circle" size={24} color="#10b981" />
-            <View style={styles.alertContent}>
-              <Text style={styles.alertTitle}>New Device Registered</Text>
-              <Text style={styles.alertDesc}>iPhone 13 Pro • 2 hours ago</Text>
+          {loading && (
+            <ActivityIndicator color="#0ea5e9" style={{ padding: 20 }} />
+          )}
+          {!loading && recentActivity.length === 0 && (
+            <>
+              <View style={styles.alertRow}>
+                <Ionicons name="checkmark-circle" size={24} color="#10b981" />
+                <View style={styles.alertContent}>
+                  <Text style={styles.alertTitle}>New Device Registered</Text>
+                  <Text style={styles.alertDesc}>John's Primary Android • 14 days ago</Text>
+                </View>
+              </View>
+              <View style={[styles.alertRow, styles.lastAlertRow]}>
+                <Ionicons name="close-circle" size={24} color="#ef4444" />
+                <View style={styles.alertContent}>
+                  <Text style={styles.alertTitle}>Blocked Sign-in Attempt</Text>
+                  <Text style={styles.alertDesc}>Unknown Location • Yesterday</Text>
+                </View>
+              </View>
+            </>
+          )}
+          {!loading && recentActivity.map((item, idx) => (
+            <View
+              key={item.id}
+              style={[styles.alertRow, idx === recentActivity.length - 1 && styles.lastAlertRow]}
+            >
+              <Ionicons name={item.icon ?? 'shield-checkmark'} size={24} color={item.color ?? '#10b981'} />
+              <View style={styles.alertContent}>
+                <Text style={styles.alertTitle}>{item.action}</Text>
+                <Text style={styles.alertDesc}>{item.target} • {item.time}</Text>
+              </View>
             </View>
-          </View>
-          <View style={[styles.alertRow, styles.lastAlertRow]}>
-            <Ionicons name="close-circle" size={24} color="#ef4444" />
-            <View style={styles.alertContent}>
-              <Text style={styles.alertTitle}>Blocked Sign-in Attempt</Text>
-              <Text style={styles.alertDesc}>Moscow, RU • Yesterday</Text>
-            </View>
-          </View>
+          ))}
         </View>
       </View>
     </ScrollView>
@@ -63,26 +132,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#1e293b',
   },
-  statusTitle: {
-    fontSize: 16,
-    color: '#94a3b8',
-    marginTop: 12,
-  },
-  statusValue: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#10b981',
-    marginTop: 4,
-  },
-  section: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#f8fafc',
-    marginBottom: 12,
-  },
+  statusTitle: { fontSize: 16, color: '#94a3b8', marginTop: 12 },
+  statusValue: { fontSize: 28, fontWeight: 'bold', color: '#10b981', marginTop: 4 },
+  section: { marginBottom: 24 },
+  sectionTitle: { fontSize: 18, fontWeight: '600', color: '#f8fafc', marginBottom: 12 },
   alertCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -98,19 +151,9 @@ const styles = StyleSheet.create({
     borderRadius: 8,
     marginRight: 12,
   },
-  alertContent: {
-    flex: 1,
-  },
-  alertTitle: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#f8fafc',
-  },
-  alertDesc: {
-    fontSize: 14,
-    color: '#94a3b8',
-    marginTop: 2,
-  },
+  alertContent: { flex: 1 },
+  alertTitle: { fontSize: 16, fontWeight: '500', color: '#f8fafc' },
+  alertDesc: { fontSize: 14, color: '#94a3b8', marginTop: 2 },
   card: {
     backgroundColor: '#0f172a',
     borderRadius: 12,
@@ -123,8 +166,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderBottomWidth: 1,
     borderBottomColor: '#1e293b',
+    gap: 12,
   },
-  lastAlertRow: {
-    borderBottomWidth: 0,
-  },
+  lastAlertRow: { borderBottomWidth: 0 },
 });

@@ -22,18 +22,23 @@ const STATUS_COLORS = {
 // ─── Sub-components ──────────────────────────────────────────────────────────
 
 function DeviceCard({ item }) {
-  const color = STATUS_COLORS[item.status] ?? '#64748b';
+  const name = item.name ?? item.deviceName ?? 'Unknown Device';
+  const date = item.date ?? (item.registrationDate ? `Registered ${new Date(item.registrationDate).toLocaleDateString()}` : 'Registered');
+  const status = item.trustStatus === 'Trusted' || item.status === 'Active' ? 'Trusted' : (item.status === 'PendingApproval' ? 'Pending' : (item.status ?? 'Untrusted'));
+  const color = STATUS_COLORS[status] ?? '#64748b';
+  const icon = item.type ?? (item.deviceType?.toLowerCase().includes('phone') ? 'phone-portrait' : 'hardware-chip-outline');
+
   return (
     <View style={styles.deviceCard}>
       <View style={styles.deviceIcon}>
-        <Ionicons name={item.type ?? 'hardware-chip-outline'} size={28} color="#0ea5e9" />
+        <Ionicons name={icon} size={28} color="#0ea5e9" />
       </View>
       <View style={styles.deviceInfo}>
-        <Text style={styles.deviceName}>{item.name}</Text>
-        <Text style={styles.deviceDate}>{item.date}</Text>
+        <Text style={styles.deviceName}>{name}</Text>
+        <Text style={styles.deviceDate}>{date}</Text>
       </View>
       <View style={[styles.statusBadge, { backgroundColor: `${color}20` }]}>
-        <Text style={[styles.statusText, { color }]}>{item.status}</Text>
+        <Text style={[styles.statusText, { color }]}>{status}</Text>
       </View>
     </View>
   );
