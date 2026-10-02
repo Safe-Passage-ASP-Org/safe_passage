@@ -33,9 +33,11 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
     public async Task<IReadOnlyList<DeviceResponse>> GetAllAsync(CancellationToken cancellationToken)
     {
         var devices = await dbContext.Devices.AsNoTracking()
-            .OrderByDescending(device => device.RegistrationDate)
             .ToListAsync(cancellationToken);
-        return devices.Select(ToResponse).ToList();
+        return devices
+            .OrderByDescending(device => device.RegistrationDate)
+            .Select(ToResponse)
+            .ToList();
     }
 
     public async Task<DeviceManagementResult<DeviceResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken)

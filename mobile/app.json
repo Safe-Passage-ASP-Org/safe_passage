@@ -43,7 +43,8 @@
           "defaultChannel": "mfa-requests",
           "sounds": []
         }
-      ]
+      ],
+      "expo-asset"
     ],
     "extra": {
       "eas": {

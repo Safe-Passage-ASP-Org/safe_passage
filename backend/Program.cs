@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using SafePassage.Api.Data;
@@ -26,9 +27,12 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
         case "postgres":
             options.UseNpgsql(connectionString);
             break;
+        case "sqlite":
+            options.UseSqlite(ResolveSqliteConnectionString(connectionString, builder.Environment.ContentRootPath));
+            break;
         default:
             throw new InvalidOperationException(
-                $"Unsupported Database:Provider '{databaseProvider}'. Use 'SqlServer' or 'PostgreSQL'.");
+                $"Unsupported Database:Provider '{databaseProvider}'. Use 'SqlServer', 'PostgreSQL', or 'Sqlite'.");
     }
 });
 
@@ -91,9 +95,12 @@ if (app.Environment.IsDevelopment())
     app.MapOpenApi();
 }
 
-// Ensure database is created and seed initial test user, device, and activities
+// Ensure database is created and seed initial test user, device, and activities.
+// Fail fast: swallowing this error used to leave the API listening with /api/status reporting
+// "Online" while every database-backed endpoint returned 500.
 using (var scope = app.Services.CreateScope())
 {
+    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     try
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -103,8 +110,13 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex)
     {
-        var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred while initializing the database.");
+        logger.LogCritical(
+            ex,
+            "Database initialization failed for provider '{Provider}'. Authentication, device, and " +
+            "activity requests cannot be served until this is resolved. Check ConnectionStrings:" +
+            "DefaultConnection and Database:Provider.",
+            databaseProvider);
+        throw;
     }
 }
 
@@ -128,3 +140,21 @@ app.MapGet("/api/status", () => Results.Ok(new
 .WithName("GetSystemStatus");
 
 app.Run();
+
+// SQLite resolves a relative Data Source against the process working directory, which differs
+// depending on how the API is launched (project folder, repo root, or a published output folder).
+// Anchor it to the content root so every launch uses the same database file.
+static string ResolveSqliteConnectionString(string connectionString, string contentRootPath)
+{
+    var sqliteBuilder = new SqliteConnectionStringBuilder(connectionString);
+    if (!string.IsNullOrWhiteSpace(sqliteBuilder.DataSource) && !Path.IsPathRooted(sqliteBuilder.DataSource))
+        sqliteBuilder.DataSource = Path.GetFullPath(Path.Combine(contentRootPath, sqliteBuilder.DataSource));
+
+    // SQLite will not create missing directories for the database file, so make sure the
+    // folder exists before the provider tries to open it.
+    var databaseDirectory = Path.GetDirectoryName(sqliteBuilder.DataSource);
+    if (!string.IsNullOrEmpty(databaseDirectory))
+        Directory.CreateDirectory(databaseDirectory);
+
+    return sqliteBuilder.ConnectionString;
+}

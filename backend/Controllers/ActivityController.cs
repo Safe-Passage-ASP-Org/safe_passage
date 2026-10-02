@@ -25,11 +25,12 @@ public sealed class ActivityController(ApplicationDbContext dbContext) : Control
         }
 
         var logs = await query
-            .OrderByDescending(a => a.Timestamp)
-            .Take(25)
             .ToListAsync(cancellationToken);
 
-        var result = logs.Select(log =>
+        var result = logs
+            .OrderByDescending(log => log.Timestamp)
+            .Take(25)
+            .Select(log =>
         {
             var isSuccess = log.Status == ActivityLogStatus.Success;
             var (icon, color) = log.Action.ToLowerInvariant() switch

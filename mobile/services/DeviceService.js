@@ -19,7 +19,7 @@ export async function collectDeviceTelemetry() {
   const hardwareFingerprint = buildHardwareFingerprint();
 
   const os = `${Device.osName || (Platform.OS === 'android' ? 'Android' : 'iOS')} ${Device.osVersion || ''}`.trim();
-  const deviceName = Device.deviceName ?? `${Device.manufacturer || ''} ${Device.modelName || 'Device'}`.trim() || 'Android Device';
+  const deviceName = Device.deviceName ?? (`${Device.manufacturer || ''} ${Device.modelName || 'Device'}`.trim() || 'Android Device');
 
   return {
     deviceId: deviceId || 'DEVICE-' + Math.random().toString(36).substring(2, 9).toUpperCase(),

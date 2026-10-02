@@ -8,34 +8,81 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getToken } from '../services/AuthService';
+import { getMfaStatus, getToken, saveAccessToken } from '../services/AuthService';
 import { BASE_URL } from '../config';
 
+async function fetchRecentActivity(token) {
+  const response = await fetch(`${BASE_URL}/api/activity`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error('Could not load activity.');
+  return response.json();
+}
+
 export default function DashboardScreen({ navigation, route }) {
-  // The session token is passed from LoginScreen when MFA is required
   const sessionToken = route?.params?.sessionToken ?? null;
 
   const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
     (async () => {
       try {
         const token = await getToken();
-        const response = await fetch(`${BASE_URL}/api/activity`, {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (response.ok) {
-          const data = await response.json();
-          setRecentActivity(data.slice(0, 3));
+        if (token) {
+          const data = await fetchRecentActivity(token);
+          if (active) setRecentActivity(data.slice(0, 3));
         }
       } catch (_) {
-        // Non-critical — just show nothing
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     })();
+
+    return () => { active = false; };
   }, []);
+
+  useEffect(() => {
+    if (!sessionToken) return undefined;
+
+    const controller = new AbortController();
+    let active = true;
+
+    (async () => {
+      try {
+        while (active) {
+          const result = await getMfaStatus(sessionToken, controller.signal);
+          const status = String(result.status ?? '').toLowerCase();
+
+          if (status === 'approved') {
+            await saveAccessToken(result.accessToken);
+            if (!active) return;
+            navigation.setParams({ sessionToken: null });
+            const activity = await fetchRecentActivity(result.accessToken);
+            if (active) setRecentActivity(activity.slice(0, 3));
+            return;
+          }
+
+          if (status === 'denied' || status === 'expired') {
+            navigation.setParams({ sessionToken: null });
+            return;
+          }
+
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+        }
+      } catch (error) {
+        if (active && error.name !== 'AbortError') {
+          console.warn('[Auth] MFA status polling failed:', error.message);
+        }
+      }
+    })();
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [navigation, sessionToken]);
 
   const handleOpenMfa = () => {
     navigation.navigate('MfaApproval', {
