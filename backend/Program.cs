@@ -6,6 +6,7 @@ using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using SafePassage.Api.Data;
+using SafePassage.Api.Hubs;
 using SafePassage.Api.Middleware;
 using SafePassage.Api.Models;
 using SafePassage.Api.Services;
@@ -57,7 +58,7 @@ builder.Services.AddCors(options =>
     options.AddPolicy("KnownOrigins", policy =>
     {
         policy.WithOrigins(allowedOrigins)
-              .WithMethods("GET", "POST", "PUT", "DELETE")
+              .WithMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
               .WithHeaders("Authorization", "Content-Type", "X-Application-Id", "X-Device-Id");
     });
 });
@@ -66,6 +67,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
         options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter()));
+builder.Services.AddSignalR();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 
@@ -128,7 +130,8 @@ app.UseAuthentication();
 app.UseMiddleware<SecurityMiddleware>();
 app.UseAuthorization();
 
-// 5. Map Controller routes
+// 5. Map real-time MFA notifications and controller routes
+app.MapHub<MfaHub>("/mfaHub");
 app.MapControllers();
 
 // 6. Test Endpoint (to quickly check if API is running)

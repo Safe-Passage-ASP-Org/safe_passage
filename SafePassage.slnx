@@ -1,4 +1,7 @@
 <Solution>
+  <Folder Name="/backend-tests/">
+    <Project Path="backend-tests/SafePassage.Api.Tests/SafePassage.Api.Tests.csproj" />
+  </Folder>
   <Folder Name="/backend/">
     <Project Path="backend/SafePassage.Api.csproj" />
   </Folder>

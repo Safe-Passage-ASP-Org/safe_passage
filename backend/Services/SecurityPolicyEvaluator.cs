@@ -7,7 +7,10 @@ namespace SafePassage.Api.Services;
 public sealed record SecurityPolicyEvaluation(
     bool RequiresTrustedDevice,
     bool AllowsTrustedDeviceMfaBypass,
-    bool IsValid);
+    bool IsValid,
+    bool RequiresScreenLock = false,
+    bool BlocksRootedDevices = false,
+    bool BlocksJailbrokenDevices = false);
 
 public interface ISecurityPolicyEvaluator
 {
@@ -27,6 +30,9 @@ public sealed class SecurityPolicyEvaluator(ApplicationDbContext dbContext) : IS
         var allowsMfaBypass = false;
         var disallowsMfaBypass = false;
         var requiresStepUp = false;
+        var requiresScreenLock = false;
+        var blocksRootedDevices = false;
+        var blocksJailbrokenDevices = false;
 
         foreach (var policy in policies)
         {
@@ -45,24 +51,33 @@ public sealed class SecurityPolicyEvaluator(ApplicationDbContext dbContext) : IS
                     || !TryReadBoolean(document.RootElement, "requiresTrustedDevice", out var requiresDevice)
                     || !TryReadBoolean(document.RootElement, "allowTrustedDeviceMfaBypass", out var allowBypass)
                     || !TryReadBoolean(document.RootElement, "requiresStepUp", out var requiresStepUpRule)
-                    || !TryReadBoolean(document.RootElement, "requireMfa", out var requireMfa))
-                    return new(requiresTrustedDevice, false, false);
+                    || !TryReadBoolean(document.RootElement, "requireMfa", out var requireMfa)
+                    || !TryReadBoolean(document.RootElement, "requiresScreenLock", out var requiresLockScreen)
+                    || !TryReadBoolean(document.RootElement, "blockRootedDevice", out var blockRootedDevice)
+                    || !TryReadBoolean(document.RootElement, "blockJailbrokenDevice", out var blockJailbrokenDevice))
+                    return new(requiresTrustedDevice, false, false, requiresScreenLock, blocksRootedDevices, blocksJailbrokenDevices);
 
                 requiresTrustedDevice |= requiresDevice == true;
                 allowsMfaBypass |= allowBypass == true;
                 disallowsMfaBypass |= allowBypass == false;
                 requiresStepUp |= requiresStepUpRule == true || requireMfa == true;
+                requiresScreenLock |= requiresLockScreen == true;
+                blocksRootedDevices |= blockRootedDevice == true;
+                blocksJailbrokenDevices |= blockJailbrokenDevice == true;
             }
             catch (JsonException)
             {
-                return new(requiresTrustedDevice, false, false);
+                return new(requiresTrustedDevice, false, false, requiresScreenLock, blocksRootedDevices, blocksJailbrokenDevices);
             }
         }
 
         return new(
             requiresTrustedDevice,
             allowsMfaBypass && !disallowsMfaBypass && !requiresStepUp,
-            true);
+            true,
+            requiresScreenLock,
+            blocksRootedDevices,
+            blocksJailbrokenDevices);
     }
 
     private static bool TryReadBoolean(JsonElement root, string propertyName, out bool? value)

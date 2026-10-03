@@ -1,0 +1,17 @@
+Continue the repo work without waiting on me for the local-only parts.
+
+Required local setup I still need to do on my machine:
+1. Set a local JWT signing secret in the backend configuration and keep it out of source control.
+2. Run the database migration and confirm the app loads against the local SQLite database.
+3. Enroll the trusted mobile device signing key so the device-bound MFA approval flow can validate signatures.
+4. Confirm the backend CORS origin matches the local web/mobile host.
+
+Repo tasks already addressed in code:
+- Trusted-device MFA with a P-256 signature verification path.
+- Sensitive app enforcement via header checks and policy evaluation.
+- SignalR-based MFA push route is wired for approval delivery.
+- Admin API scaffolding exists for groups, roles, applications, and policies.
+- Device posture policy flags are included for screen-lock, rooted-device, and jailbroken-device checks.
+- The project no longer includes local auth enforcement or device-authenticator shortcuts.
+
+If I get blocked on the local setup steps, I should only stop at those machine-specific tasks and not block the repo implementation work.
