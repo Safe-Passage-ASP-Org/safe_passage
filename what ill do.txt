@@ -1,12 +1,190 @@
 Continue the repo work without waiting on me for the local-only parts.
 
-Required local setup I still need to do on my machine:
-1. Set a local JWT signing secret in the backend configuration and keep it out of source control.
-2. Run the database migration and confirm the app loads against the local SQLite database.
-3. Enroll the trusted mobile device signing key so the device-bound MFA approval flow can validate signatures.
-4. Confirm the backend CORS origin matches the local web/mobile host.
+This guide is for the four setup steps that must be done on my own computer. The commands below are for Windows PowerShell. I should do them in order and check the result after each step.
 
-Repo tasks already addressed in code:
+Before starting:
+- Open PowerShell: open the Windows Start menu, type `PowerShell`, and open **Windows PowerShell** or **Terminal**.
+- The project folder is `C:\Users\Delta\safe_passage`.
+- When copying a command from this guide, copy only the command text inside the shaded code box. Do not type the three backticks (` ``` `) that mark the top and bottom of a box, and do not type a prompt such as `PS C:\...>`.
+- Do not send anyone my JWT secret or the phone's private signing key. The enrollment steps below copy only the public key.
+
+## 1. Save a private JWT signing secret
+
+The API needs a secret to create and verify login tokens. Save a randomly generated secret in .NET User Secrets. User Secrets are stored in my Windows user profile, not in the project folder.
+
+1. In PowerShell, go to the project folder:
+
+	```powershell
+	cd C:\Users\Delta\safe_passage
+	```
+
+2. Generate and save a secret. Copy and run these lines together. This version works in Windows PowerShell 5.1:
+
+	```powershell
+	$rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+	$bytes = New-Object 'byte[]' 48
+	$rng.GetBytes($bytes)
+	$rng.Dispose()
+	$jwtKey = [Convert]::ToBase64String($bytes)
+	dotnet user-secrets set "Jwt:SigningKey" "$jwtKey" --project .\backend\SafePassage.Api.csproj
+	Remove-Variable jwtKey, bytes, rng -ErrorAction SilentlyContinue
+	```
+
+3. Look for a message saying the secret was saved successfully. Do not run a command that prints the secret, and do not put it in an appsettings file.
+
+	Note: An earlier version using `RandomNumberGenerator.GetBytes(48)` fails in Windows PowerShell 5.1. If that was the version I ran, the secret was not saved; use the commands above.
+
+Important: `backend\appsettings.Development.json` currently contains an old development signing key in the repository. The User Secret above overrides it when the API runs in Development, but it does not remove the old value from source control. Treat that old value as public; it must not be reused. Removing the checked-in value is a separate repo cleanup.
+
+## 2. Create the local SQLite database
+
+The database file belongs in `backend\Data\safepassage.db`. The API can apply migrations automatically at startup, but run the migration command explicitly so the setup result is easy to check.
+
+1. Make sure PowerShell is at the project folder. If needed, run:
+
+	```powershell
+	cd C:\Users\Delta\safe_passage
+	```
+
+2. Restore the project's pinned Entity Framework tool:
+
+	```powershell
+	dotnet tool restore
+	```
+
+	Wait for the command to finish. It should report that the tool was installed or is already available.
+
+3. Apply the database migrations:
+
+	```powershell
+	dotnet ef database update --project .\backend\SafePassage.Api.csproj --startup-project .\backend\SafePassage.Api.csproj
+	```
+
+4. Check that the database file exists:
+
+	```powershell
+	Test-Path .\backend\Data\safepassage.db
+	```
+
+	The result should be `True`.
+
+5. Check which migrations are applied:
+
+	```powershell
+	dotnet ef migrations list --project .\backend\SafePassage.Api.csproj --startup-project .\backend\SafePassage.Api.csproj
+	```
+
+	The project currently has an initial migration and a migration that adds the device signing key. The list should show them as applied.
+
+If PowerShell says `dotnet` is not recognized, install the .NET SDK required by the project, then close and reopen PowerShell. If `dotnet ef` is not available, run `dotnet tool restore` from the project folder and try again.
+
+## 3. Start the API and check that it works
+
+1. Open a second PowerShell window. Keep the first one available for the commands above.
+2. In the new window, run:
+
+	```powershell
+	cd C:\Users\Delta\safe_passage\backend
+	dotnet run --launch-profile http
+	```
+
+3. Leave this window open. It is running the API. The local HTTP address is `http://localhost:5143`.
+4. Open a third PowerShell window and check the API status:
+
+	```powershell
+	Invoke-RestMethod http://localhost:5143/api/status
+	```
+
+	A successful response includes `Online` and `Safe Passage API`.
+
+If the API stops with an error, read the red error text in the window running `dotnet run`. Database errors usually mean the migration did not finish or the database could not be opened. JWT errors usually mean the User Secret was not set or the API was not started with the Development launch profile.
+
+## 4. Connect the mobile app to the API
+
+The phone and the API computer must be able to reach each other. The word `localhost` means “this same device,” so do not use `localhost` as the API address on a physical phone.
+
+1. Decide where the mobile app will run:
+	- **Physical Android or iPhone:** use the computer's Wi-Fi IPv4 address.
+	- **Android emulator:** use `http://10.0.2.2:5143`.
+	- **iOS simulator on this computer:** use `http://localhost:5143`.
+
+2. To find the computer's local IPv4 address, open another PowerShell window and run:
+
+	```powershell
+	ipconfig
+	```
+
+	Find the network adapter currently in use and look for **IPv4 Address**. In the output I provided, the active **Ethernet** adapter has address `192.168.254.134`. The phone must be connected to the same local network as this computer; Wi-Fi on the same router is usually fine even when the computer uses Ethernet.
+
+3. In PowerShell, choose the address for your device. This example uses my current computer address for a physical phone. If the computer's IPv4 address changes later, replace `192.168.254.134` with the new address:
+
+	```powershell
+	$env:EXPO_PUBLIC_API_URL = "http://192.168.254.134:5143"
+	cd C:\Users\Delta\safe_passage\mobile
+	npm install
+	npx expo start
+	```
+
+	For an Android emulator, set the first line to `$env:EXPO_PUBLIC_API_URL = "http://10.0.2.2:5143"`. For an iOS simulator, use `http://localhost:5143`.
+
+4. Keep the Expo window open. Follow the address or QR code it prints to open the app. For a physical phone, install Expo Go from the phone's app store and scan the QR code. If Windows asks about network access, allow it on your private network.
+
+5. If the app says it cannot reach the server, first check that the API window is still running and the URL uses the right address. On a physical phone, Windows Firewall may also need to allow the API on port `5143` for a private network.
+
+## 5. Enroll the phone's public signing key
+
+The phone makes a P-256 key pair. The private key stays in the phone's secure storage. The backend needs the matching public key to verify an approval signature.
+
+For the first local setup, the database seeds a trusted test device with the ID `PRIMARY-ANDROID-001`. The mobile app's normal device registration is different: it creates a pending device, which must be approved and trusted before it can be used for MFA.
+
+1. With the API and Expo still running, open the mobile app and sign in with the local test account:
+
+	- Username: `john.doe`
+	- Password: `Password123!`
+
+	These are test-only credentials. Do not use them outside local development.
+
+2. After sign-in, open the **Settings** tab and tap **Copy device enrollment info**. The app copies a small JSON object containing `deviceId` and `signingPublicKey`.
+
+3. Check that the clipboard contains the enrollment information. Do not copy or share any private key; the app does not put the private key in this JSON.
+
+4. Stop the API before changing its database: go to the PowerShell window running `dotnet run` and press **Ctrl+C** once. Leave the Expo window running.
+
+5. Open another PowerShell window and go to the project folder. Run the following commands to enroll the copied public key:
+
+	```powershell
+	cd C:\Users\Delta\safe_passage
+	$enrollment = Get-Clipboard | ConvertFrom-Json
+	$enrollment | Format-List deviceId, signingPublicKey
+	node .\backend\scripts\enroll-device-signing-key.mjs "$($enrollment.deviceId)" "$($enrollment.signingPublicKey)"
+	```
+
+6. Check the printed `deviceId` before continuing. For the seeded test device, it should be `PRIMARY-ANDROID-001`. A successful result says `Public signing key enrolled` or `This public key is already enrolled for the trusted device.`
+
+7. Start the API again using the instructions in Step 3, then try the sign-in and MFA approval again.
+
+The enrollment script only updates an existing active, trusted device with no signing key. If it reports that no device matched, check that the database exists, that the copied ID is correct, and that you are using the local database at `backend\Data\safepassage.db`. The script needs Node.js 22.5 or later because it uses Node's built-in SQLite support.
+
+Do not clear the mobile app's storage or reinstall it after enrolling the key unless you intend to enroll a new key. The phone must keep the private key that matches the public key saved in the database.
+
+## 6. Check the browser's CORS origin
+
+CORS is a browser rule. It checks the address of the page in the browser, not the address of the API. The origin is the combination of `http` or `https`, the host name, and the port.
+
+1. Look at the browser address bar and note the part before the first page path. For example, if the browser is at `http://localhost:5092/dashboard`, the origin is `http://localhost:5092`.
+2. Open `backend\appsettings.Development.json` in VS Code. Find `Cors`, then `AllowedOrigins`.
+3. Compare the browser origin with one of the listed values. These local origins are already included:
+	- `http://localhost:5092` and `https://localhost:7095` for the web app.
+	- `http://localhost:8081` and `http://localhost:8082` for Expo web on this computer.
+	- `http://192.168.254.134:8081` and `http://192.168.254.134:8082` for Expo web using that computer address.
+4. If your browser's exact origin is not listed, add it as a new quoted value inside the `AllowedOrigins` list. Keep the comma between list items, save the file, then stop and restart the API.
+
+For example, `http://localhost:8081` and `http://127.0.0.1:8081` are different origins. A changed Expo port is also a different origin. Native mobile apps generally do not use browser CORS rules; for a phone app, make sure the API address is reachable instead.
+
+The standalone `index.html` test page defaults to API port `5000`, while this API uses port `5143`. If using that page, set its API override to `http://localhost:5143`. Opening an HTML file directly from disk can still cause browser-origin restrictions.
+
+## Repo tasks already addressed in code
+
 - Trusted-device MFA with a P-256 signature verification path.
 - Sensitive app enforcement via header checks and policy evaluation.
 - SignalR-based MFA push route is wired for approval delivery.
@@ -14,4 +192,4 @@ Repo tasks already addressed in code:
 - Device posture policy flags are included for screen-lock, rooted-device, and jailbroken-device checks.
 - The project no longer includes local auth enforcement or device-authenticator shortcuts.
 
-If I get blocked on the local setup steps, I should only stop at those machine-specific tasks and not block the repo implementation work.
+If I get blocked on one of the local setup steps, I should stop only at that machine-specific step. It should not block the repo implementation work.
