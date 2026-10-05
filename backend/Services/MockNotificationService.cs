@@ -16,7 +16,7 @@ public sealed class MockNotificationService(
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        await hubContext.Clients.All.SendAsync(
+        await hubContext.Clients.Group($"device:{device.DeviceId}").SendAsync(
             "MfaRequested",
             new
             {

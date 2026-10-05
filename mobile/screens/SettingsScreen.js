@@ -8,13 +8,36 @@ import { getApprovalDeviceId, getDeviceSigningPublicKey } from '../services/Devi
 /**
  * Decode the payload from a JWT token without verifying the signature.
  * Only used to display friendly UI info — never trusted for security decisions.
+ *
+ * Uses a pure-JS base64 decoder so it works on the Hermes JS engine (no atob).
  */
+function base64UrlDecode(str) {
+  // Convert base64url → base64, then pad
+  const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
+  const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+  // Pure-JS base64 decode — works on Hermes without atob
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+  let bytes = '';
+  let i = 0;
+  while (i < padded.length) {
+    const e1 = chars.indexOf(padded[i++]);
+    const e2 = chars.indexOf(padded[i++]);
+    const e3 = chars.indexOf(padded[i++]);
+    const e4 = chars.indexOf(padded[i++]);
+    bytes += String.fromCharCode(((e1 << 2) | (e2 >> 4)) & 0xff);
+    if (e3 !== 64) bytes += String.fromCharCode(((e2 << 4) | (e3 >> 2)) & 0xff);
+    if (e4 !== 64) bytes += String.fromCharCode(((e3 << 6) | e4) & 0xff);
+  }
+  return bytes;
+}
+
 function decodeJwtPayload(token) {
   try {
-    const base64 = token.split('.')[1];
-    const padded = base64.replace(/-/g, '+').replace(/_/g, '/').padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+    const rawPayload = token.split('.')[1];
+    if (!rawPayload) return null;
+    const decoded = base64UrlDecode(rawPayload);
     const json = decodeURIComponent(
-      atob(padded)
+      decoded
         .split('')
         .map((c) => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
         .join('')

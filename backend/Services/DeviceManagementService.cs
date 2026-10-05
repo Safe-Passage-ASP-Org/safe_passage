@@ -42,11 +42,10 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
         if (!includeAll)
             query = query.Where(device => device.UserId == requesterId);
 
-        var devices = await query.ToListAsync(cancellationToken);
-        return devices
+        var devices = await query
             .OrderByDescending(device => device.RegistrationDate)
-            .Select(ToResponse)
-            .ToList();
+            .ToListAsync(cancellationToken);
+        return devices.Select(ToResponse).ToList();
     }
 
     public async Task<DeviceManagementResult<DeviceResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken)

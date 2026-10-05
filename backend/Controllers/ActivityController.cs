@@ -23,11 +23,11 @@ public sealed class ActivityController(ApplicationDbContext dbContext) : Control
 
         var logs = await dbContext.ActivityLogs.AsNoTracking()
             .Where(activity => activity.UserId == userId)
+            .OrderByDescending(log => log.Timestamp)
+            .Take(25)
             .ToListAsync(cancellationToken);
 
         var result = logs
-            .OrderByDescending(log => log.Timestamp)
-            .Take(25)
             .Select(log =>
         {
             var isSuccess = log.Status == ActivityLogStatus.Success;

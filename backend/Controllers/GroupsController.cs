@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SafePassage.Api.Data;
@@ -5,6 +6,7 @@ using SafePassage.Api.Models;
 
 namespace SafePassage.Api.Controllers;
 
+[Authorize(Roles = "Admin,Administrator,Super Admin")]
 [ApiController]
 [Route("api/admin/groups")]
 public sealed class GroupsController(ApplicationDbContext dbContext) : ControllerBase

@@ -1,7 +1,9 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace SafePassage.Api.Controllers;
 
+[Authorize(Roles = "Admin,Administrator,Super Admin")]
 [ApiController]
 [Route("api/admin/roles")]
 public sealed class RolesController : ControllerBase

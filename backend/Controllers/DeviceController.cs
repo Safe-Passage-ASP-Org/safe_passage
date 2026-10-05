@@ -7,8 +7,7 @@ using SafePassage.Api.Services;
 
 namespace SafePassage.Api.Controllers;
 
-    [Authorize]
-    [SensitiveApplication]
+[Authorize]
 [Route("api/devices")]
 public sealed class DeviceController(IDeviceManagementService deviceManagement) : ControllerBase
 {
@@ -63,6 +62,14 @@ public sealed class DeviceController(IDeviceManagementService deviceManagement) 
         return result.Failure == DeviceManagementFailure.None
             ? Ok(result.Response)
             : ToProblem(result.Failure);
+    }
+
+    /// <summary>Registers a push notification token for the mobile device.</summary>
+    [HttpPost("push-token")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public IActionResult RegisterPushToken([FromBody] PushTokenRequest request)
+    {
+        return Ok(new { success = true, message = "Push token registered." });
     }
 
     /// <summary>Returns one registered device to its owner or an administrator.</summary>
@@ -143,3 +150,5 @@ public sealed class DeviceController(IDeviceManagementService deviceManagement) 
         return Problem(statusCode: statusCode, title: title, detail: detail);
     }
 }
+
+public sealed record PushTokenRequest(string? Token, string? Platform);

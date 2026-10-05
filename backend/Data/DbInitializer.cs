@@ -67,9 +67,10 @@ public static class DbInitializer
             dbContext.SaveChanges();
         }
 
-        // 3. Create a short-lived demo MFA session once; never reset its state on startup.
+        // 3. Create or update the demo MFA session with the correct Base64Url hash.
         var hashedDemoToken = HashSessionToken("mock-req-001");
-        var mfaSession = dbContext.MfaSessions.FirstOrDefault(m => m.SessionToken == hashedDemoToken);
+        var mfaSession = dbContext.MfaSessions.FirstOrDefault(m => m.Id == PendingMfaSessionId)
+            ?? dbContext.MfaSessions.FirstOrDefault(m => m.SessionToken == hashedDemoToken);
         if (mfaSession is null)
         {
             mfaSession = new MfaSession
@@ -79,16 +80,19 @@ public static class DbInitializer
                 DeviceId = device.Id,
                 SessionToken = hashedDemoToken,
                 Status = MfaSessionStatus.Pending,
-                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5),
+                ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(15),
                 CreatedAt = DateTimeOffset.UtcNow
             };
             dbContext.MfaSessions.Add(mfaSession);
             dbContext.SaveChanges();
         }
-        else if (mfaSession.Status == MfaSessionStatus.Pending
-            && mfaSession.ExpiresAt > DateTimeOffset.UtcNow.AddMinutes(5))
+        else
         {
-            mfaSession.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
+            mfaSession.SessionToken = hashedDemoToken;
+            if (mfaSession.Status == MfaSessionStatus.Pending && mfaSession.ExpiresAt < DateTimeOffset.UtcNow)
+            {
+                mfaSession.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(15);
+            }
             dbContext.SaveChanges();
         }
 
@@ -130,7 +134,8 @@ public static class DbInitializer
 
     private static string HashSessionToken(string token)
     {
-        return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
+        return Microsoft.IdentityModel.Tokens.Base64UrlEncoder.Encode(
+            SHA256.HashData(Encoding.UTF8.GetBytes(token)));
     }
 
     private static void EnsureApplication(ApplicationDbContext dbContext, Guid id, string name, string description)

@@ -6,6 +6,11 @@ obj/
 .vs/
 .vscode/
 
+## Local dev secrets — contains signing keys, never commit
+appsettings.Development.json
+appsettings.*.json
+!appsettings.json
+
 ## SQLite Local Database (ignore local db file so members don't overwrite each other)
 *.db
 *.db-shm
