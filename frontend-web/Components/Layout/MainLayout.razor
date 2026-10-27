@@ -31,9 +31,10 @@
                 </div>
 
                 <!-- Profile Dropdown -->
-                <div class="sp-profile-wrapper dropdown">
-                    <button class="sp-profile-btn dropdown-toggle" type="button"
-                            data-bs-toggle="dropdown" aria-expanded="false">
+                <div class="sp-profile-wrapper">
+                    <button class="sp-profile-btn" type="button"
+                            aria-expanded="@IsProfileMenuOpen"
+                            @onclick="ToggleProfileMenu">
                         <div class="sp-avatar">AD</div>
                         <div class="sp-profile-info">
                             <span class="sp-profile-name">Admin</span>
@@ -43,12 +44,15 @@
                             <path d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"/>
                         </svg>
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end sp-dropdown">
-                        <li><a class="dropdown-item" href="#">My Profile</a></li>
-                        <li><a class="dropdown-item" href="#">Account Settings</a></li>
-                        <li><hr class="dropdown-divider" /></li>
-                        <li><a class="dropdown-item text-danger" href="#">Sign Out</a></li>
-                    </ul>
+                    @if (IsProfileMenuOpen)
+                    {
+                        <ul class="sp-dropdown" role="menu">
+                            <li><a role="menuitem" href="#">My Profile</a></li>
+                            <li><a role="menuitem" href="#">Account Settings</a></li>
+                            <li><hr /></li>
+                            <li><a class="danger" role="menuitem" href="#">Sign Out</a></li>
+                        </ul>
+                    }
                 </div>
             </div>
         </header>
@@ -59,6 +63,12 @@
         </main>
     </div>
 </div>
+
+@code {
+    private bool IsProfileMenuOpen;
+
+    private void ToggleProfileMenu() => IsProfileMenuOpen = !IsProfileMenuOpen;
+}
 
 <!-- Blazor error UI -->
 <div id="blazor-error-ui" data-nosnippet>
