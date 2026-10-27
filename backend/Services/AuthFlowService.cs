@@ -195,6 +195,21 @@ public sealed class AuthFlowService(
         if (session.Status != MfaSessionStatus.Pending)
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.InvalidSessionState);
 
+        var device = await dbContext.Devices.SingleOrDefaultAsync(candidate => candidate.Id == session.DeviceId, cancellationToken);
+        if (device is null || device.Status != DeviceStatus.Active || device.TrustStatus != DeviceTrustStatus.Trusted)
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
+
+        if (string.IsNullOrWhiteSpace(device.SigningPublicKey))
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceSigningKeyNotRegistered);
+
+        if (!string.Equals(device.DeviceId, request.DeviceId, StringComparison.Ordinal)
+            || !MfaApprovalSignature.Verify(device.SigningPublicKey, request.SessionToken, request.DeviceId, request.Signature))
+        {
+            AddActivity(session.UserId, "MFA Denial Rejected", "Invalid device-bound denial signature", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.InvalidApprovalSignature);
+        }
+
         session.Status = MfaSessionStatus.Denied;
         AddActivity(session.UserId, "Security Alert: MFA Denied", "User denied a sign-in request", ActivityLogStatus.Denied);
         await dbContext.SaveChangesAsync(cancellationToken);

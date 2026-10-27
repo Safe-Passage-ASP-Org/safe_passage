@@ -40,4 +40,12 @@ public sealed record MfaDenialRequest
     /// <summary>The one-time MFA session token.</summary>
     [Required, StringLength(512, MinimumLength = 32)]
     public required string SessionToken { get; init; }
+
+    /// <summary>The registered device making the decision.</summary>
+    [Required, StringLength(256, MinimumLength = 1)]
+    public required string DeviceId { get; init; }
+
+    /// <summary>Device-bound P-256 signature over the session and device ID.</summary>
+    [Required, StringLength(128, MinimumLength = 80)]
+    public required string Signature { get; init; }
 }
