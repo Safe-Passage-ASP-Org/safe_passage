@@ -7,196 +7,122 @@
 
 <div class="sp-page-header">
     <h1 class="sp-page-title">Users &amp; Identities</h1>
-    <p class="sp-page-subtitle">Manage accounts, roles, group memberships, and sign-in status.</p>
+    <p class="sp-page-subtitle">Manage accounts, roles, group assignments, and account status.</p>
 </div>
 
-@if (Api.AccessToken is null)
-{
-    <section class="sp-card user-notice" role="status">
-        <h2>Administrator sign-in required</h2>
-        <p>Sign in with an administrator account to view and manage directory users.</p>
-        <a class="user-primary" href="/login">Sign in</a>
-    </section>
-}
-else if (Loading)
-{
-    <div class="user-state" role="status">Loading directory…</div>
-}
-else
-{
-    <div class="user-summary">
-        <div><span>Directory accounts</span><strong>@DirectoryUsers.Count</strong></div>
-        <div><span>Active</span><strong class="good">@DirectoryUsers.Count(user => user.IsActive)</strong></div>
-        <div><span>Inactive</span><strong class="muted">@DirectoryUsers.Count(user => !user.IsActive)</strong></div>
-        <button class="user-primary" @onclick="OpenCreate">＋ Create user</button>
-    </div>
+<div class="user-summary">
+    <div><span>Directory accounts</span><strong>@DirectoryUsers.Count</strong></div>
+    <div><span>Active</span><strong class="good">@DirectoryUsers.Count(user => user.IsActive)</strong></div>
+    <div><span>Suspended</span><strong class="muted">@DirectoryUsers.Count(user => !user.IsActive)</strong></div>
+    <button class="user-primary" @onclick="OpenCreate" disabled="@Busy">＋ Create user</button>
+</div>
 
-    @if (!string.IsNullOrWhiteSpace(Error))
+@if (!string.IsNullOrWhiteSpace(Error)) { <div class="user-error" role="alert">@Error</div> }
+@if (!string.IsNullOrWhiteSpace(Notice)) { <div class="user-notice" role="status">@Notice</div> }
+
+<section class="sp-card user-table-card">
+    <div class="user-table-heading"><div><h2>Directory</h2><p>Accounts and group assignments</p></div><span>@DirectoryUsers.Count records</span></div>
+    @if (Loading)
     {
-        <div class="user-alert error" role="alert">@Error</div>
+        <p class="user-state" role="status">Loading users…</p>
     }
-    @if (!string.IsNullOrWhiteSpace(Success))
+    else if (DirectoryUsers.Count == 0)
     {
-        <div class="user-alert success" role="status">@Success</div>
+        <p class="user-state">No user accounts found.</p>
     }
+    else
+    {
+        <div class="user-table-scroll"><table class="user-table">
+            <thead><tr><th>Username</th><th>Email</th><th>Role</th><th>Status</th><th>Groups</th><th>Actions</th></tr></thead>
+            <tbody>
+                @foreach (var user in DirectoryUsers)
+                {
+                    <tr>
+                        <td><div class="identity-cell"><span class="user-avatar">@Initials(user.Username)</span><strong>@user.Username</strong></div></td>
+                        <td class="user-email">@user.Email</td><td>@user.Role</td>
+                        <td><span class="user-status @(user.IsActive ? "active" : "suspended")"><i></i>@(user.IsActive ? "Active" : "Suspended")</span></td>
+                        <td><div class="group-list">@foreach (var group in user.Groups) { <span>@group</span> }</div></td>
+                        <td><div class="user-actions"><button class="user-text-button" @onclick="() => OpenEdit(user)" disabled="@Busy">Edit</button><button class="user-text-button danger" @onclick="() => ChangeStatusAsync(user)" disabled="@Busy">@(user.IsActive ? "Suspend" : "Reactivate")</button></div></td>
+                    </tr>
+                }
+            </tbody>
+        </table></div>
+    }
+</section>
 
-    <section class="sp-card user-table-card" aria-busy="@Saving">
-        <div class="user-table-heading">
-            <div><h2>Directory</h2><p>Account details and group assignments</p></div>
-            <span class="user-count">@DirectoryUsers.Count records</span>
-        </div>
-        @if (DirectoryUsers.Count == 0)
-        {
-            <p class="user-state">No user accounts found.</p>
-        }
-        else
-        {
-            <div class="user-table-scroll">
-                <table class="user-table">
-                    <thead><tr><th>User name</th><th>Email</th><th>Role</th><th>Status</th><th>Groups</th><th><span class="visually-hidden">Actions</span></th></tr></thead>
-                    <tbody>
-                        @foreach (var user in DirectoryUsers)
-                        {
-                            <tr>
-                                <td><div class="identity-cell"><span class="user-avatar" aria-hidden="true">@Initials(user.Username)</span><strong>@user.Username</strong></div></td>
-                                <td class="user-email">@user.Email</td>
-                                <td>@user.Role</td>
-                                <td><span class="user-status @(user.IsActive ? "active" : "inactive")"><i></i>@(user.IsActive ? "Active" : "Inactive")</span></td>
-                                <td><div class="group-list">@if (user.Groups.Count == 0) { <span class="no-groups">No groups</span> } else { @foreach (var group in user.Groups) { <span>@group</span> } }</div></td>
-                                <td><div class="user-actions"><button class="user-text-button" @onclick="() => OpenEdit(user)">Edit</button><button class="user-text-button @(user.IsActive ? "danger" : "")" disabled="@Saving" @onclick="() => ToggleStatus(user)">@(user.IsActive ? "Deactivate" : "Activate")</button></div></td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
-        }
-    </section>
-}
-
-@if (IsModalOpen)
+@if (ModalOpen)
 {
     <div class="user-modal-backdrop" @onclick="CloseModal">
         <section class="user-modal" role="dialog" aria-modal="true" aria-labelledby="user-modal-title" @onclick:stopPropagation="true">
             <div class="user-modal-heading"><div><span>IDENTITY DIRECTORY</span><h2 id="user-modal-title">@(EditingUser is null ? "Create user" : "Edit user")</h2></div><button class="user-close" aria-label="Close" @onclick="CloseModal">×</button></div>
-            <EditForm Model="Draft" OnValidSubmit="SaveUser">
-                <DataAnnotationsValidator />
+            <form @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
                 <label>Username<input required maxlength="100" autocomplete="username" @bind="Draft.Username" /></label>
                 <label>Work email<input required type="email" maxlength="320" autocomplete="email" @bind="Draft.Email" /></label>
-                @if (EditingUser is null)
-                {
-                    <label>Temporary password<input required type="password" minlength="12" autocomplete="new-password" @bind="Draft.Password" /><small>At least 12 characters. Share it with the user securely.</small></label>
-                }
-                <label>Role<select @bind="Draft.Role"><option>User</option><option>Admin</option><option>Auditor</option><option>Operator</option></select></label>
-                <fieldset class="group-picker"><legend>Groups</legend>
-                    @if (Groups.Count == 0) { <small>No groups are available yet.</small> }
-                    @foreach (var group in Groups)
-                    {
-                        <label class="group-option"><input type="checkbox" checked="@Draft.Groups.Contains(group.Name)" @onchange="args => SetGroup(group.Name, args)" />@group.Name</label>
-                    }
-                </fieldset>
-                @if (!string.IsNullOrWhiteSpace(Error)) { <div class="user-alert error" role="alert">@Error</div> }
+                @if (EditingUser is null) { <label>Temporary password<input required type="password" minlength="12" maxlength="1024" autocomplete="new-password" @bind="Draft.Password" /><small>At least 12 characters.</small></label> }
+                <label>Role<select @bind="Draft.Role"><option>User</option><option>Operator</option><option>Auditor</option><option>Admin</option></select></label>
+                <label>Groups<input @bind="DraftGroups" placeholder="Engineering, Workforce" /><small>Enter existing group names separated by commas.</small></label>
+                @if (!string.IsNullOrWhiteSpace(FormError)) { <div class="user-error" role="alert">@FormError</div> }
                 <div class="user-modal-actions"><button type="button" class="user-cancel" @onclick="CloseModal" disabled="@Saving">Cancel</button><button type="submit" class="user-primary" disabled="@Saving">@(Saving ? "Saving…" : EditingUser is null ? "Create user" : "Save changes")</button></div>
-            </EditForm>
+            </form>
         </section>
     </div>
 }
 
 <style>
-    .user-summary{display:flex;align-items:center;gap:28px;margin:0 0 20px;padding:16px 20px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:var(--sp-shadow-sm)}
-    .user-summary div{display:flex;flex-direction:column;gap:3px}.user-summary span{font-size:12px;color:#64748b}.user-summary strong{font-size:19px}.user-summary .good{color:#087f5b}.user-summary .muted{color:#64748b}.user-summary .user-primary{margin-left:auto}
-    .user-primary,.user-cancel{display:inline-block;border:0;border-radius:5px;padding:9px 14px;font-size:13px;font-weight:650;cursor:pointer;text-decoration:none}.user-primary{background:#087f75;color:#fff}.user-primary:hover{background:#06665f}.user-cancel{background:#f1f5f9;color:#334155}
-    .user-table-card{overflow:hidden}.user-table-heading{display:flex;align-items:center;justify-content:space-between;padding:19px 22px;border-bottom:1px solid #e8edf1}.user-table-heading h2{font-size:16px;margin:0 0 4px}.user-table-heading p{margin:0;color:#64748b;font-size:12px}.user-count{color:#64748b;font-size:12px}
-    .user-table-scroll{overflow-x:auto}.user-table{width:100%;border-collapse:collapse;min-width:820px}.user-table th{padding:12px 18px;text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.6px;font-weight:700}.user-table td{padding:15px 18px;border-top:1px solid #edf0f2;font-size:13px;vertical-align:middle}.identity-cell{display:flex;align-items:center;gap:10px}.identity-cell strong{font-weight:650}.user-avatar{width:32px;height:32px;display:grid;place-items:center;background:#dff3ed;color:#087f75;border-radius:50%;font-size:10px;font-weight:700}.user-email{color:#52616b}.user-status{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:650}.user-status i{width:7px;height:7px;border-radius:50%;background:#099268}.user-status.inactive i{background:#a1aab2}.user-status.inactive{color:#64748b}.group-list{display:flex;flex-wrap:wrap;gap:5px}.group-list span{padding:4px 7px;border-radius:4px;background:#f0f5f4;color:#47635d;font-size:10px}.group-list .no-groups{padding:0;background:none;color:#64748b}.user-actions{display:flex;justify-content:flex-end;gap:12px;white-space:nowrap}.user-text-button{padding:3px;border:0;background:none;color:#087f75;font-size:12px;font-weight:650;cursor:pointer}.user-text-button.danger{color:#b5473c}.user-text-button:disabled{opacity:.5;cursor:wait}.user-text-button:hover{text-decoration:underline}
-    .user-modal-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.48)}.user-modal{width:min(100%,480px);max-height:90vh;overflow:auto;background:#fff;border-radius:8px;box-shadow:0 24px 70px rgba(15,23,42,.24);padding:24px}.user-modal-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px}.user-modal-heading span{font-size:10px;font-weight:700;color:#087f75}.user-modal-heading h2{margin:5px 0 0;font-size:21px}.user-close{border:0;background:transparent;font-size:26px;line-height:1;color:#64748b;cursor:pointer}.user-modal form{display:grid;gap:15px}.user-modal form>label{display:grid;gap:6px;font-size:12px;font-weight:650;color:#334155}.user-modal input:not([type=checkbox]),.user-modal select{width:100%;border:1px solid #cbd5dc;border-radius:5px;padding:10px 11px;font:inherit;font-size:13px}.user-modal input:focus,.user-modal select:focus{outline:2px solid #b7e1d8;border-color:#087f75}.user-modal small{font-weight:400;color:#64748b}.user-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}.group-picker{display:flex;gap:10px;flex-wrap:wrap;border:1px solid #dbe2e7;border-radius:5px;padding:10px}.group-picker legend{padding:0 5px;font-size:12px;font-weight:650}.group-option{display:flex;align-items:center;gap:6px;font-size:12px}.group-option input{accent-color:#087f75}.user-state,.user-notice{padding:20px;color:#52616b}.user-notice h2{font-size:17px}.user-alert{padding:10px 13px;border-radius:5px;margin:0 0 14px;font-size:13px}.user-alert.error{background:#fcecea;color:#9d332b}.user-alert.success{background:#e8f7ef;color:#087f5b}
-    @@media(max-width:640px){.user-summary{gap:14px;padding:14px;flex-wrap:wrap}.user-summary .user-primary{margin-left:0;width:100%;text-align:center}.user-table-heading{padding:16px}}
+    .user-summary{display:flex;align-items:center;gap:28px;margin:0 0 20px;padding:16px 20px;background:#fff;border:1px solid #e2e8f0;border-radius:8px;box-shadow:var(--sp-shadow-sm)}.user-summary div{display:flex;flex-direction:column;gap:3px}.user-summary span{font-size:12px;color:#64748b}.user-summary strong{font-size:19px}.user-summary .good{color:#087f5b}.user-summary .muted{color:#64748b}.user-summary .user-primary{margin-left:auto}
+    .user-primary,.user-cancel{border:0;border-radius:5px;padding:9px 14px;font-size:13px;font-weight:650;cursor:pointer}.user-primary{background:#087f75;color:#fff}.user-primary:disabled,.user-cancel:disabled{opacity:.6;cursor:wait}.user-cancel{background:#f1f5f9;color:#334155}.user-error,.user-notice{padding:11px 14px;border-radius:6px;margin:0 0 14px;font-size:13px}.user-error{background:#fcecea;color:#9d332b}.user-notice{background:#edf7f2;color:#087f5b}
+    .user-table-card{overflow:hidden}.user-table-heading{display:flex;align-items:center;justify-content:space-between;padding:19px 22px;border-bottom:1px solid #e8edf1}.user-table-heading h2{font-size:16px;margin:0 0 4px}.user-table-heading p{margin:0;color:#64748b;font-size:12px}.user-table-heading>span{color:#64748b;font-size:12px}.user-table-scroll{overflow-x:auto}.user-table{width:100%;border-collapse:collapse;min-width:800px}.user-table th{padding:12px 18px;text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.6px}.user-table td{padding:15px 18px;border-top:1px solid #edf0f2;font-size:13px;vertical-align:middle}.identity-cell{display:flex;align-items:center;gap:10px}.user-avatar{width:32px;height:32px;display:grid;place-items:center;background:#dff3ed;color:#087f75;border-radius:50%;font-size:10px;font-weight:700}.user-email{color:#52616b}.user-status{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:650}.user-status i{width:7px;height:7px;border-radius:50%;background:#099268}.user-status.suspended{color:#64748b}.user-status.suspended i{background:#a1aab2}.group-list{display:flex;flex-wrap:wrap;gap:5px}.group-list span{padding:4px 7px;border-radius:4px;background:#f0f5f4;color:#47635d;font-size:10px}.user-actions{display:flex;gap:12px;white-space:nowrap}.user-text-button{padding:3px;border:0;background:none;color:#087f75;font-size:12px;font-weight:650;cursor:pointer}.user-text-button.danger{color:#b5473c}.user-text-button:disabled{opacity:.5}.user-state{padding:24px;color:#64748b;font-size:13px}.user-modal-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.48)}.user-modal{width:min(100%,480px);max-height:90vh;overflow:auto;background:#fff;border-radius:8px;padding:24px;box-shadow:0 24px 70px rgba(15,23,42,.24)}.user-modal-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px}.user-modal-heading span{font-size:10px;font-weight:700;color:#087f75}.user-modal-heading h2{margin:5px 0 0;font-size:21px}.user-close{border:0;background:transparent;font-size:26px;color:#64748b;cursor:pointer}.user-modal form{display:grid;gap:14px}.user-modal label{display:grid;gap:6px;font-size:12px;font-weight:650;color:#334155}.user-modal input,.user-modal select{width:100%;border:1px solid #cbd5dc;border-radius:5px;padding:10px 11px;font:inherit;font-size:13px;background:#fff}.user-modal input:focus,.user-modal select:focus{outline:2px solid #b7e1d8;border-color:#087f75}.user-modal small{font-weight:400;color:#64748b}.user-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
+    @@media(max-width:640px){.user-summary{gap:14px;padding:14px;flex-wrap:wrap}.user-summary .user-primary{margin-left:0;width:100%}.user-table-heading{padding:16px}}
 </style>
 
 @code {
     private List<AdminUser> DirectoryUsers = [];
-    private List<AdminGroup> Groups = [];
-    private AdminUserForm Draft = new();
-    private AdminUser? EditingUser;
     private bool Loading = true;
+    private bool Busy;
     private bool Saving;
-    private bool IsModalOpen;
+    private bool ModalOpen;
+    private AdminUser? EditingUser;
+    private AdminUserForm Draft = new();
+    private string DraftGroups = "";
     private string Error = "";
-    private string Success = "";
+    private string FormError = "";
+    private string Notice = "";
 
-    protected override async Task OnInitializedAsync()
-    {
-        if (Api.AccessToken is null) { Loading = false; return; }
-        await LoadAsync();
-    }
+    protected override async Task OnInitializedAsync() => await LoadAsync();
 
     private async Task LoadAsync()
     {
         Loading = true;
         Error = "";
-        try
-        {
-            var usersTask = Api.GetUsersAsync();
-            var groupsTask = Api.GetGroupsAsync();
-            await Task.WhenAll(usersTask, groupsTask);
-            DirectoryUsers = usersTask.Result;
-            Groups = groupsTask.Result;
-        }
+        try { DirectoryUsers = await Api.GetUsersAsync(); }
         catch (Exception exception) { Error = exception.Message; }
         finally { Loading = false; }
     }
 
-    private void OpenCreate()
-    {
-        EditingUser = null;
-        Draft = new();
-        Error = "";
-        IsModalOpen = true;
-    }
+    private static string Initials(string name) => string.Join("", name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => part[0])).ToUpperInvariant();
+    private void OpenCreate() { EditingUser = null; Draft = new() { Role = "User" }; DraftGroups = ""; FormError = ""; ModalOpen = true; }
+    private void OpenEdit(AdminUser user) { EditingUser = user; Draft = new() { Username = user.Username, Email = user.Email, Role = user.Role }; DraftGroups = string.Join(", ", user.Groups); FormError = ""; ModalOpen = true; }
+    private void CloseModal() { if (!Saving) ModalOpen = false; }
 
-    private void OpenEdit(AdminUser user)
+    private async Task SaveAsync()
     {
-        EditingUser = user;
-        Draft = new() { Username = user.Username, Email = user.Email, Role = user.Role, Groups = [.. user.Groups] };
-        Error = "";
-        IsModalOpen = true;
-    }
-
-    private async Task SaveUser()
-    {
-        Saving = true;
-        Error = "";
-        Success = "";
+        Saving = true; FormError = "";
+        Draft.Groups = DraftGroups.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
         try
         {
             await Api.SaveUserAsync(Draft, EditingUser?.Id);
-            IsModalOpen = false;
-            Success = EditingUser is null ? "User created." : "User updated.";
+            ModalOpen = false; Notice = EditingUser is null ? "User account created." : "User account updated.";
             await LoadAsync();
         }
-        catch (Exception exception) { Error = exception.Message; }
+        catch (Exception exception) { FormError = exception.Message; }
         finally { Saving = false; }
     }
 
-    private async Task ToggleStatus(AdminUser user)
+    private async Task ChangeStatusAsync(AdminUser user)
     {
-        Saving = true;
-        Error = "";
-        Success = "";
-        try
-        {
-            await Api.SetUserActiveAsync(user.Id, !user.IsActive);
-            Success = user.IsActive ? "User deactivated." : "User activated.";
-            await LoadAsync();
-        }
+        Busy = true; Error = ""; Notice = "";
+        try { await Api.SetUserActiveAsync(user.Id, !user.IsActive); Notice = user.IsActive ? "User suspended." : "User reactivated."; await LoadAsync(); }
         catch (Exception exception) { Error = exception.Message; }
-        finally { Saving = false; }
+        finally { Busy = false; }
     }
-
-    private void SetGroup(string name, ChangeEventArgs args)
-    {
-        if (args.Value is true && !Draft.Groups.Contains(name)) Draft.Groups.Add(name);
-        else if (args.Value is false) Draft.Groups.Remove(name);
-    }
-
-    private void CloseModal() { if (!Saving) IsModalOpen = false; }
-    private static string Initials(string name) => string.Join("", name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => part[0])).ToUpperInvariant();
 }

@@ -1,9 +1,9 @@
-using System.Security.Claims;
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using SafePassage.Api.Contracts.Users;
+using System.Security.Claims;
 using SafePassage.Api.Data;
 using SafePassage.Api.Models;
 
@@ -16,151 +16,142 @@ public sealed class UsersController(
     ApplicationDbContext dbContext,
     IPasswordHasher<User> passwordHasher) : ControllerBase
 {
+    private static readonly HashSet<string> Roles = new(StringComparer.OrdinalIgnoreCase)
+        { "Admin", "Administrator", "Super Admin", "Auditor", "Operator", "User" };
+
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<UserSummary>>> GetAll(CancellationToken cancellationToken)
     {
         var users = await dbContext.Users.AsNoTracking()
-            .Include(user => user.UserGroups)
-            .ThenInclude(link => link.Group)
             .OrderBy(user => user.Username)
+            .Select(user => new UserSummary(user.Id, user.Username, user.Email, user.IsActive, user.Role,
+                user.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList()))
             .ToListAsync(cancellationToken);
-
-        return Ok(users.Select(ToSummary).ToList());
-    }
-
-    [HttpPost]
-    public async Task<ActionResult<UserSummary>> Create(
-        [FromBody] CreateUserRequest request,
-        CancellationToken cancellationToken)
-    {
-        var validation = Validate(request.Username, request.Email, request.Role);
-        if (validation is not null)
-            return BadRequest(new { message = validation });
-        if (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 12)
-            return BadRequest(new { message = "A password of at least 12 characters is required." });
-
-        var username = request.Username.Trim();
-        var email = request.Email.Trim();
-        if (await dbContext.Users.AnyAsync(user => user.Username == username || user.Email == email, cancellationToken))
-            return Conflict(new { message = "A user with that username or email already exists." });
-
-        var groups = await ResolveGroupsAsync(request.Groups, cancellationToken);
-        if (groups is null)
-            return BadRequest(new { message = "One or more selected groups do not exist." });
-
-        var user = new User
-        {
-            Id = Guid.NewGuid(),
-            Username = username,
-            Email = email,
-            Role = request.Role.Trim(),
-            IsActive = true
-        };
-        user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
-        foreach (var group in groups)
-            user.UserGroups.Add(new UserGroup { UserId = user.Id, GroupId = group.Id, User = user, Group = group });
-
-        dbContext.Users.Add(user);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        return CreatedAtAction(nameof(GetById), new { id = user.Id }, ToSummary(user));
+        return Ok(users);
     }
 
     [HttpGet("{id:guid}")]
     public async Task<ActionResult<UserSummary>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var user = await dbContext.Users.AsNoTracking()
-            .Include(candidate => candidate.UserGroups).ThenInclude(link => link.Group)
-            .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
-        return user is null ? NotFound() : Ok(ToSummary(user));
+            .Where(candidate => candidate.Id == id)
+            .Select(candidate => new UserSummary(candidate.Id, candidate.Username, candidate.Email, candidate.IsActive, candidate.Role,
+                candidate.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList()))
+            .SingleOrDefaultAsync(cancellationToken);
+        return user is null ? NotFound() : Ok(user);
+    }
+
+    [HttpPost]
+    public async Task<ActionResult<UserSummary>> Create([FromBody] UserRequest request, CancellationToken cancellationToken)
+    {
+        var validation = Validate(request, requirePassword: true);
+        if (validation is not null) return BadRequest(new { message = validation });
+
+        var username = request.Username!.Trim();
+        var email = request.Email!.Trim();
+        if (await dbContext.Users.AnyAsync(user => user.Username == username || user.Email == email, cancellationToken))
+            return Conflict(new { message = "That username or email is already in use." });
+
+        var groupsResult = await ResolveGroupsAsync(request.Groups, cancellationToken);
+        if (groupsResult.Error is not null) return BadRequest(new { message = groupsResult.Error });
+
+        var user = new User { Id = Guid.NewGuid(), Username = username, Email = email, Role = request.Role!.Trim(), IsActive = true };
+        user.PasswordHash = passwordHasher.HashPassword(user, request.Password!);
+        foreach (var group in groupsResult.Groups)
+            user.UserGroups.Add(new UserGroup { UserId = user.Id, GroupId = group.Id });
+        dbContext.Users.Add(user);
+        AddAudit("User Created", username);
+        try { await dbContext.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateException) { return Conflict(new { message = "That username or email is already in use." }); }
+
+        return CreatedAtAction(nameof(GetById), new { id = user.Id }, ToSummary(user, groupsResult.Groups));
     }
 
     [HttpPut("{id:guid}")]
-    public async Task<ActionResult<UserSummary>> Update(
-        Guid id,
-        [FromBody] UpdateUserRequest request,
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<UserSummary>> Update(Guid id, [FromBody] UserRequest request, CancellationToken cancellationToken)
     {
-        var validation = Validate(request.Username, request.Email, request.Role);
-        if (validation is not null)
-            return BadRequest(new { message = validation });
+        var validation = Validate(request, requirePassword: false);
+        if (validation is not null) return BadRequest(new { message = validation });
 
-        var user = await dbContext.Users
-            .Include(candidate => candidate.UserGroups)
-            .ThenInclude(link => link.Group)
+        var user = await dbContext.Users.Include(candidate => candidate.UserGroups)
             .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
-        if (user is null)
-            return NotFound();
+        if (user is null) return NotFound();
 
-        var username = request.Username.Trim();
-        var email = request.Email.Trim();
-        var duplicate = await dbContext.Users.AnyAsync(candidate => candidate.Id != id
-            && (candidate.Username == username || candidate.Email == email), cancellationToken);
-        if (duplicate)
-            return Conflict(new { message = "A user with that username or email already exists." });
+        var username = request.Username!.Trim();
+        var email = request.Email!.Trim();
+        if (await dbContext.Users.AnyAsync(candidate => candidate.Id != id
+            && (candidate.Username == username || candidate.Email == email), cancellationToken))
+            return Conflict(new { message = "That username or email is already in use." });
 
-        var groups = await ResolveGroupsAsync(request.Groups, cancellationToken);
-        if (groups is null)
-            return BadRequest(new { message = "One or more selected groups do not exist." });
+        var groupsResult = await ResolveGroupsAsync(request.Groups, cancellationToken);
+        if (groupsResult.Error is not null) return BadRequest(new { message = groupsResult.Error });
 
         user.Username = username;
         user.Email = email;
-        user.Role = request.Role.Trim();
-        var selectedGroupIds = groups.Select(group => group.Id).ToHashSet();
-        foreach (var membership in user.UserGroups.Where(link => !selectedGroupIds.Contains(link.GroupId)).ToList())
-            user.UserGroups.Remove(membership);
-        var currentGroupIds = user.UserGroups.Select(link => link.GroupId).ToHashSet();
-        foreach (var group in groups.Where(group => !currentGroupIds.Contains(group.Id)))
-            user.UserGroups.Add(new UserGroup { UserId = user.Id, GroupId = group.Id, User = user, Group = group });
-
+        user.Role = request.Role!.Trim();
+        dbContext.UserGroups.RemoveRange(user.UserGroups);
+        user.UserGroups.Clear();
+        foreach (var group in groupsResult.Groups)
+            user.UserGroups.Add(new UserGroup { UserId = user.Id, GroupId = group.Id });
+        AddAudit("User Updated", username);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Ok(ToSummary(user));
+        return Ok(ToSummary(user, groupsResult.Groups));
     }
 
     [HttpPut("{id:guid}/status")]
-    public async Task<ActionResult<UserSummary>> SetStatus(
-        Guid id,
-        [FromBody] SetUserStatusRequest request,
-        CancellationToken cancellationToken)
+    public async Task<IActionResult> SetStatus(Guid id, [FromBody] UserStatusRequest request, CancellationToken cancellationToken)
     {
-        var user = await dbContext.Users
-            .Include(candidate => candidate.UserGroups).ThenInclude(link => link.Group)
-            .SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
-        if (user is null)
-            return NotFound();
-
-        if (!request.IsActive && User.FindFirstValue(ClaimTypes.NameIdentifier) == user.Id.ToString())
-            return BadRequest(new { message = "You cannot deactivate your own account." });
-
+        var user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Id == id, cancellationToken);
+        if (user is null) return NotFound();
+        if (!request.IsActive && user.Id.ToString() == User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value)
+            return BadRequest(new { message = "You cannot deactivate your own administrator account." });
         user.IsActive = request.IsActive;
+        AddAudit(request.IsActive ? "User Reactivated" : "User Suspended", user.Username);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return Ok(ToSummary(user));
+        return NoContent();
     }
 
-    private async Task<List<Group>?> ResolveGroupsAsync(IReadOnlyList<string>? names, CancellationToken cancellationToken)
+    private static string? Validate(UserRequest request, bool requirePassword)
     {
-        var normalized = (names ?? []).Where(name => !string.IsNullOrWhiteSpace(name))
-            .Select(name => name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-        var groups = await dbContext.Groups.Where(group => normalized.Contains(group.Name))
-            .ToListAsync(cancellationToken);
-        return groups.Count == normalized.Count ? groups : null;
-    }
-
-    private static string? Validate(string? username, string? email, string? role)
-    {
-        if (string.IsNullOrWhiteSpace(username) || username.Trim().Length > 100)
-            return "Username is required and must be 100 characters or fewer.";
-        if (string.IsNullOrWhiteSpace(email) || email.Trim().Length > 320 || !email.Contains('@'))
-            return "A valid email address is required.";
-        if (string.IsNullOrWhiteSpace(role) || role.Trim().Length > 64)
-            return "Role is required and must be 64 characters or fewer.";
+        if (string.IsNullOrWhiteSpace(request.Username) || request.Username.Trim().Length > 100)
+            return "Username is required and must be at most 100 characters.";
+        if (string.IsNullOrWhiteSpace(request.Email) || request.Email.Trim().Length > 320
+            || !new EmailAddressAttribute().IsValid(request.Email.Trim()))
+            return "Enter a valid email address (maximum 320 characters).";
+        if (string.IsNullOrWhiteSpace(request.Role) || !Roles.Contains(request.Role.Trim()))
+            return "Choose a supported role.";
+        if (requirePassword && (string.IsNullOrWhiteSpace(request.Password) || request.Password.Length < 12 || request.Password.Length > 1024))
+            return "Password is required and must be at least 12 characters.";
         return null;
     }
 
-    private static UserSummary ToSummary(User user) => new(
-        user.Id,
-        user.Username,
-        user.Email,
-        user.Role,
-        user.IsActive,
-        user.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList());
+    private async Task<(List<Group> Groups, string? Error)> ResolveGroupsAsync(List<string>? requested, CancellationToken cancellationToken)
+    {
+        var names = (requested ?? []).Where(name => !string.IsNullOrWhiteSpace(name))
+            .Select(name => name.Trim()).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        var groups = await dbContext.Groups.Where(group => names.Contains(group.Name)).ToListAsync(cancellationToken);
+        if (groups.Count != names.Count) return ([], "One or more selected groups no longer exist. Refresh and try again.");
+        return (groups, null);
+    }
+
+    private static UserSummary ToSummary(User user, IEnumerable<Group> groups) =>
+        new(user.Id, user.Username, user.Email, user.IsActive, user.Role, groups.Select(group => group.Name).OrderBy(name => name).ToList());
+
+    private void AddAudit(string action, string resource)
+    {
+        var claim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        dbContext.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = Guid.TryParse(claim, out var actorId) ? actorId : null,
+            Timestamp = DateTimeOffset.UtcNow,
+            Action = action,
+            Resource = resource,
+            Status = ActivityLogStatus.Success
+        });
+    }
+
+    public sealed record UserRequest(string? Username, string? Email, string? Password, string? Role, List<string>? Groups);
+    public sealed record UserStatusRequest(bool IsActive);
+    public sealed record UserSummary(Guid Id, string Username, string Email, bool IsActive, string Role, List<string> Groups);
 }
