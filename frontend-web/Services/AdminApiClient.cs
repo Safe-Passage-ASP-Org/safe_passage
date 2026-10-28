@@ -7,6 +7,7 @@ namespace SafePassage.Web.Services;
 public sealed class AdminApiClient(HttpClient http)
 {
     public string? AccessToken { get; private set; }
+    public string? CurrentUsername { get; private set; }
 
     public async Task<LoginResult> LoginAsync(string username, string password, CancellationToken cancellationToken = default)
     {
@@ -20,6 +21,8 @@ public sealed class AdminApiClient(HttpClient http)
         var body = await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken);
         if (body is null)
             throw new InvalidOperationException("The API returned an empty sign-in response.");
+
+        CurrentUsername = username;
 
         if (!body.MfaRequired && !string.IsNullOrWhiteSpace(body.AccessToken))
             SetToken(body.AccessToken);
@@ -48,13 +51,28 @@ public sealed class AdminApiClient(HttpClient http)
         throw new InvalidOperationException($"The MFA request is {status?.Status ?? "unavailable"}. Please sign in again.");
     }
 
-    public void SignOut() => SetToken(null);
+    public void SignOut() { SetToken(null); CurrentUsername = null; }
 
     public async Task<List<AdminUser>> GetUsersAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminUser>>("api/admin/users", cancellationToken) ?? [];
 
     public async Task<List<AdminGroup>> GetGroupsAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminGroup>>("api/admin/groups", cancellationToken) ?? [];
+
+    public async Task SaveGroupAsync(AdminGroupForm group, Guid? id, CancellationToken cancellationToken = default)
+    {
+        var payload = new { group.Name, group.Description };
+        using var response = id is null
+            ? await http.PostAsJsonAsync("api/admin/groups", payload, cancellationToken)
+            : await http.PutAsJsonAsync($"api/admin/groups/{id}", payload, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task DeleteGroupAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.DeleteAsync($"api/admin/groups/{id}", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
 
     public async Task SaveUserAsync(AdminUserForm user, Guid? id, CancellationToken cancellationToken = default)
     {
@@ -63,7 +81,7 @@ public sealed class AdminApiClient(HttpClient http)
         {
             response = await http.PostAsJsonAsync("api/admin/users", new
             {
-                user.Username, user.Email, user.Password, user.Role, user.Groups
+                Username = user.Username, user.Email, user.Password, user.Role, user.Groups
             }, cancellationToken);
         }
         else
@@ -80,6 +98,61 @@ public sealed class AdminApiClient(HttpClient http)
     public async Task SetUserActiveAsync(Guid id, bool isActive, CancellationToken cancellationToken = default)
     {
         using var response = await http.PutAsJsonAsync($"api/admin/users/{id}/status", new { isActive }, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task<List<AdminDevice>> GetDevicesAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<AdminDevice>>("api/devices", cancellationToken) ?? [];
+
+    public async Task<List<AdminApplication>> GetApplicationsAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<AdminApplication>>("api/admin/applications", cancellationToken) ?? [];
+
+    public async Task<List<AdminActivity>> GetAdminActivityAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<AdminActivity>>("api/admin/activity", cancellationToken) ?? [];
+
+    public async Task<List<AdminPolicy>> GetPoliciesAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<AdminPolicy>>("api/admin/policies", cancellationToken) ?? [];
+
+    public async Task<List<AdminRole>> GetRolesAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<AdminRole>>("api/admin/roles", cancellationToken) ?? [];
+
+    public async Task SavePolicyAsync(AdminPolicyForm policy, Guid? id, CancellationToken cancellationToken = default)
+    {
+        var payload = new { policy.PolicyName, policy.PolicyType, policy.IsEnforced, policy.RulesJson };
+        using var response = id is null
+            ? await http.PostAsJsonAsync("api/admin/policies", payload, cancellationToken)
+            : await http.PutAsJsonAsync($"api/admin/policies/{id}", payload, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task SaveApplicationAsync(AdminApplicationForm application, Guid? id, CancellationToken cancellationToken = default)
+    {
+        var payload = new { application.Name, application.Description };
+        using var response = id is null
+            ? await http.PostAsJsonAsync("api/admin/applications", payload, cancellationToken)
+            : await http.PutAsJsonAsync($"api/admin/applications/{id}", payload, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task<AdminApplicationAccess> GetApplicationAccessAsync(Guid id, CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<AdminApplicationAccess>($"api/admin/applications/{id}/access", cancellationToken)
+        ?? new([], []);
+
+    public async Task SaveApplicationAccessAsync(Guid id, AdminApplicationAccess access, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PutAsJsonAsync($"api/admin/applications/{id}/access", access, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task SetDeviceTrustedAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PutAsync($"api/devices/{id}/trust", content: null, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task RevokeDeviceAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PutAsync($"api/devices/{id}/revoke", content: null, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
@@ -108,8 +181,18 @@ public sealed class AdminApiClient(HttpClient http)
 }
 
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
-public sealed record AdminUser(Guid Id, string Username, string Email, string Role, bool IsActive, List<string> Groups);
+public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, string Role, List<string> Groups);
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
+public sealed class AdminGroupForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
+public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, string DeviceType, string OS,
+    DateTimeOffset RegistrationDate, DateTimeOffset? LastActiveDate, string Status, string TrustStatus, Guid UserId);
+public sealed record AdminApplication(Guid Id, string Name, string Description, int UserAccessCount, int GroupAccessCount);
+public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
+public sealed record AdminApplicationAccess(List<Guid> UserIds, List<Guid> GroupIds);
+public sealed record AdminActivity(Guid Id, DateTimeOffset Timestamp, string Username, string Action, string Resource, string Status);
+public sealed record AdminPolicy(Guid Id, string PolicyName, string PolicyType, bool IsEnforced, string RulesJson);
+public sealed class AdminPolicyForm { public string PolicyName { get; set; } = ""; public string PolicyType { get; set; } = "Authentication"; public bool IsEnforced { get; set; } = true; public string RulesJson { get; set; } = "{}"; }
+public sealed record AdminRole(string Id, string Name, string Description);
 
 public sealed class AdminUserForm
 {
