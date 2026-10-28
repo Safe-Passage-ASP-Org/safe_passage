@@ -50,9 +50,15 @@ public static class DbInitializer
         var device = dbContext.Devices.FirstOrDefault(d => d.DeviceId == "PRIMARY-ANDROID-001");
         if (device is null)
         {
+            // A previous enrollment or database restore may already use the fixed test GUID
+            // for a different device. Preserve that record and give this seed device a new ID.
+            var seedDeviceId = dbContext.Devices.Any(d => d.Id == TestDeviceId)
+                ? Guid.NewGuid()
+                : TestDeviceId;
+
             device = new Device
             {
-                Id = TestDeviceId,
+                Id = seedDeviceId,
                 UserId = user.Id,
                 DeviceId = "PRIMARY-ANDROID-001",
                 DeviceName = "John's Primary Android",
