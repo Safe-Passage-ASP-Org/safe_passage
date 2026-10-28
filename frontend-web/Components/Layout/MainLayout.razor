@@ -1,4 +1,6 @@
 @inherits LayoutComponentBase
+@inject SafePassage.Web.Services.AdminApiClient Api
+@inject NavigationManager Navigation
 
 <div class="sp-shell">
 
@@ -22,12 +24,12 @@
 
                 <!-- Notification Bell -->
                 <div class="sp-bell-wrapper" title="Security Alerts">
-                    <button class="sp-icon-btn" aria-label="Security Alerts">
+                    <a class="sp-icon-btn" aria-label="Security Alerts" href="/alerts">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                             <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 1 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z"/>
                         </svg>
                         <span class="sp-badge">3</span>
-                    </button>
+                    </a>
                 </div>
 
                 <!-- Profile Dropdown -->
@@ -36,18 +38,17 @@
                             data-bs-toggle="dropdown" aria-expanded="false">
                         <div class="sp-avatar">AD</div>
                         <div class="sp-profile-info">
-                            <span class="sp-profile-name">Admin</span>
-                            <span class="sp-profile-role">Super Administrator</span>
+                            <span class="sp-profile-name">@(Api.CurrentUsername ?? "Administrator")</span>
+                            <span class="sp-profile-role">Administrator</span>
                         </div>
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" class="ms-2 text-muted">
                             <path d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"/>
                         </svg>
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end sp-dropdown">
-                        <li><a class="dropdown-item" href="#">My Profile</a></li>
-                        <li><a class="dropdown-item" href="#">Account Settings</a></li>
+                        <li><a class="dropdown-item" href="/settings">Account Settings</a></li>
                         <li><hr class="dropdown-divider" /></li>
-                        <li><a class="dropdown-item text-danger" href="#">Sign Out</a></li>
+                        <li><button class="dropdown-item text-danger" @onclick="SignOut">Sign Out</button></li>
                     </ul>
                 </div>
             </div>
@@ -59,6 +60,20 @@
         </main>
     </div>
 </div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        if (string.IsNullOrWhiteSpace(Api.AccessToken))
+            Navigation.NavigateTo("/login");
+    }
+
+    private void SignOut()
+    {
+        Api.SignOut();
+        Navigation.NavigateTo("/login", forceLoad: true);
+    }
+}
 
 <!-- Blazor error UI -->
 <div id="blazor-error-ui" data-nosnippet>
