@@ -8,6 +8,7 @@ import { StatusBar } from 'expo-status-bar';
 
 // Screens
 import LoginScreen from './screens/LoginScreen';
+import DeviceEnrollmentScreen from './screens/DeviceEnrollmentScreen';
 import MfaApprovalScreen from './screens/MfaApprovalScreen';
 import DashboardScreen from './screens/DashboardScreen';
 import DevicesScreen from './screens/DevicesScreen';
@@ -96,6 +97,11 @@ export default function App() {
       <StatusBar style="light" />
       <Stack.Navigator initialRouteName={restoredSession ? 'Main' : 'Login'} screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Login"       component={LoginScreen} />
+        <Stack.Screen
+          name="DeviceEnrollment"
+          component={DeviceEnrollmentScreen}
+          options={{ headerShown: true, title: 'Set up this phone', headerStyle: { backgroundColor: '#0f172a' }, headerTintColor: '#fff' }}
+        />
         <Stack.Screen name="Main"        component={MainTabs} />
         <Stack.Screen
           name="MfaApproval"
