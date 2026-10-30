@@ -56,6 +56,9 @@ public sealed class AdminApiClient(HttpClient http)
     public async Task<List<AdminUser>> GetUsersAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminUser>>("api/admin/users", cancellationToken) ?? [];
 
+    public async Task<List<AdminRole>> GetRolesAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<AdminRole>>("api/admin/roles", cancellationToken) ?? [];
+
     public async Task<List<AdminGroup>> GetGroupsAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminGroup>>("api/admin/groups", cancellationToken) ?? [];
 
@@ -112,9 +115,6 @@ public sealed class AdminApiClient(HttpClient http)
 
     public async Task<List<AdminPolicy>> GetPoliciesAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminPolicy>>("api/admin/policies", cancellationToken) ?? [];
-
-    public async Task<List<AdminRole>> GetRolesAsync(CancellationToken cancellationToken = default) =>
-        await http.GetFromJsonAsync<List<AdminRole>>("api/admin/roles", cancellationToken) ?? [];
 
     public async Task SavePolicyAsync(AdminPolicyForm policy, Guid? id, CancellationToken cancellationToken = default)
     {
