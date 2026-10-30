@@ -1,51 +1,65 @@
 @page "/policies"
 @rendermode InteractiveServer
+@using System.Text.Json
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
 
 <PageTitle>Security Policies – Safe Passage</PageTitle>
-
-<div class="sp-page-header">
-    <h1 class="sp-page-title">Security Policies</h1>
-    <p class="sp-page-subtitle">Define and enforce conditional access, device trust, and risk-based authentication policies.</p>
-</div>
-
-<div class="policy-layout">
-    <section class="sp-card policy-form-card">
-        <div class="policy-heading"><div><span>BASELINE POLICY</span><h2>Authentication &amp; access</h2><p>Set organization-wide requirements for identity and device security.</p></div><span class="policy-live"><i></i>Enforced</span></div>
-        <form @onsubmit="SavePolicy" @onsubmit:preventDefault="true">
-            <div class="policy-control password-control">
-                <div class="policy-control-copy"><strong>Minimum password length</strong><p>Require at least this many characters in account passwords.</p></div>
-                <label class="password-input"><input type="number" min="8" max="64" @bind="MinimumPasswordLength" /><span>characters</span></label>
+<div class="sp-page-header"><h1 class="sp-page-title">Security Policies</h1><p class="sp-page-subtitle">Manage enforced authentication and device trust rules.</p></div>
+<div class="policy-toolbar"><span>@PolicyRecords.Count policies · @PolicyRecords.Count(policy => policy.IsEnforced) enforced</span><button class="policy-save" @onclick="CreatePolicy" disabled="@Saving">＋ Add policy</button></div>
+@if (!string.IsNullOrWhiteSpace(Error)) { <div class="policy-alert" role="alert">@Error</div> }
+@if (!string.IsNullOrWhiteSpace(Notice)) { <div class="policy-notice" role="status">@Notice</div> }
+<p class="policy-note">Enforced authentication and device policies combine: if any enforced policy requires MFA or a trusted device, the stricter requirement remains in effect.</p>
+@if (Loading) { <div class="sp-card policy-empty" role="status">Loading policies…</div> }
+else if (PolicyRecords.Count == 0) { <div class="sp-card policy-empty">No policies configured. Add a policy to define device and MFA requirements.</div> }
+else
+{
+    <div class="policy-grid">
+    @foreach (var policy in PolicyRecords)
+    {
+        <article class="sp-card policy-card"><div class="policy-card-head"><span class="policy-kind">@policy.PolicyType</span><span class="policy-badge @(policy.IsEnforced ? "on" : "off")">@(policy.IsEnforced ? "Enforced" : "Disabled")</span></div><h2>@policy.PolicyName</h2>
+            <div class="policy-rule-list">@foreach (var rule in DescribeRules(policy.RulesJson)) { <span>@rule</span> }</div><button @onclick="() => EditPolicy(policy)">Edit policy</button></article>
+    }
+    </div>
+}
+@if (Editing is not null)
+{
+    <div class="policy-backdrop"><section class="policy-modal" role="dialog" aria-modal="true" aria-labelledby="policy-modal-title">
+        <header><div><small>SECURITY POLICY</small><h2 id="policy-modal-title">@(IsNew ? "Add policy" : "Edit policy")</h2></div><button aria-label="Close" @onclick="CloseEditor">×</button></header>
+        <form @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
+            <label>Policy name<input required maxlength="200" @bind="Draft.PolicyName" /></label>
+            <label>Policy type<select @bind="Draft.PolicyType"><option>Authentication</option><option>Device</option></select></label>
+            <label class="policy-check"><input type="checkbox" @bind="Draft.IsEnforced" /> Enforce this policy</label>
+            <div class="policy-rules">
+                <label class="policy-check"><input type="checkbox" @bind="Rules.RequireTrustedDevice" /> Require a trusted device</label>
+                <label class="policy-check"><input type="checkbox" @bind="MfaEnforced" /> Require MFA / step-up verification</label>
+                <label class="policy-check"><input type="checkbox" @bind="Rules.AllowMfaBypass" /> Allow trusted-device MFA bypass</label>
             </div>
-            <div class="policy-control">
-                <div class="policy-control-copy"><strong>Require uppercase</strong><p>Passwords must contain at least one uppercase letter.</p></div>
-                <label class="policy-toggle"><input type="checkbox" @bind="RequireUppercase" /><span></span><b>@(RequireUppercase ? "On" : "Off")</b></label>
-            </div>
-            <div class="policy-control">
-                <div class="policy-control-copy"><strong>Administrator MFA</strong><p>Administrators must use multi-factor authentication to sign in.</p></div>
-                <label class="policy-toggle"><input type="checkbox" @bind="RequireAdminMfa" /><span></span><b>@(RequireAdminMfa ? "On" : "Off")</b></label>
-            </div>
-            <div class="policy-control">
-                <div class="policy-control-copy"><strong>Trusted devices for sensitive apps</strong><p>Only trusted devices can access applications marked sensitive.</p></div>
-                <label class="policy-toggle"><input type="checkbox" @bind="TrustedDevicesForSensitiveApps" /><span></span><b>@(TrustedDevicesForSensitiveApps ? "On" : "Off")</b></label>
-            </div>
-            <div class="policy-footer"><span class="policy-saved">@(HasSaved ? "Changes saved locally" : "Unsaved changes")</span><button type="submit" class="policy-save">Save policy</button></div>
+            <p class="posture-note">Screen-lock and device-integrity flags are preserved when editing, but this version does not collect or enforce those checks.</p>
+            @if (!string.IsNullOrWhiteSpace(FormError)) { <div class="policy-alert" role="alert">@FormError</div> }
+            <footer><button type="button" class="policy-cancel" @onclick="CloseEditor" disabled="@Saving">Cancel</button><button type="submit" class="policy-save" disabled="@Saving">@(Saving ? "Saving…" : "Save policy")</button></footer>
         </form>
-    </section>
-    <aside class="policy-side-note"><span class="policy-shield">✓</span><h2>Organization baseline</h2><p>These settings apply across all connected applications. Per-application access rules can add stricter requirements.</p><div><span>Policy status</span><strong>Active</strong></div><div><span>Last updated</span><strong>@(HasSaved ? "Just now" : "Sep 18, 2026")</strong></div></aside>
-</div>
-
+    </section></div>
+}
 <style>
-    .policy-layout{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:16px;align-items:start}.policy-form-card{overflow:hidden}.policy-heading{display:flex;justify-content:space-between;align-items:flex-start;padding:21px 23px;border-bottom:1px solid #e8edf1}.policy-heading>div>span{font-size:10px;color:#087f75;font-weight:750}.policy-heading h2{font-size:18px;margin:5px 0}.policy-heading p{font-size:12px;color:#64748b;margin:0;max-width:480px;line-height:1.5}.policy-live{display:flex;align-items:center;gap:6px;color:#087f5b;font-size:10px;font-weight:700;padding:6px 8px;border-radius:4px;background:#edf7f2;white-space:nowrap}.policy-live i{width:6px;height:6px;border-radius:50%;background:#099268}.policy-control{display:flex;align-items:center;justify-content:space-between;gap:18px;padding:18px 23px;border-bottom:1px solid #edf0f2}.policy-control-copy strong{font-size:13px}.policy-control-copy p{margin:5px 0 0;color:#64748b;font-size:11px;line-height:1.45}.password-input{display:flex;align-items:center;gap:7px;white-space:nowrap;color:#64748b;font-size:11px}.password-input input{width:76px;border:1px solid #cbd5dc;border-radius:5px;padding:8px 9px;font-size:13px;font-weight:650;color:#172b32}.password-input input:focus{outline:2px solid #b7e1d8;border-color:#087f75}.policy-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;flex-shrink:0}.policy-toggle input{position:absolute;opacity:0;width:1px;height:1px}.policy-toggle>span{width:34px;height:19px;border-radius:12px;background:#cbd5dc;position:relative;transition:background .15s}.policy-toggle>span:after{content:"";position:absolute;width:15px;height:15px;left:2px;top:2px;border-radius:50%;background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.18);transition:transform .15s}.policy-toggle input:checked+span{background:#087f75}.policy-toggle input:checked+span:after{transform:translateX(15px)}.policy-toggle input:focus-visible+span{outline:2px solid #65b9a8;outline-offset:2px}.policy-toggle b{font-size:10px;color:#64748b;min-width:19px}.policy-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 23px}.policy-saved{font-size:11px;color:#64748b}.policy-save{border:0;border-radius:5px;padding:9px 15px;background:#087f75;color:#fff;font-size:12px;font-weight:650;cursor:pointer}.policy-save:hover{background:#06665f}.policy-side-note{padding:18px;background:#e9f3f0;border:1px solid #d5e6df;border-radius:7px}.policy-shield{display:grid;place-items:center;width:29px;height:29px;border-radius:6px;background:#fff;color:#087f75;font-weight:800}.policy-side-note h2{font-size:14px;margin:13px 0 6px}.policy-side-note p{font-size:11px;color:#526b64;line-height:1.55;margin:0 0 16px}.policy-side-note div{display:flex;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid #d5e6df;font-size:10px}.policy-side-note div span{color:#607a72}.policy-side-note div strong{color:#334e47}
-    @@media(max-width:800px){.policy-layout{grid-template-columns:1fr}.policy-side-note{display:none}}
-    @@media(max-width:560px){.policy-heading,.policy-control{padding:16px}.policy-control{align-items:flex-start}.policy-control-copy{max-width:70%}.policy-heading p{max-width:280px}.policy-live{font-size:0;padding:8px}.policy-live i{width:7px;height:7px}.policy-footer{padding:14px 16px}}
+    .policy-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;color:#64748b;font-size:12px}.policy-save,.policy-cancel{border:0;border-radius:5px;padding:9px 14px;font-size:12px;font-weight:650;cursor:pointer}.policy-save{background:#087f75;color:#fff}.policy-cancel{background:#f1f5f9;color:#334155}.policy-save:disabled,.policy-cancel:disabled{opacity:.6}.policy-alert,.policy-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.policy-alert{background:#fcecea;color:#9d332b}.policy-notice{background:#edf7f2;color:#087f5b}.policy-note,.posture-note{padding:12px 14px;border:1px solid #e5d5a8;border-radius:6px;background:#fffaf0;color:#715c37;font-size:12px;line-height:1.5}.posture-note{margin:0;font-size:11px}.policy-empty{padding:24px;color:#64748b;font-size:13px}.policy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:14px}.policy-card{padding:18px}.policy-card-head{display:flex;justify-content:space-between;align-items:center}.policy-kind{color:#087f75;text-transform:uppercase;font-size:10px;font-weight:750;letter-spacing:.5px}.policy-badge{padding:4px 8px;border-radius:12px;font-size:10px;font-weight:700}.policy-badge.on{background:#edf7f2;color:#087f5b}.policy-badge.off{background:#f2f4f6;color:#64748b}.policy-card h2{font-size:16px;margin:15px 0}.policy-rule-list{display:flex;flex-wrap:wrap;gap:6px;min-height:36px}.policy-rule-list span{padding:4px 7px;border-radius:4px;background:#f0f5f4;color:#47635d;font-size:10px}.policy-card>button{margin-top:15px;border:0;background:none;color:#087f75;font-weight:650;font-size:12px;cursor:pointer}.policy-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:18px;background:#0f172a80}.policy-modal{width:min(100%,520px);max-height:90vh;overflow:auto;border-radius:8px;background:#fff;padding:23px;box-shadow:0 20px 60px #0f172a40}.policy-modal header{display:flex;justify-content:space-between;margin-bottom:20px}.policy-modal header small{font-size:10px;color:#087f75;font-weight:700}.policy-modal h2{font-size:20px;margin:5px 0}.policy-modal header button{border:0;background:none;color:#64748b;font-size:25px;cursor:pointer}.policy-modal form{display:grid;gap:13px}.policy-modal form>label:not(.policy-check){display:grid;gap:6px;font-size:12px;font-weight:650;color:#334155}.policy-modal input:not([type=checkbox]),.policy-modal select{border:1px solid #cbd5dc;border-radius:5px;padding:9px;font:inherit;font-size:13px}.policy-check{display:flex;gap:9px;align-items:center;color:#334155;font-size:12px}.policy-check input{accent-color:#087f75}.policy-rules{display:grid;grid-template-columns:1fr 1fr;gap:10px;border-top:1px solid #edf0f2;padding-top:13px}.policy-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
+    @@media(max-width:560px){.policy-rules{grid-template-columns:1fr}}
 </style>
-
 @code {
-    private int MinimumPasswordLength = 14;
-    private bool RequireUppercase = true;
-    private bool RequireAdminMfa = true;
-    private bool TrustedDevicesForSensitiveApps = true;
-    private bool HasSaved;
-
-    private void SavePolicy() => HasSaved = true;
+    private List<AdminPolicy> PolicyRecords = [];
+    private AdminPolicyForm Draft = new();
+    private AdminPolicy? Editing;
+    private PolicyRules Rules = new();
+    private bool Loading = true, Saving, IsNew;
+    private string Error = "", FormError = "", Notice = "";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private bool MfaEnforced { get => Rules.RequireMfa || Rules.RequireStepUp; set { Rules.RequireMfa = value; Rules.RequireStepUp = value; } }
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private async Task LoadAsync() { Loading = true; Error = ""; try { PolicyRecords = await Api.GetPoliciesAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
+    private static List<string> DescribeRules(string json) { try { var rules = JsonSerializer.Deserialize<PolicyRules>(json, JsonOptions) ?? new(); var enabled = new List<string>(); if (rules.RequireMfa) enabled.Add("MFA required"); if (rules.RequireTrustedDevice) enabled.Add("Trusted device required"); if (rules.RequireStepUp) enabled.Add("Step-up required"); if (rules.AllowMfaBypass) enabled.Add("MFA bypass allowed"); if (rules.RequireScreenLock || rules.BlockRooted || rules.BlockJailbroken) enabled.Add("Device posture flag stored (not enforced)"); return enabled; } catch { return ["Invalid policy rules JSON"]; } }
+    private void CreatePolicy() { IsNew = true; Editing = new(Guid.Empty, "", "Authentication", true, "{}"); Draft = new() { PolicyType = "Authentication", IsEnforced = true }; Rules = new() { RequireMfa = true, RequireTrustedDevice = true, RequireStepUp = true }; FormError = ""; }
+    private void EditPolicy(AdminPolicy policy) { IsNew = false; Editing = policy; Draft = new() { PolicyName = policy.PolicyName, PolicyType = policy.PolicyType, IsEnforced = policy.IsEnforced, RulesJson = policy.RulesJson }; try { Rules = JsonSerializer.Deserialize<PolicyRules>(policy.RulesJson, JsonOptions) ?? new(); } catch { Rules = new(); FormError = "The stored policy JSON was invalid; saving will replace it with valid rules."; } }
+    private void CloseEditor() { if (!Saving) Editing = null; }
+    private async Task SaveAsync() { Saving = true; FormError = ""; Draft.RulesJson = JsonSerializer.Serialize(new { requiresTrustedDevice = Rules.RequireTrustedDevice, allowTrustedDeviceMfaBypass = Rules.AllowMfaBypass, requiresStepUp = Rules.RequireStepUp, requireMfa = Rules.RequireMfa, requiresScreenLock = Rules.RequireScreenLock, blockRootedDevice = Rules.BlockRooted, blockJailbrokenDevice = Rules.BlockJailbroken }); try { await Api.SavePolicyAsync(Draft, IsNew ? null : Editing?.Id); Editing = null; Notice = "Security policy saved."; await LoadAsync(); } catch (Exception ex) { FormError = ex.Message; } finally { Saving = false; } }
+    private sealed class PolicyRules { public bool RequireTrustedDevice { get; set; } public bool AllowMfaBypass { get; set; } public bool RequireStepUp { get; set; } public bool RequireMfa { get; set; } public bool RequireScreenLock { get; set; } public bool BlockRooted { get; set; } public bool BlockJailbroken { get; set; } }
 }

@@ -47,6 +47,21 @@ public sealed class AuthFlowService(
             user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
 
         var policy = await securityPolicyEvaluator.EvaluateAsync(cancellationToken);
+        if (policy.IsValid && !policy.RequiresStepUp)
+        {
+            AddActivity(user.Id, "Login", "MFA not required by enforced policy", ActivityLogStatus.Success);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Success(new(
+                false,
+                null,
+                request.DeviceId,
+                null,
+                null,
+                jwtTokenService.CreateAccessToken(user),
+                "Bearer",
+                "Credentials accepted; no MFA challenge is required by the enforced policy."));
+        }
+
         if (policy.IsValid && policy.AllowsTrustedDeviceMfaBypass && !string.IsNullOrWhiteSpace(request.DeviceId))
         {
             var trustedDevice = await dbContext.Devices.FirstOrDefaultAsync(candidate =>

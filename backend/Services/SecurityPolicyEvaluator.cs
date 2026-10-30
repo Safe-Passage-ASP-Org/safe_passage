@@ -10,7 +10,8 @@ public sealed record SecurityPolicyEvaluation(
     bool IsValid,
     bool RequiresScreenLock = false,
     bool BlocksRootedDevices = false,
-    bool BlocksJailbrokenDevices = false);
+    bool BlocksJailbrokenDevices = false,
+    bool RequiresStepUp = true);
 
 public interface ISecurityPolicyEvaluator
 {
@@ -33,6 +34,7 @@ public sealed class SecurityPolicyEvaluator(ApplicationDbContext dbContext) : IS
         var requiresScreenLock = false;
         var blocksRootedDevices = false;
         var blocksJailbrokenDevices = false;
+        var hasApplicablePolicy = false;
 
         foreach (var policy in policies)
         {
@@ -43,6 +45,8 @@ public sealed class SecurityPolicyEvaluator(ApplicationDbContext dbContext) : IS
                 && !policyType.Equals("Authentication", StringComparison.OrdinalIgnoreCase)
                 && !policyType.Equals("AuthenticationPolicy", StringComparison.OrdinalIgnoreCase))
                 continue;
+
+            hasApplicablePolicy = true;
 
             try
             {
@@ -71,13 +75,17 @@ public sealed class SecurityPolicyEvaluator(ApplicationDbContext dbContext) : IS
             }
         }
 
+        if (!hasApplicablePolicy)
+            requiresStepUp = true;
+
         return new(
             requiresTrustedDevice,
             allowsMfaBypass && !disallowsMfaBypass && !requiresStepUp,
             true,
             requiresScreenLock,
             blocksRootedDevices,
-            blocksJailbrokenDevices);
+            blocksJailbrokenDevices,
+            requiresStepUp);
     }
 
     private static bool TryReadBoolean(JsonElement root, string propertyName, out bool? value)
