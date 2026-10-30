@@ -1,77 +1,98 @@
 @page "/devices"
 @rendermode InteractiveServer
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
 
 <PageTitle>Devices – Safe Passage</PageTitle>
 
-<div class="sp-page-header">
-    <h1 class="sp-page-title">Devices</h1>
-    <p class="sp-page-subtitle">View and manage all registered devices, their trust status, and hardware fingerprints.</p>
-</div>
+<div class="sp-page-header"><h1 class="sp-page-title">Devices</h1><p class="sp-page-subtitle">Review device enrollment and manage trust for registered devices.</p></div>
 
 <div class="device-stats">
-    <div><span>Trusted</span><strong>@RegisteredDevices.Count(device => device.TrustStatus == "Trusted")</strong></div>
-    <div><span>Pending</span><strong class="pending">@RegisteredDevices.Count(device => device.Status == "Pending")</strong></div>
-    <div><span>Disabled</span><strong class="disabled">@RegisteredDevices.Count(device => device.Status == "Disabled")</strong></div>
+    <div><span>Trusted</span><strong>@RegisteredDevices.Count(device => device.TrustStatus == "TRUSTED" && device.Status == "ACTIVE")</strong></div>
+    <div><span>Pending</span><strong class="pending">@RegisteredDevices.Count(device => device.Status == "PENDING_APPROVAL")</strong></div>
+    <div><span>Disabled</span><strong class="disabled">@RegisteredDevices.Count(device => device.Status == "DISABLED")</strong></div>
 </div>
+@if (!string.IsNullOrWhiteSpace(Error)) { <div class="device-alert" role="alert">@Error</div> }
+@if (!string.IsNullOrWhiteSpace(Notice)) { <div class="device-notice" role="status">@Notice</div> }
 
 <section class="sp-card device-card">
     <div class="device-heading"><div><h2>Registered devices</h2><p>Trust posture and assigned owners</p></div><span>@RegisteredDevices.Count devices</span></div>
-    <div class="device-scroll"><table class="device-table">
-        <thead><tr><th>Device name</th><th>Assigned user</th><th>Operating system</th><th>Device status</th><th>Trust</th><th>Actions</th></tr></thead>
-        <tbody>
-            @foreach (var device in RegisteredDevices)
-            {
-                <tr>
-                    <td><div class="device-name"><span class="device-glyph">▣</span><strong>@device.Name</strong></div></td>
-                    <td>@device.User</td><td class="device-os">@device.Os</td>
-                    <td><span class="device-pill @device.Status.ToLowerInvariant()">@device.Status</span></td>
-                    <td><span class="trust-pill @device.TrustStatus.ToLowerInvariant()"><i></i>@device.TrustStatus</span></td>
-                    <td><div class="device-actions"><button @onclick="() => MarkTrusted(device)" disabled="@(device.TrustStatus == "Trusted" || device.Status == "Disabled")">Mark as trusted</button><button class="disable" @onclick="() => DisableDevice(device)" disabled="@(device.Status == "Disabled")">Disable</button><button class="details" @onclick="() => SelectedDevice = device">Details</button></div></td>
-                </tr>
-            }
-        </tbody>
-    </table></div>
+    @if (Loading) { <p class="device-state" role="status">Loading devices…</p> }
+    else if (RegisteredDevices.Count == 0) { <p class="device-state">No devices are registered.</p> }
+    else
+    {
+        <div class="device-scroll"><table class="device-table">
+            <thead><tr><th>Device name</th><th>Assigned user</th><th>Operating system</th><th>Device status</th><th>Trust</th><th>Actions</th></tr></thead>
+            <tbody>
+                @foreach (var device in RegisteredDevices)
+                {
+                    <tr>
+                        <td><div class="device-name"><span class="device-glyph">▣</span><strong>@device.DeviceName</strong></div><small>@device.DeviceId</small></td>
+                        <td>@(UserNames.GetValueOrDefault(device.UserId) ?? "Unknown user")</td><td class="device-os">@device.OS</td>
+                        <td><span class="device-pill @StatusClass(device.Status)">@FormatStatus(device.Status)</span></td>
+                        <td><span class="trust-pill @(device.TrustStatus == "TRUSTED" ? "" : "untrusted")"><i></i>@FormatStatus(device.TrustStatus)</span></td>
+                        <td><div class="device-actions"><button @onclick="() => TrustAsync(device)" disabled="@(Busy || device.Status == "DISABLED" || device.TrustStatus == "TRUSTED")">Trust</button><button class="disable" @onclick="() => RevokeAsync(device)" disabled="@(Busy || device.Status == "DISABLED")">Disable</button><button class="details" @onclick="() => SelectedDevice = device">Details</button></div></td>
+                    </tr>
+                }
+            </tbody>
+        </table></div>
+    }
 </section>
 
 @if (SelectedDevice is not null)
 {
     <div class="device-backdrop" @onclick="() => SelectedDevice = null">
         <section class="device-modal" role="dialog" aria-modal="true" aria-labelledby="device-detail-title" @onclick:stopPropagation="true">
-            <div class="device-modal-heading"><div><span>DEVICE RECORD</span><h2 id="device-detail-title">@SelectedDevice.Name</h2></div><button aria-label="Close" @onclick="() => SelectedDevice = null">×</button></div>
-            <dl><dt>Assigned user</dt><dd>@SelectedDevice.User</dd><dt>Operating system</dt><dd>@SelectedDevice.Os</dd><dt>Device status</dt><dd>@SelectedDevice.Status</dd><dt>Trust status</dt><dd>@SelectedDevice.TrustStatus</dd><dt>Last seen</dt><dd>@SelectedDevice.LastSeen</dd><dt>Device ID</dt><dd>@SelectedDevice.Id</dd></dl>
+            <div class="device-modal-heading"><div><span>DEVICE RECORD</span><h2 id="device-detail-title">@SelectedDevice.DeviceName</h2></div><button aria-label="Close" @onclick="() => SelectedDevice = null">×</button></div>
+            <dl><dt>Assigned user</dt><dd>@(UserNames.GetValueOrDefault(SelectedDevice.UserId) ?? "Unknown user")</dd><dt>Operating system</dt><dd>@SelectedDevice.OS</dd><dt>Device status</dt><dd>@FormatStatus(SelectedDevice.Status)</dd><dt>Trust status</dt><dd>@FormatStatus(SelectedDevice.TrustStatus)</dd><dt>Registered</dt><dd>@SelectedDevice.RegistrationDate.ToLocalTime().ToString("g")</dd><dt>Last active</dt><dd>@(SelectedDevice.LastActiveDate?.ToLocalTime().ToString("g") ?? "Never")</dd><dt>Device ID</dt><dd>@SelectedDevice.DeviceId</dd></dl>
             <button class="device-done" @onclick="() => SelectedDevice = null">Done</button>
         </section>
     </div>
 }
 
 <style>
-    .device-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}.device-stats div{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;background:#fff;border:1px solid #e2e8f0;border-radius:7px}.device-stats span{color:#64748b;font-size:12px}.device-stats strong{font-size:20px;color:#087f5b}.device-stats .pending{color:#b7791f}.device-stats .disabled{color:#b5473c}
-    .device-card{overflow:hidden}.device-heading{display:flex;justify-content:space-between;align-items:center;padding:18px 21px;border-bottom:1px solid #e8edf1}.device-heading h2{font-size:16px;margin:0 0 4px}.device-heading p,.device-heading>span{font-size:12px;color:#64748b;margin:0}.device-scroll{overflow:auto}.device-table{width:100%;min-width:920px;border-collapse:collapse}.device-table th{padding:12px 15px;text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px}.device-table td{padding:14px 15px;border-top:1px solid #edf0f2;font-size:12px;white-space:nowrap}.device-name{display:flex;align-items:center;gap:9px}.device-name strong{font-size:13px}.device-glyph{width:28px;height:28px;display:grid;place-items:center;border-radius:5px;background:#e9f3f1;color:#087f75;font-size:15px}.device-os{color:#52616b}.device-pill,.trust-pill{display:inline-flex;align-items:center;gap:6px;border-radius:12px;padding:4px 8px;font-size:10px;font-weight:650;background:#edf7f2;color:#087f5b}.device-pill.pending{background:#fff5df;color:#936115}.device-pill.disabled{background:#fcecea;color:#a53e34}.trust-pill{background:#edf7f2}.trust-pill.untrusted{background:#f2f4f6;color:#64748b}.trust-pill i{width:6px;height:6px;border-radius:50%;background:currentColor}.device-actions{display:flex;gap:8px}.device-actions button{border:0;background:none;padding:4px 0;color:#087f75;font-size:11px;font-weight:650;cursor:pointer}.device-actions button.disable{color:#b5473c}.device-actions button.details{color:#53636d}.device-actions button:disabled{color:#aab3ba;cursor:not-allowed}
-    .device-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.48)}.device-modal{width:min(100%,440px);padding:23px;background:#fff;border-radius:8px;box-shadow:0 24px 70px rgba(15,23,42,.24)}.device-modal-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}.device-modal-heading span{font-size:10px;color:#087f75;font-weight:700}.device-modal-heading h2{font-size:20px;margin:5px 0}.device-modal-heading button{border:0;background:none;color:#64748b;font-size:25px;cursor:pointer}.device-modal dl{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:0}.device-modal dt,.device-modal dd{padding:10px 0;border-top:1px solid #edf0f2;font-size:12px}.device-modal dt{color:#64748b}.device-modal dd{margin:0;text-align:right;font-weight:600}.device-done{display:block;margin:20px 0 0 auto;border:0;border-radius:5px;background:#087f75;color:#fff;padding:9px 16px;font-weight:650;cursor:pointer}
+    .device-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}.device-stats div{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;background:#fff;border:1px solid #e2e8f0;border-radius:7px}.device-stats span{color:#64748b;font-size:12px}.device-stats strong{font-size:20px;color:#087f5b}.device-stats .pending{color:#b7791f}.device-stats .disabled{color:#b5473c}.device-alert,.device-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.device-alert{background:#fcecea;color:#9d332b}.device-notice{background:#edf7f2;color:#087f5b}
+    .device-card{overflow:hidden}.device-heading{display:flex;justify-content:space-between;align-items:center;padding:18px 21px;border-bottom:1px solid #e8edf1}.device-heading h2{font-size:16px;margin:0 0 4px}.device-heading p,.device-heading>span{font-size:12px;color:#64748b;margin:0}.device-scroll{overflow:auto}.device-table{width:100%;min-width:920px;border-collapse:collapse}.device-table th{padding:12px 15px;text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px}.device-table td{padding:14px 15px;border-top:1px solid #edf0f2;font-size:12px;white-space:nowrap}.device-table td small{display:block;color:#64748b;margin:4px 0 0 37px}.device-name{display:flex;align-items:center;gap:9px}.device-name strong{font-size:13px}.device-glyph{width:28px;height:28px;display:grid;place-items:center;border-radius:5px;background:#e9f3f1;color:#087f75;font-size:15px}.device-os{color:#52616b}.device-pill,.trust-pill{display:inline-flex;align-items:center;gap:6px;border-radius:12px;padding:4px 8px;font-size:10px;font-weight:650;background:#edf7f2;color:#087f5b}.device-pill.pending{background:#fff5df;color:#936115}.device-pill.disabled{background:#fcecea;color:#a53e34}.trust-pill.untrusted{background:#f2f4f6;color:#64748b}.trust-pill i{width:6px;height:6px;border-radius:50%;background:currentColor}.device-actions{display:flex;gap:8px}.device-actions button{border:0;background:none;padding:4px 0;color:#087f75;font-size:11px;font-weight:650;cursor:pointer}.device-actions button.disable{color:#b5473c}.device-actions button.details{color:#53636d}.device-actions button:disabled{color:#aab3ba;cursor:not-allowed}.device-state{padding:24px;color:#64748b;font-size:13px}
+    .device-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.48)}.device-modal{width:min(100%,440px);max-height:90vh;overflow:auto;padding:23px;background:#fff;border-radius:8px;box-shadow:0 24px 70px rgba(15,23,42,.24)}.device-modal-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}.device-modal-heading span{font-size:10px;color:#087f75;font-weight:700}.device-modal-heading h2{font-size:20px;margin:5px 0}.device-modal-heading button{border:0;background:none;color:#64748b;font-size:25px;cursor:pointer}.device-modal dl{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:0}.device-modal dt,.device-modal dd{padding:10px 0;border-top:1px solid #edf0f2;font-size:12px;overflow-wrap:anywhere}.device-modal dt{color:#64748b}.device-modal dd{margin:0;text-align:right;font-weight:600}.device-done{display:block;margin:20px 0 0 auto;border:0;border-radius:5px;background:#087f75;color:#fff;padding:9px 16px;font-weight:650;cursor:pointer}
     @@media(max-width:640px){.device-stats{grid-template-columns:1fr}.device-heading{padding:16px}}
 </style>
 
 @code {
-    private readonly List<RegisteredDevice> RegisteredDevices = new()
-    {
-        new("MacBook Pro 14", "Avery Chen", "macOS 15.2", "Active", "Trusted", "Today, 09:42", "DV-2048"),
-        new("ThinkPad X1 Carbon", "Samira Patel", "Windows 11", "Active", "Untrusted", "Today, 08:17", "DV-2051"),
-        new("Pixel 9", "Noah Williams", "Android 15", "Pending", "Untrusted", "Yesterday, 17:30", "DV-2059"),
-        new("iPhone 15", "Morgan Rivera", "iOS 18.2", "Disabled", "Untrusted", "Sep 21, 14:05", "DV-1982")
-    };
-    private RegisteredDevice? SelectedDevice;
+    private List<AdminDevice> RegisteredDevices = [];
+    private Dictionary<Guid, string> UserNames = [];
+    private AdminDevice? SelectedDevice;
+    private bool Loading = true;
+    private bool Busy;
+    private string Error = "";
+    private string Notice = "";
 
-    private static void MarkTrusted(RegisteredDevice device) => device.TrustStatus = "Trusted";
-    private static void DisableDevice(RegisteredDevice device) { device.Status = "Disabled"; device.TrustStatus = "Untrusted"; }
+    protected override async Task OnInitializedAsync() => await LoadAsync();
 
-    private sealed class RegisteredDevice(string name, string user, string os, string status, string trustStatus, string lastSeen, string id)
+    private async Task LoadAsync()
     {
-        public string Name { get; } = name;
-        public string User { get; } = user;
-        public string Os { get; } = os;
-        public string Status { get; set; } = status;
-        public string TrustStatus { get; set; } = trustStatus;
-        public string LastSeen { get; } = lastSeen;
-        public string Id { get; } = id;
+        Loading = true; Error = "";
+        try
+        {
+            RegisteredDevices = await Api.GetDevicesAsync();
+            UserNames = (await Api.GetUsersAsync()).ToDictionary(user => user.Id, user => user.Username);
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Loading = false; }
     }
+
+    private async Task TrustAsync(AdminDevice device) => await RunActionAsync(() => Api.SetDeviceTrustedAsync(device.Id), "Device is now trusted.");
+    private async Task RevokeAsync(AdminDevice device) => await RunActionAsync(() => Api.RevokeDeviceAsync(device.Id), "Device was disabled and untrusted.");
+    private async Task RunActionAsync(Func<Task> operation, string success)
+    {
+        Busy = true; Error = ""; Notice = "";
+        try { await operation(); Notice = success; await LoadAsync(); }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Busy = false; }
+    }
+    private static string FormatStatus(string value)
+    {
+        var normalized = value.Replace('_', ' ').ToLowerInvariant();
+        return normalized.Length == 0 ? normalized : char.ToUpperInvariant(normalized[0]) + normalized[1..];
+    }
+    private static string StatusClass(string value) => value switch { "PENDING_APPROVAL" => "pending", "DISABLED" => "disabled", _ => "" };
 }
