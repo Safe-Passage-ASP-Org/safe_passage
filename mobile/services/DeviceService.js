@@ -130,7 +130,11 @@ export async function submitMfaDecision(requestId, deviceId, decision) {
       deviceId: approvalDeviceId,
       signature: await signMfaApproval(requestId, approvalDeviceId),
     })
-    : JSON.stringify({ sessionToken: requestId });
+    : JSON.stringify({
+      sessionToken: requestId,
+      deviceId: approvalDeviceId,
+      signature: await signMfaApproval(requestId, approvalDeviceId),
+    });
 
   const response = await fetch(endpoint, {
     method: 'POST',

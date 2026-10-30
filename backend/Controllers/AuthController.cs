@@ -48,6 +48,7 @@ public sealed class AuthController(IAuthFlowService authFlow) : ControllerBase
     /// <summary>Denies a pending MFA challenge and records a security alert.</summary>
     [HttpPost("mfa/deny")]
     [ProducesResponseType<MfaActionResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status410Gone)]

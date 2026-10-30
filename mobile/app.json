@@ -47,8 +47,9 @@
     ],
     "extra": {
       "eas": {
-        "projectId": "safe-passage-mobile"
+        "projectId": "b93cd299-9d2d-4591-a515-9dcd254bf822"
       }
-    }
+    },
+    "owner": "cyberpunk-kazu"
   }
 }

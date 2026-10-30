@@ -1,10 +1,14 @@
 using SafePassage.Web.Components;
+using SafePassage.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+var apiBaseUrl = builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5143/";
+builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(apiBaseUrl, UriKind.Absolute) });
+builder.Services.AddScoped<AdminApiClient>();
 
 var app = builder.Build();
 

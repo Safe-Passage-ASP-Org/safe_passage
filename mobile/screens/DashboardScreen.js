@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { getMfaStatus, getToken, saveAccessToken } from '../services/AuthService';
 import { getApprovalDeviceId, storeApprovalDeviceId } from '../services/DeviceSigningService';
 import { BASE_URL, getApplicationHeaders } from '../config';
+import { startMfaRealtime } from '../services/RealtimeService';
 
 async function fetchRecentActivity(token, deviceId) {
   const response = await fetch(`${BASE_URL}/api/activity`, {
@@ -62,6 +63,7 @@ export default function DashboardScreen({ navigation, route }) {
             await saveAccessToken(result.accessToken);
             const approvedDeviceId = result.deviceId ?? approvalDeviceId;
             await storeApprovalDeviceId(approvedDeviceId);
+            await startMfaRealtime();
             if (!active) return;
             navigation.setParams({ sessionToken: null, approvalDeviceId: approvedDeviceId });
             const activity = await fetchRecentActivity(result.accessToken, approvedDeviceId);
@@ -89,19 +91,6 @@ export default function DashboardScreen({ navigation, route }) {
     };
   }, [approvalDeviceId, navigation, sessionToken]);
 
-  const handleOpenMfa = () => {
-    navigation.navigate('MfaApproval', {
-      details: {
-        location: 'Your current location',
-        ip: 'Current network IP',
-        os: 'Your device',
-        time: new Date().toLocaleTimeString(),
-        requestId: sessionToken ?? 'mock-req-001',
-        deviceId: approvalDeviceId,
-      },
-    });
-  };
-
   return (
     <ScrollView style={styles.container}>
       {/* ── Security Status Card ─────────────────────────────── */}
@@ -112,19 +101,18 @@ export default function DashboardScreen({ navigation, route }) {
       </View>
 
       {/* ── Pending MFA Request ───────────────────────────────── */}
-      <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Pending Requests</Text>
-        <TouchableOpacity style={styles.alertCard} onPress={handleOpenMfa}>
-          <View style={styles.alertIcon}>
-            <Ionicons name="warning" size={24} color="#f59e0b" />
+      {sessionToken ? (
+        <View style={styles.section} accessibilityRole="summary">
+          <Text style={styles.sectionTitle}>Sign-in approval</Text>
+          <View style={styles.alertCard}>
+            <View style={styles.alertIcon}><Ionicons name="time" size={24} color="#f59e0b" /></View>
+            <View style={styles.alertContent}>
+              <Text style={styles.alertTitle}>Waiting for approval</Text>
+              <Text style={styles.alertDesc}>Approve this request from a trusted device.</Text>
+            </View>
           </View>
-          <View style={styles.alertContent}>
-            <Text style={styles.alertTitle}>MFA Approval Request</Text>
-            <Text style={styles.alertDesc}>Tap to review and approve or deny this sign-in</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color="#64748b" />
-        </TouchableOpacity>
-      </View>
+        </View>
+      ) : null}
 
       {/* ── Recent Activity ──────────────────────────────────── */}
       <View style={styles.section}>

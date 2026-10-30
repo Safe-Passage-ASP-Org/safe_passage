@@ -16,13 +16,7 @@ export default function MfaApprovalScreen({ route, navigation }) {
   const [denying,   setDenying]   = useState(false);
   const [approved,  setApproved]  = useState(false);
 
-  const details = route.params?.details ?? {
-    location:  'San Francisco, CA, USA',
-    ip:        '192.168.1.42',
-    os:        'Windows 11',
-    time:      new Date().toLocaleTimeString(),
-    requestId: 'mock-req-001',
-  };
+  const details = route.params?.details ?? {};
 
   // ── Approve: Direct one-tap verification ──────────────────────────────────
   const handleApprove = async () => {
@@ -85,10 +79,10 @@ export default function MfaApprovalScreen({ route, navigation }) {
         {/* ── Details Card ──────────────────────────────────────── */}
         <View style={styles.detailsCard}>
           <Text style={styles.detailsTitle}>Sign-in Details</Text>
-          <DetailRow icon="location"  label="Location"          value={details.location} />
-          <DetailRow icon="globe"     label="IP Address"        value={details.ip} />
-          <DetailRow icon="desktop"   label="Operating System"  value={details.os} />
-          <DetailRow icon="time"      label="Time"              value={details.time} last />
+          <DetailRow icon="location"  label="Location"          value={details.location ?? 'Not provided'} />
+          <DetailRow icon="globe"     label="IP Address"        value={details.ip ?? 'Not provided'} />
+          <DetailRow icon="desktop"   label="Operating System"  value={details.os ?? 'Not provided'} />
+          <DetailRow icon="time"      label="Time"              value={details.time ?? 'Not provided'} last />
         </View>
 
         {/* ── Action Buttons ────────────────────────────────────── */}
@@ -97,7 +91,7 @@ export default function MfaApprovalScreen({ route, navigation }) {
           <TouchableOpacity
             style={[styles.button, styles.approveButton, approving && styles.buttonDisabled]}
             onPress={handleApprove}
-            disabled={approving || denying}
+            disabled={approving || denying || !details.requestId || !details.deviceId}
           >
             {approving ? (
               <ActivityIndicator color="white" size="small" style={{ marginRight: 8 }} />
@@ -111,7 +105,7 @@ export default function MfaApprovalScreen({ route, navigation }) {
           <TouchableOpacity
             style={[styles.button, styles.denyButton, denying && styles.buttonDisabled]}
             onPress={handleDeny}
-            disabled={approving || denying}
+            disabled={approving || denying || !details.requestId || !details.deviceId}
           >
             {denying ? (
               <ActivityIndicator color="white" size="small" style={{ marginRight: 8 }} />

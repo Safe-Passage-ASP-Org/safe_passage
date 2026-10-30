@@ -1,0 +1,146 @@
+@page "/login"
+@layout AuthLayout
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
+@inject NavigationManager Navigation
+@implements IDisposable
+
+<PageTitle>Administrator sign in – Safe Passage</PageTitle>
+
+<main class="login-page">
+    <section class="login-card" aria-labelledby="login-title">
+        <div class="login-mark" aria-hidden="true">◆</div>
+        <p class="login-eyebrow">SAFE PASSAGE ADMIN</p>
+        <h1 id="login-title">Sign in</h1>
+        <p class="login-subtitle">Use your administrator account to manage the identity directory.</p>
+
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <div class="login-alert" role="alert">@Error</div>
+        }
+        @if (MfaPending)
+        {
+            <div class="login-pending" role="status" aria-live="polite">
+                <span class="pending-indicator"></span>
+                <div><strong>Waiting for mobile approval</strong><p>Approve this sign-in request on your registered mobile device. This page will continue after approval.</p></div>
+            </div>
+            <button class="login-button" @onclick="CheckOnce" disabled="@Busy">@(Busy ? "Checking…" : "Check approval")</button>
+            <button class="login-link" @onclick="CancelMfa">Cancel sign-in</button>
+        }
+        else
+        {
+            <EditForm Model="Credentials" OnValidSubmit="SignInAsync">
+                <DataAnnotationsValidator />
+                <label for="username">Username</label>
+                <InputText id="username" @bind-Value="Credentials.Username" autocomplete="username" disabled="@Busy" />
+                <ValidationMessage For="() => Credentials.Username" />
+                <label for="password">Password</label>
+                <InputText id="password" type="password" @bind-Value="Credentials.Password" autocomplete="current-password" disabled="@Busy" />
+                <ValidationMessage For="() => Credentials.Password" />
+                <button class="login-button" type="submit" disabled="@Busy">@(Busy ? "Signing in…" : "Sign in")</button>
+            </EditForm>
+        }
+    </section>
+</main>
+
+<style>
+    .login-page{min-height:100vh;box-sizing:border-box;display:grid;place-items:center;padding:24px}.login-card{width:min(100%,440px);padding:34px;background:#fff;border:1px solid #e2e8f0;border-radius:12px;box-shadow:0 16px 42px rgba(15,23,42,.08)}.login-mark{width:44px;height:44px;display:grid;place-items:center;border-radius:10px;background:#e1f3ef;color:#087f75;font-size:20px}.login-eyebrow{margin:22px 0 5px;color:#087f75;font-size:10px;font-weight:750;letter-spacing:1.2px}.login-card h1{margin:0;font-size:27px;color:#17212b}.login-subtitle{margin:8px 0 24px;color:#64748b;font-size:13px;line-height:1.5}.login-card form{display:grid;gap:8px}.login-card label{margin-top:8px;font-size:12px;font-weight:650;color:#334155}.login-card input{width:100%;border:1px solid #cbd5dc;border-radius:6px;padding:11px 12px;font:inherit;font-size:14px}.login-card input:focus{outline:2px solid #b7e1d8;border-color:#087f75}.login-card .validation-message{color:#a53e34;font-size:12px}.login-button{width:100%;margin-top:18px;border:0;border-radius:6px;padding:12px;background:#087f75;color:#fff;font-size:14px;font-weight:650;cursor:pointer}.login-button:disabled{opacity:.6;cursor:wait}.login-alert{margin:14px 0;padding:11px 13px;border-radius:6px;background:#fcecea;color:#9d332b;font-size:13px}.login-pending{display:flex;gap:12px;padding:14px;border:1px solid #f0dfb9;border-radius:7px;background:#fffaf0}.pending-indicator{width:10px;height:10px;margin-top:4px;flex:0 0 auto;border-radius:50%;background:#d49421}.login-pending strong{font-size:13px;color:#553d10}.login-pending p{margin:5px 0 0;color:#715c37;font-size:12px;line-height:1.5}.login-link{display:block;margin:12px auto 0;border:0;background:none;color:#52616b;text-decoration:underline;font-size:12px;cursor:pointer}
+    @@media(max-width:520px){.login-page{padding:15px}.login-card{padding:25px}}
+</style>
+
+@code {
+    private readonly LoginForm Credentials = new();
+    private CancellationTokenSource? PollCancellation;
+    private string? SessionToken;
+    private string Error = "";
+    private bool Busy;
+    private bool MfaPending;
+
+    private async Task SignInAsync()
+    {
+        Busy = true;
+        Error = "";
+        try
+        {
+            var result = await Api.LoginAsync(Credentials.Username.Trim(), Credentials.Password);
+            if (result.MfaRequired)
+            {
+                if (string.IsNullOrWhiteSpace(result.SessionToken))
+                    throw new InvalidOperationException("The API did not return an MFA session.");
+                SessionToken = result.SessionToken;
+                MfaPending = true;
+                PollCancellation = new CancellationTokenSource();
+                _ = PollForApprovalAsync(PollCancellation.Token);
+                return;
+            }
+            Navigation.NavigateTo("/users");
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Busy = false; }
+    }
+
+    private async Task PollForApprovalAsync(CancellationToken cancellationToken)
+    {
+        while (!cancellationToken.IsCancellationRequested && MfaPending)
+        {
+            try
+            {
+                if (await Api.CompleteMfaAsync(SessionToken!, cancellationToken))
+                {
+                    MfaPending = false;
+                    await InvokeAsync(() => Navigation.NavigateTo("/users"));
+                    return;
+                }
+                await InvokeAsync(StateHasChanged);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+            catch (Exception exception)
+            {
+                Error = exception.Message;
+                MfaPending = false;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+        }
+    }
+
+    private async Task CheckOnce()
+    {
+        if (SessionToken is null) return;
+        Busy = true;
+        Error = "";
+        try
+        {
+            if (await Api.CompleteMfaAsync(SessionToken))
+            {
+                MfaPending = false;
+                PollCancellation?.Cancel();
+                Navigation.NavigateTo("/users");
+            }
+        }
+        catch (Exception exception) { Error = exception.Message; MfaPending = false; PollCancellation?.Cancel(); }
+        finally { Busy = false; }
+    }
+
+    private void CancelMfa()
+    {
+        PollCancellation?.Cancel();
+        SessionToken = null;
+        MfaPending = false;
+        Error = "";
+    }
+
+    public void Dispose()
+    {
+        PollCancellation?.Cancel();
+        PollCancellation?.Dispose();
+    }
+
+    private sealed class LoginForm
+    {
+        [Required, StringLength(100, MinimumLength = 1)] public string Username { get; set; } = "";
+        [Required, StringLength(1024, MinimumLength = 1)] public string Password { get; set; } = "";
+    }
+}

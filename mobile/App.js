@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -14,7 +15,8 @@ import ActivityScreen from './screens/ActivityScreen';
 import SettingsScreen from './screens/SettingsScreen';
 
 // Services
-import { registerForPushNotificationsAsync } from './services/NotificationService';
+import { getToken } from './services/AuthService';
+import { setMfaRequestHandler, startMfaRealtime, stopMfaRealtime } from './services/RealtimeService';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -62,15 +64,37 @@ const AppTheme = {
 };
 
 export default function App() {
+  const [restoredSession, setRestoredSession] = useState(null);
+
   useEffect(() => {
-    // Safely register device token with backend on startup
-    registerForPushNotificationsAsync();
+    let active = true;
+    setMfaRequestHandler((details) => {
+      if (navigationRef.isReady()) navigationRef.navigate('MfaApproval', { details });
+    });
+    (async () => {
+      const token = await getToken();
+      if (!active) return;
+      setRestoredSession(Boolean(token));
+      if (token) await startMfaRealtime();
+    })();
+    return () => {
+      active = false;
+      stopMfaRealtime();
+    };
   }, []);
+
+  if (restoredSession === null) {
+    return (
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#020617' }}>
+        <ActivityIndicator color="#0ea5e9" size="large" />
+      </View>
+    );
+  }
 
   return (
     <NavigationContainer theme={AppTheme} ref={navigationRef}>
       <StatusBar style="light" />
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator initialRouteName={restoredSession ? 'Main' : 'Login'} screenOptions={{ headerShown: false }}>
         <Stack.Screen name="Login"       component={LoginScreen} />
         <Stack.Screen name="Main"        component={MainTabs} />
         <Stack.Screen
