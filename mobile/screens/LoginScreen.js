@@ -101,6 +101,14 @@ export default function LoginScreen({ navigation }) {
             <Text style={styles.buttonText}>Login</Text>
           )}
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.enrollLink}
+          onPress={() => navigation.navigate('DeviceEnrollment')}
+          disabled={loading}
+          accessibilityRole="button"
+        >
+          <Text style={styles.enrollLinkText}>Set up this phone for first-time use</Text>
+        </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>
   );
@@ -170,4 +178,6 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  enrollLink: { alignItems: 'center', padding: 14, marginTop: 4 },
+  enrollLinkText: { color: '#7dd3fc', fontSize: 14, textDecorationLine: 'underline' },
 });
