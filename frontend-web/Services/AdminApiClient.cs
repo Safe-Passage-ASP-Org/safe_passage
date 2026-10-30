@@ -53,6 +53,9 @@ public sealed class AdminApiClient(HttpClient http)
     public async Task<List<AdminUser>> GetUsersAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminUser>>("api/admin/users", cancellationToken) ?? [];
 
+    public async Task<List<AdminRole>> GetRolesAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<AdminRole>>("api/admin/roles", cancellationToken) ?? [];
+
     public async Task<List<AdminGroup>> GetGroupsAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminGroup>>("api/admin/groups", cancellationToken) ?? [];
 
@@ -110,6 +113,7 @@ public sealed class AdminApiClient(HttpClient http)
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
 public sealed record AdminUser(Guid Id, string Username, string Email, string Role, bool IsActive, List<string> Groups);
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
+public sealed record AdminRole(string Id, string Name, string Description);
 
 public sealed class AdminUserForm
 {
