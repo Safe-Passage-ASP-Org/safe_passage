@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using SafePassage.Api.Contracts.Devices;
 using SafePassage.Api.Middleware;
@@ -8,9 +9,38 @@ using SafePassage.Api.Services;
 namespace SafePassage.Api.Controllers;
 
 [Authorize]
+[ApiController]
 [Route("api/devices")]
-public sealed class DeviceController(IDeviceManagementService deviceManagement) : ControllerBase
+public sealed class DeviceController(
+    IDeviceManagementService deviceManagement,
+    DeviceBootstrapService bootstrapService,
+    IWebHostEnvironment environment) : ControllerBase
 {
+    /// <summary>Development-only first-device setup for accounts without an enrolled MFA device.</summary>
+    [AllowAnonymous]
+    [HttpPost("bootstrap")]
+    public async Task<ActionResult<DeviceBootstrapResponse>> Bootstrap(
+        [FromBody] DeviceBootstrapRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!environment.IsDevelopment())
+            return NotFound();
+
+        try
+        {
+            var result = await bootstrapService.EnrollAsync(request, cancellationToken);
+            return result is null ? Unauthorized() : Ok(result);
+        }
+        catch (ArgumentException exception)
+        {
+            return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Invalid device key", detail: exception.Message);
+        }
+        catch (InvalidOperationException exception)
+        {
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Device setup unavailable", detail: exception.Message);
+        }
+    }
+
     /// <summary>Registers this authenticated user's device for administrator approval.</summary>
     [Authorize]
     [HttpPost("register")]

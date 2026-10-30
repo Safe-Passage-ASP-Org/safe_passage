@@ -47,6 +47,7 @@ builder.Services.AddScoped<IAuthFlowService, AuthFlowService>();
 builder.Services.AddScoped<ISecurityPolicyEvaluator, SecurityPolicyEvaluator>();
 builder.Services.AddScoped<INotificationService, MockNotificationService>();
 builder.Services.AddScoped<IDeviceManagementService, DeviceManagementService>();
+builder.Services.AddScoped<DeviceBootstrapService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
