@@ -1,66 +1,38 @@
 @page "/alerts"
 @rendermode InteractiveServer
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
 
 <PageTitle>Security Alerts – Safe Passage</PageTitle>
-
-<div class="sp-page-header">
-    <h1 class="sp-page-title">Security Alerts</h1>
-    <p class="sp-page-subtitle">Active threats, anomalies, and security incidents requiring administrator attention.</p>
-</div>
-
-<!-- Alert list placeholder -->
-<div class="d-flex flex-column gap-3">
-
-    <div class="sp-card border-start border-danger border-3">
-        <div class="d-flex align-items-center gap-3">
-            <span style="font-size:1.5rem">🔴</span>
-            <div>
-                <div class="d-flex align-items-center gap-2 mb-1">
-                    <span class="fw-semibold">Brute Force Attempt Detected</span>
-                    <span class="badge-danger">Critical</span>
-                </div>
-                <p class="text-muted mb-0 small">185.220.101.5 attempted 47 failed logins on <strong>admin@safe-passage.io</strong> in the last 5 minutes.</p>
-                <p class="text-muted small">Today at 13:31</p>
-            </div>
-            <div class="ms-auto">
-                <button class="btn btn-sm btn-danger" disabled>Block IP</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="sp-card border-start border-warning border-3">
-        <div class="d-flex align-items-center gap-3">
-            <span style="font-size:1.5rem">🟡</span>
-            <div>
-                <div class="d-flex align-items-center gap-2 mb-1">
-                    <span class="fw-semibold">Unrecognized Device Registration</span>
-                    <span class="badge-warning">Medium</span>
-                </div>
-                <p class="text-muted mb-0 small">A new device from <strong>Moscow, RU</strong> is pending approval for user <strong>john.doe</strong>.</p>
-                <p class="text-muted small">Today at 12:58</p>
-            </div>
-            <div class="ms-auto d-flex gap-2">
-                <button class="btn btn-sm btn-outline-success" disabled>Approve</button>
-                <button class="btn btn-sm btn-outline-danger" disabled>Deny</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="sp-card border-start border-warning border-3">
-        <div class="d-flex align-items-center gap-3">
-            <span style="font-size:1.5rem">🟡</span>
-            <div>
-                <div class="d-flex align-items-center gap-2 mb-1">
-                    <span class="fw-semibold">MFA Bypass Attempt</span>
-                    <span class="badge-warning">Medium</span>
-                </div>
-                <p class="text-muted mb-0 small">User <strong>contractor.ext@partner.com</strong> denied 3 MFA requests from an unknown location.</p>
-                <p class="text-muted small">Today at 11:14</p>
-            </div>
-            <div class="ms-auto">
-                <button class="btn btn-sm btn-outline-secondary" disabled>Investigate</button>
-            </div>
-        </div>
-    </div>
-
-</div>
+<div class="sp-page-header"><h1 class="sp-page-title">Security Alerts</h1><p class="sp-page-subtitle">Review denied sign-ins and newly registered devices that need administrator attention.</p></div>
+@if (!string.IsNullOrWhiteSpace(Error)) { <div class="alerts-error" role="alert">@Error</div> }
+@if (!string.IsNullOrWhiteSpace(Notice)) { <div class="alerts-notice" role="status">@Notice</div> }
+@if (Loading) { <div class="sp-card alerts-state" role="status">Loading security events…</div> }
+else if (PendingDevices.Count == 0 && DeniedEvents.Count == 0) { <div class="sp-card alerts-state">No pending device approvals or denied events were found.</div> }
+else
+{
+    @foreach (var device in PendingDevices)
+    {
+        <article class="sp-card alert-card pending"><div class="alert-icon">⌁</div><div class="alert-copy"><div class="alert-title">New device awaiting trust <span>Review</span></div><p><strong>@device.DeviceName</strong> (@device.OS) requested enrollment for @(UserNames.GetValueOrDefault(device.UserId) ?? "unknown user").</p><small>Registered @device.RegistrationDate.ToLocalTime().ToString("g")</small></div><div class="alert-actions"><button @onclick="() => TrustAsync(device)" disabled="@Busy">Trust device</button><button class="deny" @onclick="() => RevokeAsync(device)" disabled="@Busy">Reject</button></div></article>
+    }
+    @foreach (var activity in DeniedEvents)
+    {
+        <article class="sp-card alert-card denied"><div class="alert-icon">!</div><div class="alert-copy"><div class="alert-title">Denied security event <span>Denied</span></div><p><strong>@activity.Username</strong> — @activity.Action: @activity.Resource</p><small>@activity.Timestamp.ToLocalTime().ToString("g")</small></div></article>
+    }
+}
+<style>
+    .alerts-error,.alerts-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.alerts-error{background:#fcecea;color:#9d332b}.alerts-notice{background:#edf7f2;color:#087f5b}.alerts-state{padding:24px;color:#64748b;font-size:13px}.alert-card{display:flex;align-items:flex-start;gap:14px;padding:17px;margin-bottom:12px;border-left:3px solid #d49421}.alert-card.denied{border-left-color:#b5473c}.alert-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 auto;border-radius:50%;background:#fff5df;color:#936115;font-weight:800}.denied .alert-icon{background:#fcecea;color:#a53e34}.alert-copy{flex:1;min-width:0}.alert-title{font-size:13px;font-weight:700;color:#26353c}.alert-title span{margin-left:7px;padding:3px 7px;border-radius:12px;background:#fff5df;color:#936115;font-size:9px;text-transform:uppercase}.denied .alert-title span{background:#fcecea;color:#a53e34}.alert-copy p{margin:7px 0;color:#52616b;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.alert-copy small{color:#64748b;font-size:10px}.alert-actions{display:flex;gap:8px}.alert-actions button{border:0;border-radius:4px;padding:7px 10px;background:#087f75;color:white;font-size:11px;font-weight:650;white-space:nowrap}.alert-actions button.deny{background:#fcecea;color:#a53e34}.alert-actions button:disabled{opacity:.6}
+    @@media(max-width:640px){.alert-card{flex-wrap:wrap}.alert-actions{width:100%;margin-left:44px}}
+</style>
+@code {
+    private List<AdminDevice> PendingDevices = [];
+    private List<AdminActivity> DeniedEvents = [];
+    private Dictionary<Guid, string> UserNames = [];
+    private bool Loading = true, Busy;
+    private string Error = "", Notice = "";
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+    private async Task LoadAsync() { Loading = true; Error = ""; try { var devices = await Api.GetDevicesAsync(); var activity = await Api.GetAdminActivityAsync(); var users = await Api.GetUsersAsync(); UserNames = users.ToDictionary(user => user.Id, user => user.Username); PendingDevices = devices.Where(device => device.Status == "PENDING_APPROVAL").ToList(); DeniedEvents = activity.Where(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase)).Take(30).ToList(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
+    private async Task TrustAsync(AdminDevice device) => await RunActionAsync(() => Api.SetDeviceTrustedAsync(device.Id), "Device trusted.");
+    private async Task RevokeAsync(AdminDevice device) => await RunActionAsync(() => Api.RevokeDeviceAsync(device.Id), "Device rejected and disabled.");
+    private async Task RunActionAsync(Func<Task> action, string success) { Busy = true; Error = ""; try { await action(); Notice = success; await LoadAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Busy = false; } }
+}

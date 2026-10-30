@@ -1,39 +1,45 @@
 @page "/"
 @rendermode InteractiveServer
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
 
 <PageTitle>Dashboard – Safe Passage</PageTitle>
-
-<div class="sp-page-header">
-    <h1 class="sp-page-title">Dashboard</h1>
-    <p class="sp-page-subtitle">Platform-wide security overview and real-time status.</p>
-</div>
-
-<!-- Stat Cards -->
+<div class="sp-page-header"><h1 class="sp-page-title">Dashboard</h1><p class="sp-page-subtitle">Current identity, device, and security activity from the platform.</p></div>
+@if (!string.IsNullOrWhiteSpace(Error)) { <div class="home-error" role="alert">@Error</div> }
 <div class="sp-stat-grid">
-    <div class="sp-stat-card">
-        <span class="sp-stat-label">Total Users</span>
-        <span class="sp-stat-value">1,284</span>
-        <span class="sp-stat-change">↑ 12 this week</span>
-    </div>
-    <div class="sp-stat-card">
-        <span class="sp-stat-label">Active Devices</span>
-        <span class="sp-stat-value">3,741</span>
-        <span class="sp-stat-change">↑ 48 today</span>
-    </div>
-    <div class="sp-stat-card">
-        <span class="sp-stat-label">MFA Requests (24h)</span>
-        <span class="sp-stat-value">892</span>
-        <span class="sp-stat-change">↑ 5% vs yesterday</span>
-    </div>
-    <div class="sp-stat-card">
-        <span class="sp-stat-label">Security Alerts</span>
-        <span class="sp-stat-value" style="color:var(--sp-danger)">3</span>
-        <span class="sp-stat-change" style="color:var(--sp-warning)">Needs attention</span>
-    </div>
+    <div class="sp-stat-card"><span class="sp-stat-label">Total Users</span><span class="sp-stat-value">@(Loading ? "—" : TotalUsers.ToString())</span><span class="sp-stat-change">Directory accounts</span></div>
+    <div class="sp-stat-card"><span class="sp-stat-label">Trusted Devices</span><span class="sp-stat-value">@(Loading ? "—" : TrustedDevices.ToString())</span><span class="sp-stat-change">Active and trusted</span></div>
+    <div class="sp-stat-card"><span class="sp-stat-label">MFA Events (24h)</span><span class="sp-stat-value">@(Loading ? "—" : MfaEvents.ToString())</span><span class="sp-stat-change">From recorded activity</span></div>
+    <div class="sp-stat-card"><span class="sp-stat-label">Denied Events</span><span class="sp-stat-value" style="color:var(--sp-danger)">@(Loading ? "—" : DeniedEvents.ToString())</span><span class="sp-stat-change">Latest 250 events</span></div>
 </div>
-
-<!-- Placeholder content card -->
-<div class="sp-card">
-    <h5 class="mb-3 fw-semibold">Recent Security Events</h5>
-    <p class="text-muted">📊 Live event feed will be populated here once the backend is connected.</p>
-</div>
+<section class="sp-card home-events"><div class="home-heading"><h2>Recent Security Events</h2><a href="/activity-logs">View activity logs →</a></div>
+    @if (Loading) { <p class="home-state" role="status">Loading dashboard…</p> }
+    else if (RecentEvents.Count == 0) { <p class="home-state">No activity has been recorded yet.</p> }
+    else { <div class="home-event-list">@foreach (var item in RecentEvents) { <div class="home-event"><span class="home-dot @(item.Status.Equals("Success", StringComparison.OrdinalIgnoreCase) ? "ok" : "bad")"></span><div><strong>@item.Action</strong><small>@item.Username · @item.Resource</small></div><time>@item.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</time></div> }</div> }
+</section>
+<style>
+    .home-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.home-events{overflow:hidden}.home-heading{display:flex;justify-content:space-between;align-items:center;padding:17px 20px;border-bottom:1px solid #edf0f2}.home-heading h2{font-size:15px;margin:0}.home-heading a{font-size:11px;color:#087f75;text-decoration:none;font-weight:650}.home-state{padding:20px;color:#64748b;font-size:13px}.home-event-list{padding:0 18px}.home-event{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid #edf0f2}.home-event:last-child{border-bottom:0}.home-dot{width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:#b5473c}.home-dot.ok{background:#099268}.home-event div{display:grid;gap:3px;flex:1;min-width:0}.home-event strong{font-size:12px;color:#26353c}.home-event small,.home-event time{font-size:10px;color:#64748b}.home-event time{white-space:nowrap}
+</style>
+@code {
+    private int TotalUsers, TrustedDevices, MfaEvents, DeniedEvents;
+    private bool Loading = true;
+    private string Error = "";
+    private List<AdminActivity> RecentEvents = [];
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var users = await Api.GetUsersAsync();
+            var devices = await Api.GetDevicesAsync();
+            var activity = await Api.GetAdminActivityAsync();
+            var since = DateTimeOffset.UtcNow.AddHours(-24);
+            TotalUsers = users.Count;
+            TrustedDevices = devices.Count(device => device.Status == "ACTIVE" && device.TrustStatus == "TRUSTED");
+            MfaEvents = activity.Count(item => item.Timestamp >= since && item.Action.Contains("MFA", StringComparison.OrdinalIgnoreCase));
+            DeniedEvents = activity.Count(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase));
+            RecentEvents = activity.Take(8).ToList();
+        }
+        catch (Exception ex) { Error = ex.Message; }
+        finally { Loading = false; }
+    }
+}

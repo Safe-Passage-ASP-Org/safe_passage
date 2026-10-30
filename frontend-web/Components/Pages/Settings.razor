@@ -2,44 +2,6 @@
 @rendermode InteractiveServer
 
 <PageTitle>Settings – Safe Passage</PageTitle>
-
-<div class="sp-page-header">
-    <h1 class="sp-page-title">Settings</h1>
-    <p class="sp-page-subtitle">System-wide configuration for the Safe Passage platform.</p>
-</div>
-
-<div class="row g-3">
-    <div class="col-md-3">
-        <!-- Settings sidebar nav -->
-        <div class="sp-card p-0 overflow-hidden">
-            <div class="list-group list-group-flush">
-                <a href="#" class="list-group-item list-group-item-action active" style="background:var(--sp-accent);border-color:transparent">General</a>
-                <a href="#" class="list-group-item list-group-item-action">Email &amp; Notifications</a>
-                <a href="#" class="list-group-item list-group-item-action">Authentication</a>
-                <a href="#" class="list-group-item list-group-item-action">Integrations</a>
-                <a href="#" class="list-group-item list-group-item-action">Audit &amp; Compliance</a>
-                <a href="#" class="list-group-item list-group-item-action">Danger Zone</a>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-9">
-        <div class="sp-card">
-            <h6 class="fw-semibold mb-4">General Settings</h6>
-            <div class="mb-3">
-                <label class="form-label fw-medium">Organization Name</label>
-                <input type="text" class="form-control" value="Safe Passage Corp" disabled />
-            </div>
-            <div class="mb-3">
-                <label class="form-label fw-medium">Admin Contact Email</label>
-                <input type="email" class="form-control" value="admin@safe-passage.io" disabled />
-            </div>
-            <div class="mb-3">
-                <label class="form-label fw-medium">Default Session Timeout</label>
-                <select class="form-select" disabled>
-                    <option>30 minutes</option>
-                </select>
-            </div>
-            <p class="text-muted small mt-3">⚙️ Settings will be editable and saved to the backend once the API is connected.</p>
-        </div>
-    </div>
-</div>
+<div class="sp-page-header"><h1 class="sp-page-title">Settings</h1><p class="sp-page-subtitle">System configuration and account controls.</p></div>
+<section class="sp-card settings-card"><span class="settings-icon">⚙</span><h2>Configuration is environment-managed</h2><p>The current backend does not expose an organization settings API. The disabled form values that were previously shown here were examples only and did not save anywhere.</p><p>Authentication and device trust requirements can be changed in Security Policies. Server URLs, database settings, and signing keys are configured by the backend environment.</p><a href="/policies">Open Security Policies →</a></section>
+<style>.settings-card{max-width:720px;padding:22px}.settings-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:7px;background:#e5f2ed;color:#087f75;font-size:18px}.settings-card h2{font-size:16px;margin:16px 0 8px}.settings-card p{font-size:12px;color:#64748b;line-height:1.65}.settings-card a{font-size:12px;color:#087f75;font-weight:650;text-decoration:none}</style>

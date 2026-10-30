@@ -1,41 +1,22 @@
 @page "/security-mfa"
 @rendermode InteractiveServer
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
 
 <PageTitle>Security &amp; MFA – Safe Passage</PageTitle>
-
-<div class="sp-page-header">
-    <h1 class="sp-page-title">Security &amp; MFA</h1>
-    <p class="sp-page-subtitle">Configure multi-factor authentication methods, enforcement rules, and OOB push settings.</p>
-</div>
-
-<div class="row g-3 mb-4">
-    <div class="col-md-4">
-        <div class="sp-stat-card">
-            <span class="sp-stat-label">MFA Enrolled Users</span>
-            <span class="sp-stat-value">1,102 <small class="fs-6 text-muted">/ 1,284</small></span>
-            <span class="sp-stat-change">85.8% coverage</span>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="sp-stat-card">
-            <span class="sp-stat-label">Approvals (24h)</span>
-            <span class="sp-stat-value">834</span>
-            <span class="sp-stat-change" style="color:var(--sp-success)">↑ 93.5% approve rate</span>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="sp-stat-card">
-            <span class="sp-stat-label">Denied (24h)</span>
-            <span class="sp-stat-value" style="color:var(--sp-danger)">58</span>
-            <span class="sp-stat-change" style="color:var(--sp-danger)">6.5% deny rate</span>
-        </div>
-    </div>
-</div>
-
-<div class="sp-card d-flex flex-column align-items-center justify-content-center py-5 text-center">
-    <div class="sp-placeholder-icon">🛡️</div>
-    <h5 class="fw-semibold mb-2">Roadmap: Security &amp; MFA</h5>
-    <p class="text-muted" style="max-width:460px">
-        Device posture checks, trusted-device policy rules, OOB approval flows, and fallback enforcement controls are planned here.
-    </p>
-</div>
+<div class="sp-page-header"><h1 class="sp-page-title">Security &amp; MFA</h1><p class="sp-page-subtitle">Current MFA activity and trusted-device coverage from recorded system data.</p></div>
+@if (!string.IsNullOrWhiteSpace(Error)) { <div class="mfa-error" role="alert">@Error</div> }
+<div class="sp-stat-grid"><div class="sp-stat-card"><span class="sp-stat-label">Users with trusted devices</span><span class="sp-stat-value">@(Loading ? "—" : EnrolledUsers.ToString())</span><span class="sp-stat-change">Current directory coverage</span></div><div class="sp-stat-card"><span class="sp-stat-label">MFA events (24h)</span><span class="sp-stat-value">@(Loading ? "—" : MfaEvents.ToString())</span><span class="sp-stat-change">Recorded approvals and denials</span></div><div class="sp-stat-card"><span class="sp-stat-label">MFA denials (24h)</span><span class="sp-stat-value" style="color:var(--sp-danger)">@(Loading ? "—" : DeniedMfa.ToString())</span><span class="sp-stat-change">From recorded MFA events</span></div></div>
+<section class="sp-card mfa-info"><h2>Approval delivery</h2><p>The backend currently delivers MFA requests through the authenticated SignalR connection to an active mobile app. This project’s notification service is a development mock; operating-system push notifications are not configured.</p><a href="/policies">Manage authentication and device policies →</a></section>
+<style>.mfa-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.mfa-info{margin-top:16px;padding:20px}.mfa-info h2{font-size:15px;margin:0 0 8px}.mfa-info p{font-size:12px;color:#64748b;line-height:1.6;max-width:760px}.mfa-info a{font-size:12px;color:#087f75;font-weight:650;text-decoration:none}</style>
+@code {
+    private bool Loading = true;
+    private string Error = "";
+    private int EnrolledUsers, MfaEvents, DeniedMfa;
+    protected override async Task OnInitializedAsync()
+    {
+        try { var devices = await Api.GetDevicesAsync(); var activity = await Api.GetAdminActivityAsync(); var cutoff = DateTimeOffset.UtcNow.AddHours(-24); EnrolledUsers = devices.Where(device => device.Status == "ACTIVE" && device.TrustStatus == "TRUSTED").Select(device => device.UserId).Distinct().Count(); var mfa = activity.Where(item => item.Timestamp >= cutoff && item.Action.Contains("MFA", StringComparison.OrdinalIgnoreCase)).ToList(); MfaEvents = mfa.Count; DeniedMfa = mfa.Count(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase)); }
+        catch (Exception ex) { Error = ex.Message; }
+        finally { Loading = false; }
+    }
+}
