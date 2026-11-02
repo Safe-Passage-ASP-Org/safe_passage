@@ -51,6 +51,15 @@ public sealed class AdminApiClient(HttpClient http)
         throw new InvalidOperationException($"The MFA request is {status?.Status ?? "unavailable"}. Please sign in again.");
     }
 
+    public async Task ActivateAccountAsync(string token, string password, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync(
+            "api/auth/activate",
+            new { token, password },
+            cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
     public void SignOut() { SetToken(null); CurrentUsername = null; }
 
     public async Task<List<AdminUser>> GetUsersAsync(CancellationToken cancellationToken = default) =>
@@ -84,7 +93,7 @@ public sealed class AdminApiClient(HttpClient http)
         {
             response = await http.PostAsJsonAsync("api/admin/users", new
             {
-                Username = user.Username, user.Email, user.Password, user.Role, user.Groups
+                Username = user.Username, user.Email, user.Role, user.Groups
             }, cancellationToken);
         }
         else
@@ -181,7 +190,8 @@ public sealed class AdminApiClient(HttpClient http)
 }
 
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
-public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, string Role, List<string> Groups);
+public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
+    string Role, List<string> Groups);
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
 public sealed class AdminGroupForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
 public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, string DeviceType, string OS,
@@ -198,7 +208,6 @@ public sealed class AdminUserForm
 {
     public string Username { get; set; } = "";
     public string Email { get; set; } = "";
-    public string Password { get; set; } = "";
     public string Role { get; set; } = "User";
     public List<string> Groups { get; set; } = [];
 }

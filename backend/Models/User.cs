@@ -7,6 +7,7 @@ public sealed class User
     public string PasswordHash { get; set; } = string.Empty;
     public string Email { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
+    public bool IsEmailVerified { get; set; } = true;
     public string Role { get; set; } = "User";
 
     public ICollection<UserGroup> UserGroups { get; set; } = new List<UserGroup>();
