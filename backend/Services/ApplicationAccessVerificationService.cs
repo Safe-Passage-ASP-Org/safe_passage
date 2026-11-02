@@ -36,7 +36,7 @@ public sealed class ApplicationAccessVerificationService(
             .SingleOrDefaultAsync(cancellationToken);
 
         if (user is null || !user.IsActive)
-            return await DenyAsync(applicationId, userId, "account_inactive", cancellationToken);
+            return await DenyAsync(applicationId, user is null ? null : user.Id, "account_inactive", cancellationToken);
 
         var applicationExists = await dbContext.Applications
             .AnyAsync(application => application.Id == applicationId, cancellationToken);
@@ -79,7 +79,7 @@ public sealed class ApplicationAccessVerificationService(
 
     private async Task<ApplicationAccessVerificationResult> DenyAsync(
         Guid applicationId,
-        Guid userId,
+        Guid? userId,
         string reason,
         CancellationToken cancellationToken,
         bool requiresTrustedDevice = false)
@@ -89,7 +89,7 @@ public sealed class ApplicationAccessVerificationService(
         return new(false, reason, applicationId, requiresTrustedDevice, DateTimeOffset.UtcNow);
     }
 
-    private static ActivityLog CreateActivity(Guid userId, Guid applicationId, ActivityLogStatus status) => new()
+    private static ActivityLog CreateActivity(Guid? userId, Guid applicationId, ActivityLogStatus status) => new()
     {
         Id = Guid.NewGuid(),
         UserId = userId,
