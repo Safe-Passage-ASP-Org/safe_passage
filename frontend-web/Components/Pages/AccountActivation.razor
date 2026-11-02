@@ -1,0 +1,83 @@
+@page "/activate"
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Activate account – Safe Passage</PageTitle>
+
+<main class="activation-page">
+    <section class="activation-card" aria-labelledby="activation-title">
+        <p class="activation-eyebrow">SAFE PASSAGE</p>
+        <h1 id="activation-title">Activate your account</h1>
+        @if (string.IsNullOrWhiteSpace(Token))
+        {
+            <p class="activation-error" role="alert">This activation link is missing its token.</p>
+        }
+        else if (Activated)
+        {
+            <p class="activation-success" role="status">Your account is activated. You can now sign in.</p>
+            <button class="activation-button" @onclick="NavigateToLogin">Go to sign in</button>
+        }
+        else
+        {
+            <p class="activation-copy">Choose a password to finish activating your account.</p>
+            @if (!string.IsNullOrWhiteSpace(Error)) { <div class="activation-error" role="alert">@Error</div> }
+            <EditForm Model="Form" OnValidSubmit="ActivateAsync">
+                <DataAnnotationsValidator />
+                <label for="activation-password">Password</label>
+                <InputText id="activation-password" type="password" @bind-Value="Form.Password" autocomplete="new-password" />
+                <ValidationMessage For="() => Form.Password" />
+                <label for="activation-confirm">Confirm password</label>
+                <InputText id="activation-confirm" type="password" @bind-Value="Form.ConfirmPassword" autocomplete="new-password" />
+                <ValidationMessage For="() => Form.ConfirmPassword" />
+                <button class="activation-button" type="submit" disabled="@Saving">@(Saving ? "Activating…" : "Activate account")</button>
+            </EditForm>
+        }
+    </section>
+</main>
+
+<style>
+    .activation-page{min-height:100vh;display:grid;place-items:center;padding:20px;background:#f8fafb}.activation-card{width:min(100%,440px);padding:32px;background:#fff;border:1px solid #e2e8f0;border-radius:10px;box-shadow:0 16px 42px rgba(15,23,42,.08)}.activation-eyebrow{margin:0 0 8px;color:#087f75;font-size:10px;font-weight:750;letter-spacing:1.2px}.activation-card h1{margin:0;color:#17212b;font-size:25px}.activation-copy{margin:9px 0 22px;color:#64748b;font-size:13px}.activation-card form{display:grid;gap:8px}.activation-card label{margin-top:8px;color:#334155;font-size:12px;font-weight:650}.activation-card input{width:100%;box-sizing:border-box;border:1px solid #cbd5dc;border-radius:6px;padding:11px 12px;font:inherit}.activation-card input:focus{outline:2px solid #b7e1d8;border-color:#087f75}.activation-card .validation-message{color:#a53e34;font-size:12px}.activation-button{width:100%;margin-top:16px;border:0;border-radius:6px;padding:12px;background:#087f75;color:#fff;font-size:14px;font-weight:650;cursor:pointer}.activation-button:disabled{opacity:.6}.activation-error,.activation-success{margin:14px 0;padding:11px 13px;border-radius:6px;font-size:13px}.activation-error{background:#fcecea;color:#9d332b}.activation-success{background:#edf7f2;color:#087f5b}
+</style>
+
+@code {
+    [SupplyParameterFromQuery(Name = "token")]
+    public string? Token { get; set; }
+
+    private readonly ActivationForm Form = new();
+    private string Error = "";
+    private bool Saving;
+    private bool Activated;
+
+    private void NavigateToLogin() => Navigation.NavigateTo("/login");
+
+    private async Task ActivateAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Token))
+        {
+            Error = "This activation link is missing its token.";
+            return;
+        }
+
+        Saving = true;
+        Error = "";
+        try
+        {
+            await Api.ActivateAccountAsync(Token, Form.Password);
+            Activated = true;
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Saving = false; }
+    }
+
+    private sealed class ActivationForm
+    {
+        [Required, StringLength(1024, MinimumLength = 12)]
+        public string Password { get; set; } = "";
+
+        [Required, Compare(nameof(Password), ErrorMessage = "The passwords do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

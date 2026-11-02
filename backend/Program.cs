@@ -48,8 +48,12 @@ builder.Services.AddScoped<ISecurityPolicyEvaluator, SecurityPolicyEvaluator>();
 builder.Services.AddScoped<IApplicationAccessVerificationService, ApplicationAccessVerificationService>();
 builder.Services.AddScoped<INotificationService, MockNotificationService>();
 builder.Services.AddScoped<IDeviceManagementService, DeviceManagementService>();
+builder.Services.AddScoped<IActivationEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<IAccountActivationService, AccountActivationService>();
 builder.Services.AddScoped<DeviceBootstrapService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
+builder.Services.Configure<AccountActivationOptions>(builder.Configuration.GetSection(AccountActivationOptions.SectionName));
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 if (allowedOrigins.Length == 0)
