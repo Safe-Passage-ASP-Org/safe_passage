@@ -4,5 +4,5 @@ namespace SafePassage.Api.Services;
 
 public interface IJwtTokenService
 {
-    string CreateAccessToken(User user);
+    string CreateAccessToken(User user, string? deviceId = null);
 }

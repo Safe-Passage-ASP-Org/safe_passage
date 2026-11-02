@@ -45,6 +45,7 @@ builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthFlowService, AuthFlowService>();
 builder.Services.AddScoped<ISecurityPolicyEvaluator, SecurityPolicyEvaluator>();
+builder.Services.AddScoped<IApplicationAccessVerificationService, ApplicationAccessVerificationService>();
 builder.Services.AddScoped<INotificationService, MockNotificationService>();
 builder.Services.AddScoped<IDeviceManagementService, DeviceManagementService>();
 builder.Services.AddScoped<DeviceBootstrapService>();

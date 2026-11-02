@@ -83,6 +83,6 @@ public sealed class DeviceBootstrapService(
         });
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return new(jwtTokenService.CreateAccessToken(user), device.DeviceId);
+        return new(jwtTokenService.CreateAccessToken(user, device.DeviceId), device.DeviceId);
     }
 }
