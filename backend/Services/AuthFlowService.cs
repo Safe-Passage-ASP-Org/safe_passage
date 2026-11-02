@@ -82,7 +82,7 @@ public sealed class AuthFlowService(
                     trustedDevice.DeviceId,
                     null,
                     null,
-                    jwtTokenService.CreateAccessToken(user),
+                    jwtTokenService.CreateAccessToken(user, trustedDevice.DeviceId),
                     "Bearer",
                     "Credentials accepted; MFA was skipped by trusted-device policy."));
             }
@@ -272,7 +272,7 @@ public sealed class AuthFlowService(
                 return AuthFlowResult<MfaStatusResponse>.Success(new(
                     MfaSessionStatus.Approved,
                     session.ExpiresAt,
-                    jwtTokenService.CreateAccessToken(user),
+                    jwtTokenService.CreateAccessToken(user, deviceId),
                     "Bearer",
                     deviceId));
             }

@@ -13,11 +13,13 @@ public static class DbInitializer
     public static readonly Guid PendingMfaSessionId = Guid.Parse("33333333-3333-3333-3333-333333333333");
     public static readonly Guid MobileApplicationId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     public static readonly Guid AdminApplicationId = Guid.Parse("55555555-5555-5555-5555-555555555555");
+    public static readonly Guid FinanceTestApplicationId = Guid.Parse("66666666-6666-6666-6666-666666666666");
 
     public static void Initialize(ApplicationDbContext dbContext, IPasswordHasher<User> passwordHasher)
     {
         EnsureApplication(dbContext, MobileApplicationId, "Safe Passage Mobile", "Safe Passage mobile client.");
         EnsureApplication(dbContext, AdminApplicationId, "Safe Passage Admin", "Safe Passage administration portal.");
+        EnsureApplication(dbContext, FinanceTestApplicationId, "Company Finance Test App", "Demo application for validating Safe Passage access decisions.");
         EnsurePolicy(
             dbContext,
             "Require MFA and trusted devices",

@@ -8,7 +8,7 @@ namespace SafePassage.Api.Services;
 
 public sealed class JwtTokenService(JwtSettings settings) : IJwtTokenService
 {
-    public string CreateAccessToken(User user)
+    public string CreateAccessToken(User user, string? deviceId = null)
     {
         var now = DateTime.UtcNow;
         var credentials = new SigningCredentials(
@@ -17,19 +17,29 @@ public sealed class JwtTokenService(JwtSettings settings) : IJwtTokenService
         var token = new JwtSecurityToken(
             issuer: settings.Issuer,
             audience: settings.Audience,
-            claims:
-            [
-                new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-                new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-                new Claim(ClaimTypes.Name, user.Username),
-                new Claim(ClaimTypes.Email, user.Email),
-                new Claim(ClaimTypes.Role, user.Role),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N"))
-            ],
+            claims: BuildClaims(user, deviceId),
             notBefore: now,
             expires: now.AddMinutes(settings.AccessTokenMinutes),
             signingCredentials: credentials);
 
         return new JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    private static IEnumerable<Claim> BuildClaims(User user, string? deviceId)
+    {
+        var claims = new List<Claim>
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
+            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
+            new Claim(ClaimTypes.Name, user.Username),
+            new Claim(ClaimTypes.Email, user.Email),
+            new Claim(ClaimTypes.Role, user.Role),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString("N"))
+        };
+
+        if (!string.IsNullOrWhiteSpace(deviceId))
+            claims.Add(new Claim("device_id", deviceId));
+
+        return claims;
     }
 }

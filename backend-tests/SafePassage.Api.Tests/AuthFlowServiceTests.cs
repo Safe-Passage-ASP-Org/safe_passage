@@ -109,6 +109,9 @@ public sealed class AuthFlowServiceTests
 
         Assert.Equal(MfaSessionStatus.Approved, status.Response!.Status);
         Assert.False(string.IsNullOrWhiteSpace(status.Response.AccessToken));
+        var accessToken = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler()
+            .ReadJwtToken(status.Response.AccessToken);
+        Assert.Contains(accessToken.Claims, claim => claim.Type == "device_id" && claim.Value == device.DeviceId);
     }
 
     private static ApplicationDbContext CreateDbContext()

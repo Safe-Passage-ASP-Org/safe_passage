@@ -18,6 +18,7 @@ const API_BASE_URL = (
   process.env.EXPO_PUBLIC_API_BASE_URL ||
   (Platform.OS === 'android' ? 'http://10.0.2.2:5143' : 'http://localhost:5143')
 ).replace(/\/+$/, '');
+const APPLICATION_ID = process.env.EXPO_PUBLIC_APPLICATION_ID || '66666666-6666-6666-6666-666666666666';
 
 const FINANCIAL_DATA = [
   { label: 'Operating cash', value: '$4.82M', change: '+4.8%', color: '#167255' },
@@ -51,7 +52,52 @@ export default function App() {
   const [mfaMessage, setMfaMessage] = useState('');
   const [isUnlocked, setIsUnlocked] = useState(false);
   const [signedInAs, setSignedInAs] = useState('');
+  const [accessMessage, setAccessMessage] = useState('');
   const requestController = useRef(null);
+
+  const verifyApplicationAccess = async accessToken => {
+    const response = await fetch(`${API_BASE_URL}/api/integrations/access/verify`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ applicationId: APPLICATION_ID }),
+    });
+    const data = await readResponse(response);
+    if (!response.ok) {
+      throw new Error(getErrorMessage(data, `Access verification failed (${response.status}).`));
+    }
+    return data;
+  };
+
+  const completeSignIn = async (accessToken, displayName) => {
+    if (!accessToken) {
+      setAccessMessage('Safe Passage did not return an access token. Please sign in again.');
+      return;
+    }
+
+    try {
+      const decision = await verifyApplicationAccess(accessToken);
+      if (decision.allowed) {
+        setSignedInAs(displayName);
+        setAccessMessage('');
+        setIsUnlocked(true);
+        return;
+      }
+
+      const reasons = {
+        account_inactive: 'Your Safe Passage account is inactive.',
+        application_not_found: 'The finance demo application is not registered in Safe Passage.',
+        access_not_assigned: 'An administrator has not assigned you access to the finance demo application.',
+        trusted_device_required: 'Access requires a trusted device. Sign in on a trusted device and try again.',
+      };
+      setAccessMessage(reasons[decision.reason] || `Safe Passage denied access (${decision.reason}).`);
+    } catch (error) {
+      setAccessMessage(error.message || 'Safe Passage could not verify application access.');
+    }
+  };
 
   useEffect(() => {
     if (!sessionToken) return undefined;
@@ -86,7 +132,7 @@ export default function App() {
             setSessionToken(null);
             setMfaState('approved');
             setModal(null);
-            setIsUnlocked(true);
+            await completeSignIn(data.accessToken, username.trim());
             return;
           }
           if (status === 'DENIED' || status === 'EXPIRED') {
@@ -121,6 +167,7 @@ export default function App() {
 
   const openLogin = () => {
     setLoginError('');
+    setAccessMessage('');
     setModal('login');
   };
 
@@ -157,7 +204,7 @@ export default function App() {
       setModal('security');
       if (data.mfaRequired === false && data.accessToken) {
         setModal(null);
-        setIsUnlocked(true);
+        await completeSignIn(data.accessToken, username.trim());
         return;
       }
       if (!data.sessionToken) {
@@ -205,6 +252,7 @@ export default function App() {
           <View style={styles.lockIcon}><Text style={styles.lockGlyph}>$</Text></View>
           <Text style={styles.heroTitle}>Confidential{ '\n' }finance data.</Text>
           <Text style={styles.heroCopy}>Company financial records are protected by Safe Passage device-based authentication.</Text>
+          {accessMessage ? <View accessibilityRole="alert" style={styles.accessDenied}><Text style={styles.accessDeniedTitle}>Access not granted</Text><Text style={styles.accessDeniedCopy}>{accessMessage}</Text></View> : null}
           <View style={styles.protectedRow}>
             <View style={styles.protectedMark}><Text style={styles.protectedCheck}>✓</Text></View>
             <View style={styles.protectedCopy}><Text style={styles.protectedTitle}>Protected workspace</Text><Text style={styles.protectedSub}>Identity verification required</Text></View>
@@ -222,7 +270,7 @@ export default function App() {
             <View><Text style={styles.toplineText}>FINANCE OPERATIONS</Text><Text style={styles.dashboardTitle}>Overview</Text><Text style={styles.dashboardSub}>Welcome, {signedInAs || 'Finance user'}</Text></View>
             <Pressable accessibilityRole="button" style={styles.signOutButton} onPress={signOut}><Text style={styles.signOutText}>Sign out</Text></Pressable>
           </View>
-          <View style={styles.approvedBanner}><View style={styles.approvedCheck}><Text style={styles.approvedCheckText}>✓</Text></View><View style={styles.approvedText}><Text style={styles.approvedTitle}>Identity verified</Text><Text style={styles.approvedSub}>Safe Passage access confirmed</Text></View><Text style={styles.approvedState}>SECURE</Text></View>
+          <View style={styles.approvedBanner}><View style={styles.approvedCheck}><Text style={styles.approvedCheckText}>✓</Text></View><View style={styles.approvedText}><Text style={styles.approvedTitle}>Application access verified</Text><Text style={styles.approvedSub}>Safe Passage authorized Company Finance</Text></View><Text style={styles.approvedState}>SECURE</Text></View>
           <View style={styles.metricsGrid}>
             {FINANCIAL_DATA.map(item => (
               <View key={item.label} style={styles.metricCard}>
@@ -233,7 +281,7 @@ export default function App() {
             ))}
           </View>
           <View style={styles.activityCard}><View style={styles.activityHead}><Text style={styles.activityTitle}>Recent activity</Text><Text style={styles.activityPeriod}>TODAY</Text></View><View style={styles.activityLine}><View style={styles.activityDot} /><View style={styles.activityDetails}><Text style={styles.activityName}>Quarterly report exported</Text><Text style={styles.activityTime}>Finance team · 10:42 AM</Text></View><Text style={styles.activityAmount}>+$82,400</Text></View><View style={styles.activityLine}><View style={[styles.activityDot, styles.activityDotMuted]} /><View style={styles.activityDetails}><Text style={styles.activityName}>Payroll batch approved</Text><Text style={styles.activityTime}>Operations · 9:18 AM</Text></View><Text style={styles.activityAmount}>−$216,800</Text></View></View>
-          <Text style={styles.mockNote}>Demonstration data only. No financial systems are connected.</Text>
+          <Text style={styles.mockNote}>Demonstration data only. Access was verified by Safe Passage for application {APPLICATION_ID}.</Text>
         </ScrollView>
       )}
 
@@ -306,6 +354,9 @@ const styles = StyleSheet.create({
   lockGlyph: { color: '#176d52', fontSize: 23, fontWeight: '500' },
   heroTitle: { marginTop: 19, color: '#18261f', fontSize: 35, fontWeight: '600', letterSpacing: -0.7, lineHeight: 41 },
   heroCopy: { maxWidth: 340, marginTop: 12, color: '#66746b', fontSize: 13, lineHeight: 20 },
+  accessDenied: { marginTop: 18, padding: 13, borderWidth: 1, borderColor: '#efc8c3', borderRadius: 6, backgroundColor: '#fff2f0' },
+  accessDeniedTitle: { color: '#a13f39', fontSize: 11, fontWeight: '700' },
+  accessDeniedCopy: { marginTop: 4, color: '#80514d', fontSize: 10, lineHeight: 15 },
   protectedRow: { minHeight: 69, flexDirection: 'row', alignItems: 'center', marginTop: 29, paddingHorizontal: 13, borderWidth: 1, borderColor: '#dce4de', borderRadius: 7, backgroundColor: '#f8faf8' },
   protectedMark: { width: 31, height: 31, alignItems: 'center', justifyContent: 'center', borderRadius: 6, backgroundColor: '#e4f1e9' },
   protectedCheck: { color: '#147255', fontSize: 16, fontWeight: '800' },
