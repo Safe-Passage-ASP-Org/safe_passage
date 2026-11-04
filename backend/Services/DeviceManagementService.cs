@@ -42,9 +42,8 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
         if (!includeAll)
             query = query.Where(device => device.UserId == requesterId);
 
-        var devices = await query
-            .OrderByDescending(device => device.RegistrationDate)
-            .ToListAsync(cancellationToken);
+        var devices = await query.ToListAsync(cancellationToken);
+        devices.Sort((left, right) => right.RegistrationDate.CompareTo(left.RegistrationDate));
         return devices.Select(ToResponse).ToList();
     }
 
