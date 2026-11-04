@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
@@ -5,6 +6,8 @@ using SafePassage.Api.Controllers;
 using SafePassage.Api.Data;
 using SafePassage.Api.Models;
 using SafePassage.Api.Services;
+using System.Security.Claims;
+using System.Text.Json;
 using Xunit;
 
 namespace SafePassage.Api.Tests;
@@ -43,11 +46,29 @@ public sealed class SqliteDateOrderingTests
             .GetAllAsync(user.Id, includeAll: true, CancellationToken.None);
         var activity = await new AdminActivityController(dbContext)
             .GetRecent(CancellationToken.None);
+        var userActivityController = new ActivityController(dbContext)
+        {
+            ControllerContext = new ControllerContext
+            {
+                HttpContext = new DefaultHttpContext
+                {
+                    User = new ClaimsPrincipal(new ClaimsIdentity(
+                        [new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())],
+                        "test"))
+                }
+            }
+        };
+        var userActivity = Assert.IsType<OkObjectResult>(
+            await userActivityController.GetActivities(CancellationToken.None));
 
         Assert.Equal(new[] { "newer", "older" }, devices.Select(device => device.DeviceId));
         var response = Assert.IsType<OkObjectResult>(activity.Result);
         var logs = Assert.IsAssignableFrom<IReadOnlyList<AdminActivityController.AdminActivityRecord>>(response.Value);
         Assert.Equal(new[] { "newer", "older" }, logs.Select(log => log.Resource));
+        using var userActivityJson = JsonSerializer.SerializeToDocument(userActivity.Value);
+        Assert.Equal(
+            new[] { "newer", "older" },
+            userActivityJson.RootElement.EnumerateArray().Select(log => log.GetProperty("target").GetString()));
     }
 
     private static Device CreateDevice(Guid userId, string deviceId, DateTimeOffset registrationDate) => new()
