@@ -9,8 +9,9 @@ jest.mock('expo-crypto', () => ({
 }));
 
 const SecureStore = require('expo-secure-store');
+const { createPublicKey, verify } = require('node:crypto');
 const { login, getMfaStatus } = require('../AuthService');
-const { signMfaApproval } = require('../DeviceSigningService');
+const { getDeviceSigningPublicKey, signDeviceLogin, signMfaApproval } = require('../DeviceSigningService');
 
 describe('mobile auth flow', () => {
   beforeEach(() => {
@@ -46,6 +47,31 @@ describe('mobile auth flow', () => {
     const signature = await signMfaApproval('session-123', 'device-123');
     expect(typeof signature).toBe('string');
     expect(signature.length).toBeGreaterThan(0);
+
+    const publicKey = Buffer.from(await getDeviceSigningPublicKey(), 'base64');
+    const spki = Buffer.concat([
+      Buffer.from('3059301306072a8648ce3d020106082a8648ce3d030107034200', 'hex'),
+      publicKey,
+    ]);
+    const key = createPublicKey({ key: spki, format: 'der', type: 'spki' });
+    const approvalMessage = Buffer.from(
+      'safe-passage:mfa-approval:v1\nsession-123\ndevice-123',
+    );
+    expect(verify(
+      'sha256',
+      approvalMessage,
+      { key, dsaEncoding: 'ieee-p1363' },
+      Buffer.from(signature, 'base64'),
+    )).toBe(true);
+
+    const loginMessage = Buffer.from('safe-passage:device-login:v1\ndevice-123\n123456789');
+    const loginSignature = await signDeviceLogin('device-123', 123456789);
+    expect(verify(
+      'sha256',
+      loginMessage,
+      { key, dsaEncoding: 'ieee-p1363' },
+      Buffer.from(loginSignature, 'base64'),
+    )).toBe(true);
 
     global.fetch.mockResolvedValue({
       ok: true,

@@ -23,7 +23,7 @@ export async function signMfaApproval(sessionToken, deviceId) {
   const message = new TextEncoder().encode(
     `safe-passage:mfa-approval:v1\n${sessionToken}\n${deviceId}`,
   );
-  const signature = p256.sign(message, privateKey).toCompactRawBytes();
+  const signature = p256.sign(message, privateKey, { prehash: true }).toCompactRawBytes();
   return toBase64(signature);
 }
 
@@ -32,7 +32,7 @@ export async function signDeviceLogin(deviceId, timestamp) {
   const message = new TextEncoder().encode(
     `safe-passage:device-login:v1\n${deviceId}\n${timestamp}`,
   );
-  const signature = p256.sign(message, privateKey).toCompactRawBytes();
+  const signature = p256.sign(message, privateKey, { prehash: true }).toCompactRawBytes();
   return toBase64(signature);
 }
 
