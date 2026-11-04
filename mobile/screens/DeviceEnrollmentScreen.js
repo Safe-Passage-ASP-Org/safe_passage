@@ -42,10 +42,10 @@ export default function DeviceEnrollmentScreen({ navigation }) {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.card}>
-        <Text style={styles.title}>Enroll your first phone</Text>
-        <Text style={styles.description}>For local development setup only. Enter your account credentials to bind this phone as the initial trusted MFA device.</Text>
+        <Text style={styles.title}>Set up this account on your phone</Text>
+        <Text style={styles.description}>For local development setup only. Enter this account’s credentials to enroll this phone separately. Device approval and trust are managed for each account.</Text>
         <Text style={styles.label}>Email or username</Text>
-        <TextInput style={styles.input} autoCapitalize="none" value={username} onChangeText={setUsername} editable={!busy} />
+        <TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} value={username} onChangeText={setUsername} editable={!busy} />
         <Text style={styles.label}>Password</Text>
         <TextInput style={styles.input} secureTextEntry value={password} onChangeText={setPassword} editable={!busy} />
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}

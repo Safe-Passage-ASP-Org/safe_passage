@@ -192,10 +192,8 @@ namespace SafePassage.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DeviceId")
+                    b.HasIndex("UserId", "DeviceId")
                         .IsUnique();
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("Devices");
                 });

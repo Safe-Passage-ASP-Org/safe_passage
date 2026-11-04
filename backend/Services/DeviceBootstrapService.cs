@@ -38,12 +38,6 @@ public sealed class DeviceBootstrapService(
             throw new ArgumentException("The device signing key is invalid.");
 
         var deviceId = request.DeviceId.Trim();
-        var duplicate = await dbContext.Devices.AnyAsync(
-            device => device.DeviceId == deviceId && device.UserId != user.Id,
-            cancellationToken);
-        if (duplicate)
-            throw new InvalidOperationException("This device is already registered to another account.");
-
         // Development bootstrap is permitted only while the account has no enrolled MFA key.
         var alreadyEnrolled = await dbContext.Devices.AnyAsync(device =>
             device.UserId == user.Id

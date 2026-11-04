@@ -64,8 +64,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         modelBuilder.Entity<Device>(entity =>
         {
             entity.HasKey(device => device.Id);
-            entity.HasIndex(device => device.DeviceId).IsUnique();
-            entity.HasIndex(device => device.UserId);
+            entity.HasIndex(device => new { device.UserId, device.DeviceId }).IsUnique();
             entity.Property(device => device.DeviceId).HasMaxLength(256).IsRequired();
             entity.Property(device => device.DeviceName).HasMaxLength(200).IsRequired();
             entity.Property(device => device.DeviceType).HasMaxLength(100).IsRequired();

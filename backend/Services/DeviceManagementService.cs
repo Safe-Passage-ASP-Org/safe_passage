@@ -72,7 +72,7 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
             return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.UserUnavailable);
 
         var deviceExists = await dbContext.Devices.AnyAsync(
-            device => device.DeviceId == request.DeviceId,
+            device => device.UserId == userId && device.DeviceId == request.DeviceId,
             cancellationToken);
         if (deviceExists)
             return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.DuplicateDevice);
