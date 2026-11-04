@@ -1,4 +1,4 @@
-const defaultApiUrl = 'http://192.168.254.134:5143';
+const defaultApiUrl = 'http://192.168.1.2:5143';
 const configuredApiUrl = process.env.EXPO_PUBLIC_API_URL?.trim();
 
 export const BASE_URL = (configuredApiUrl || defaultApiUrl).replace(/\/+$/, '');
