@@ -29,6 +29,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(user => user.Username).HasMaxLength(100).IsRequired();
             entity.Property(user => user.PasswordHash).HasMaxLength(512).IsRequired();
             entity.Property(user => user.Email).HasMaxLength(320).IsRequired();
+            entity.Property(user => user.FullName).HasMaxLength(200);
+            entity.Property(user => user.PhoneNumber).HasMaxLength(32);
             entity.Property(user => user.Role).HasMaxLength(64).IsRequired();
         });
 

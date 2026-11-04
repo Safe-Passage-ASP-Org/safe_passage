@@ -12,15 +12,19 @@ namespace SafePassage.Api.Services;
 public enum AccountActivationResult
 {
     Activated,
+    PasswordRequired,
     InvalidOrExpired
 }
 
 public interface IAccountActivationService
 {
-    Task CreateAndSendInvitationAsync(User user, CancellationToken cancellationToken);
+    Task CreateAndSendInvitationAsync(
+        User user,
+        CancellationToken cancellationToken,
+        bool requiresPasswordSetup = true);
     Task<AccountActivationResult> ActivateAsync(
         string token,
-        string password,
+        string? password,
         CancellationToken cancellationToken);
 }
 
@@ -30,7 +34,10 @@ public sealed class AccountActivationService(
     IActivationEmailSender emailSender,
     IOptions<AccountActivationOptions> options) : IAccountActivationService
 {
-    public async Task CreateAndSendInvitationAsync(User user, CancellationToken cancellationToken)
+    public async Task CreateAndSendInvitationAsync(
+        User user,
+        CancellationToken cancellationToken,
+        bool requiresPasswordSetup = true)
     {
         var settings = options.Value;
         if (!Uri.TryCreate(settings.PublicUrl, UriKind.Absolute, out var publicUrl)
@@ -52,16 +59,26 @@ public sealed class AccountActivationService(
             Id = Guid.NewGuid(),
             UserId = user.Id,
             TokenHash = HashToken(rawToken),
+            RequiresPasswordSetup = requiresPasswordSetup,
             CreatedAt = now,
             ExpiresAt = now.AddMinutes(settings.TokenLifetimeMinutes)
         };
         dbContext.AccountActivationTokens.Add(activationToken);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        var url = QueryHelpers.AddQueryString(publicUrl.ToString(), "token", rawToken);
+        var url = QueryHelpers.AddQueryString(publicUrl.ToString(), new Dictionary<string, string?>
+        {
+            ["token"] = rawToken,
+            ["setPassword"] = requiresPasswordSetup.ToString().ToLowerInvariant()
+        });
         try
         {
-            await emailSender.SendActivationEmailAsync(user.Email, user.Username, url, cancellationToken);
+            await emailSender.SendActivationEmailAsync(
+                user.Email,
+                user.FullName ?? user.Username,
+                url,
+                requiresPasswordSetup,
+                cancellationToken);
         }
         catch (EmailDeliveryException)
         {
@@ -73,7 +90,7 @@ public sealed class AccountActivationService(
 
     public async Task<AccountActivationResult> ActivateAsync(
         string token,
-        string password,
+        string? password,
         CancellationToken cancellationToken)
     {
         var tokenHash = HashToken(token);
@@ -87,6 +104,11 @@ public sealed class AccountActivationService(
             || activationToken.User.IsEmailVerified)
         {
             return AccountActivationResult.InvalidOrExpired;
+        }
+        if (activationToken.RequiresPasswordSetup
+            && (string.IsNullOrWhiteSpace(password) || password.Length is < 12 or > 1024))
+        {
+            return AccountActivationResult.PasswordRequired;
         }
 
         await using var transaction = dbContext.Database.IsRelational()
@@ -109,7 +131,8 @@ public sealed class AccountActivationService(
         }
 
         activationToken.UsedAt = now;
-        activationToken.User.PasswordHash = passwordHasher.HashPassword(activationToken.User, password);
+        if (activationToken.RequiresPasswordSetup)
+            activationToken.User.PasswordHash = passwordHasher.HashPassword(activationToken.User, password!);
         activationToken.User.IsEmailVerified = true;
         activationToken.User.IsActive = true;
         dbContext.ActivityLogs.Add(new ActivityLog
@@ -118,7 +141,7 @@ public sealed class AccountActivationService(
             UserId = activationToken.UserId,
             Timestamp = now,
             Action = "User Activated",
-            Resource = activationToken.User.Username,
+            Resource = activationToken.User.FullName ?? activationToken.User.Username,
             Status = ActivityLogStatus.Success
         });
         await dbContext.SaveChangesAsync(cancellationToken);

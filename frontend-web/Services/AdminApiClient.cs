@@ -51,12 +51,25 @@ public sealed class AdminApiClient(HttpClient http)
         throw new InvalidOperationException($"The MFA request is {status?.Status ?? "unavailable"}. Please sign in again.");
     }
 
-    public async Task ActivateAccountAsync(string token, string password, CancellationToken cancellationToken = default)
+    public async Task ActivateAccountAsync(string token, string? password = null, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync(
             "api/auth/activate",
             new { token, password },
             cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task RegisterAccountAsync(AccountRegistrationForm registration, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/register", new
+        {
+            registration.FullName,
+            registration.Username,
+            registration.Email,
+            registration.PhoneNumber,
+            registration.Password
+        }, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
@@ -191,7 +204,7 @@ public sealed class AdminApiClient(HttpClient http)
 
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
 public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
-    string Role, List<string> Groups);
+    string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null);
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
 public sealed class AdminGroupForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
 public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, string DeviceType, string OS,
@@ -210,4 +223,13 @@ public sealed class AdminUserForm
     public string Email { get; set; } = "";
     public string Role { get; set; } = "User";
     public List<string> Groups { get; set; } = [];
+}
+
+public sealed class AccountRegistrationForm
+{
+    public string FullName { get; set; } = "";
+    public string Username { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string PhoneNumber { get; set; } = "";
+    public string Password { get; set; } = "";
 }

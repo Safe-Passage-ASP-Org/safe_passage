@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { BASE_URL, getApplicationHeaders } from '../config';
-import { storeApprovalDeviceId } from './DeviceSigningService';
+import { signDeviceLogin, storeApprovalDeviceId } from './DeviceSigningService';
 
 const TOKEN_KEY = 'auth_token';
 
@@ -15,13 +15,15 @@ const TOKEN_KEY = 'auth_token';
  */
 export async function login(username, password, deviceId) {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
+  const deviceSignatureTimestamp = Date.now();
+  const deviceSignature = await signDeviceLogin(deviceId, deviceSignatureTimestamp);
 
   let response;
   try {
     response = await fetch(`${BASE_URL}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...getApplicationHeaders(deviceId) },
-      body: JSON.stringify({ username, password, deviceId }),
+      body: JSON.stringify({ username, password, deviceId, deviceSignature, deviceSignatureTimestamp }),
     });
   } catch (networkError) {
     throw new Error('Cannot reach the server. Check your connection.');

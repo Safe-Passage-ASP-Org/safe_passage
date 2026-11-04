@@ -44,7 +44,7 @@ export default function DeviceEnrollmentScreen({ navigation }) {
       <View style={styles.card}>
         <Text style={styles.title}>Enroll your first phone</Text>
         <Text style={styles.description}>For local development setup only. Enter your account credentials to bind this phone as the initial trusted MFA device.</Text>
-        <Text style={styles.label}>Username</Text>
+        <Text style={styles.label}>Email or username</Text>
         <TextInput style={styles.input} autoCapitalize="none" value={username} onChangeText={setUsername} editable={!busy} />
         <Text style={styles.label}>Password</Text>
         <TextInput style={styles.input} secureTextEntry value={password} onChangeText={setPassword} editable={!busy} />

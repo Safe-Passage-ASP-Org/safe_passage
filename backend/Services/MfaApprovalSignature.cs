@@ -8,6 +8,9 @@ public static class MfaApprovalSignature
     public static string CreateMessage(string sessionToken, string deviceId) =>
         $"safe-passage:mfa-approval:v1\n{sessionToken}\n{deviceId}";
 
+    public static string CreateDeviceLoginMessage(string deviceId, long timestamp) =>
+        $"safe-passage:device-login:v1\n{deviceId}\n{timestamp}";
+
     public static bool IsValidPublicKey(string? publicKey)
     {
         if (!TryImportPublicKey(publicKey, out var verifier))
@@ -18,6 +21,12 @@ public static class MfaApprovalSignature
     }
 
     public static bool Verify(string? publicKey, string sessionToken, string deviceId, string? signature)
+        => VerifyMessage(publicKey, CreateMessage(sessionToken, deviceId), signature);
+
+    public static bool VerifyDeviceLogin(string? publicKey, string deviceId, long timestamp, string? signature)
+        => VerifyMessage(publicKey, CreateDeviceLoginMessage(deviceId, timestamp), signature);
+
+    private static bool VerifyMessage(string? publicKey, string message, string? signature)
     {
         if (!TryImportPublicKey(publicKey, out var verifier))
             return false;
@@ -30,7 +39,7 @@ public static class MfaApprovalSignature
                 if (signatureBytes.Length != 64)
                     return false;
 
-                var payload = Encoding.UTF8.GetBytes(CreateMessage(sessionToken, deviceId));
+                var payload = Encoding.UTF8.GetBytes(message);
                 return verifier.VerifyData(
                     payload,
                     signatureBytes,

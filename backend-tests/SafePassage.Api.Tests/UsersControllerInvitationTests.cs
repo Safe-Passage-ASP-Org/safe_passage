@@ -77,7 +77,10 @@ public sealed class UsersControllerInvitationTests
     {
         public EmailDeliveryException? Failure { get; init; }
 
-        public Task CreateAndSendInvitationAsync(User user, CancellationToken cancellationToken)
+        public Task CreateAndSendInvitationAsync(
+            User user,
+            CancellationToken cancellationToken,
+            bool requiresPasswordSetup = true)
         {
             if (Failure is not null)
                 throw Failure;
@@ -86,7 +89,7 @@ public sealed class UsersControllerInvitationTests
 
         public Task<AccountActivationResult> ActivateAsync(
             string token,
-            string password,
+            string? password,
             CancellationToken cancellationToken) =>
             Task.FromResult(AccountActivationResult.InvalidOrExpired);
     }

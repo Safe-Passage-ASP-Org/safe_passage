@@ -27,6 +27,15 @@ export async function signMfaApproval(sessionToken, deviceId) {
   return toBase64(signature);
 }
 
+export async function signDeviceLogin(deviceId, timestamp) {
+  const privateKey = await getOrCreatePrivateKey();
+  const message = new TextEncoder().encode(
+    `safe-passage:device-login:v1\n${deviceId}\n${timestamp}`,
+  );
+  const signature = p256.sign(message, privateKey).toCompactRawBytes();
+  return toBase64(signature);
+}
+
 async function getOrCreatePrivateKey() {
   const storedKey = await SecureStore.getItemAsync(PRIVATE_KEY_STORAGE_KEY);
   if (storedKey && /^[0-9a-f]{64}$/i.test(storedKey))

@@ -28,7 +28,7 @@ public sealed class UsersController(
         var users = await dbContext.Users.AsNoTracking()
             .OrderBy(user => user.Username)
             .Select(user => new UserSummary(user.Id, user.Username, user.Email, user.IsActive, user.IsEmailVerified, user.Role,
-                user.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList()))
+                user.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList(), user.FullName, user.PhoneNumber))
             .ToListAsync(cancellationToken);
         return Ok(users);
     }
@@ -39,7 +39,7 @@ public sealed class UsersController(
         var user = await dbContext.Users.AsNoTracking()
             .Where(candidate => candidate.Id == id)
             .Select(candidate => new UserSummary(candidate.Id, candidate.Username, candidate.Email, candidate.IsActive, candidate.IsEmailVerified, candidate.Role,
-                candidate.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList()))
+                candidate.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList(), candidate.FullName, candidate.PhoneNumber))
             .SingleOrDefaultAsync(cancellationToken);
         return user is null ? NotFound() : Ok(user);
     }
@@ -63,6 +63,7 @@ public sealed class UsersController(
             Id = Guid.NewGuid(),
             Username = username,
             Email = email,
+            FullName = username,
             Role = request.Role!.Trim(),
             IsActive = false,
             IsEmailVerified = false
@@ -139,6 +140,7 @@ public sealed class UsersController(
         if (groupsResult.Error is not null) return BadRequest(new { message = groupsResult.Error });
 
         user.Username = username;
+        user.FullName ??= username;
         user.Email = email;
         user.Role = request.Role!.Trim();
         dbContext.UserGroups.RemoveRange(user.UserGroups);
@@ -188,7 +190,7 @@ public sealed class UsersController(
 
     private static UserSummary ToSummary(User user, IEnumerable<Group> groups) =>
         new(user.Id, user.Username, user.Email, user.IsActive, user.IsEmailVerified, user.Role,
-            groups.Select(group => group.Name).OrderBy(name => name).ToList());
+            groups.Select(group => group.Name).OrderBy(name => name).ToList(), user.FullName, user.PhoneNumber);
 
     private void AddAudit(string action, string resource)
     {
@@ -207,5 +209,5 @@ public sealed class UsersController(
     public sealed record UserRequest(string? Username, string? Email, string? Role, List<string>? Groups);
     public sealed record UserStatusRequest(bool IsActive);
     public sealed record UserSummary(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
-        string Role, List<string> Groups);
+        string Role, List<string> Groups, string? FullName, string? PhoneNumber);
 }

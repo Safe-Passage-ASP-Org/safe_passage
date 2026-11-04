@@ -1,0 +1,202 @@
+@page "/signup"
+@layout AuthLayout
+@rendermode InteractiveServer
+@using System.ComponentModel.DataAnnotations
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
+
+<PageTitle>Create an account – Safe Passage</PageTitle>
+
+<main class="signup-page">
+    <a class="signup-brand" href="/" aria-label="Safe Passage home">
+        <span class="signup-brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2.7 4.5 5.5v5.2c0 5 3.2 8.6 7.5 10.6 4.3-2 7.5-5.6 7.5-10.6V5.5L12 2.7Z" /><path d="m8.8 12.1 2.1 2.1 4.4-4.6" /></svg>
+        </span>
+        <span>Safe Passage</span>
+    </a>
+
+    <section class="signup-card" aria-labelledby="signup-title">
+        <div class="signup-card-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2.7 4.5 5.5v5.2c0 5 3.2 8.6 7.5 10.6 4.3-2 7.5-5.6 7.5-10.6V5.5L12 2.7Z" /><path d="m8.8 12.1 2.1 2.1 4.4-4.6" /></svg>
+        </div>
+        @if (Submitted)
+        {
+            <p class="signup-eyebrow">ONE MORE STEP</p>
+            <h1 id="signup-title">Check your email</h1>
+            <p class="signup-subtitle">If this address can be registered, we’ll send an activation link. Verify your email, then enroll your phone in the Safe Passage mobile app for sign-in approvals.</p>
+            <a class="signup-button" href="/login">Back to sign in</a>
+        }
+        else
+        {
+            <p class="signup-eyebrow">CREATE YOUR ACCOUNT · STEP @CurrentStep OF 3</p>
+            <h1 id="signup-title">@StepTitle</h1>
+            <p class="signup-subtitle">@StepDescription</p>
+            <ol class="signup-progress" aria-label="Sign-up progress">
+                @for (var step = 1; step <= 3; step++)
+                {
+                    <li class="@GetStepClass(step)" aria-current="@(step == CurrentStep ? "step" : null)">
+                        <span>@step</span>
+                        <span class="signup-progress-label">@GetStepLabel(step)</span>
+                    </li>
+                }
+            </ol>
+            @if (!string.IsNullOrWhiteSpace(Error))
+            {
+                <div class="signup-error" role="alert">@Error</div>
+            }
+            @if (CurrentStep == 1)
+            {
+                <EditForm Model="IdentityForm" OnValidSubmit="ContinueToContact">
+                    <DataAnnotationsValidator />
+                    <label for="signup-name">Full name</label>
+                    <InputText id="signup-name" @bind-Value="IdentityForm.FullName" autocomplete="name" disabled="@Saving" placeholder="Enter your full name" />
+                    <ValidationMessage For="() => IdentityForm.FullName" />
+                    <label for="signup-username">Username</label>
+                    <InputText id="signup-username" @bind-Value="IdentityForm.Username" autocomplete="username" autocapitalize="none" disabled="@Saving" placeholder="Choose a username" />
+                    <small class="signup-field-hint">3–32 characters: letters, numbers, periods, underscores, or hyphens.</small>
+                    <ValidationMessage For="() => IdentityForm.Username" />
+                    <button class="signup-button" type="submit" disabled="@Saving">Continue <span aria-hidden="true">→</span></button>
+                </EditForm>
+            }
+            else if (CurrentStep == 2)
+            {
+                <EditForm Model="ContactForm" OnValidSubmit="ContinueToPassword">
+                    <DataAnnotationsValidator />
+                    <label for="signup-email">Email address</label>
+                    <InputText id="signup-email" type="email" @bind-Value="ContactForm.Email" autocomplete="email" disabled="@Saving" placeholder="you@example.com" />
+                    <ValidationMessage For="() => ContactForm.Email" />
+                    <label for="signup-phone">Phone number</label>
+                    <InputText id="signup-phone" type="tel" @bind-Value="ContactForm.PhoneNumber" autocomplete="tel" disabled="@Saving" placeholder="+1 555 123 4567" />
+                    <ValidationMessage For="() => ContactForm.PhoneNumber" />
+                    <div class="signup-actions">
+                        <button class="signup-secondary" type="button" @onclick="GoToPreviousStep" disabled="@Saving">Back</button>
+                        <button class="signup-button" type="submit" disabled="@Saving">Continue <span aria-hidden="true">→</span></button>
+                    </div>
+                </EditForm>
+            }
+            else
+            {
+                <EditForm Model="PasswordForm" OnValidSubmit="RegisterAsync">
+                    <DataAnnotationsValidator />
+                    <label for="signup-password">Password</label>
+                    <InputText id="signup-password" type="password" @bind-Value="PasswordForm.Password" autocomplete="new-password" disabled="@Saving" placeholder="At least 12 characters" />
+                    <ValidationMessage For="() => PasswordForm.Password" />
+                    <label for="signup-confirm-password">Confirm password</label>
+                    <InputText id="signup-confirm-password" type="password" @bind-Value="PasswordForm.ConfirmPassword" autocomplete="new-password" disabled="@Saving" placeholder="Enter your password again" />
+                    <ValidationMessage For="() => PasswordForm.ConfirmPassword" />
+                    <div class="signup-actions">
+                        <button class="signup-secondary" type="button" @onclick="GoToPreviousStep" disabled="@Saving">Back</button>
+                        <button class="signup-button" type="submit" disabled="@Saving">@(Saving ? "Creating account…" : "Create account") <span aria-hidden="true">→</span></button>
+                    </div>
+                </EditForm>
+                <p class="signup-terms">By continuing, you agree to use Safe Passage responsibly and keep your sign-in details secure.</p>
+            }
+            <p class="signup-switch">Already have an account? <a href="/login">Sign in</a></p>
+        }
+    </section>
+    <a class="signup-back" href="/">← Back to Safe Passage</a>
+</main>
+
+@code {
+    private readonly IdentityFormModel IdentityForm = new();
+    private readonly ContactFormModel ContactForm = new();
+    private readonly PasswordFormModel PasswordForm = new();
+    private int CurrentStep = 1;
+    private bool Saving;
+    private bool Submitted;
+    private string Error = "";
+
+    private string StepTitle => CurrentStep switch
+    {
+        1 => "Tell us who you are.",
+        2 => "How can we reach you?",
+        _ => "Create your password."
+    };
+
+    private string StepDescription => CurrentStep switch
+    {
+        1 => "Start with your name and the username you’ll use to sign in.",
+        2 => "Add your email and phone number for account verification and security.",
+        _ => "Choose a strong password to secure your Safe Passage account."
+    };
+
+    private static string GetStepLabel(int step) => step switch
+    {
+        1 => "Profile",
+        2 => "Contact",
+        _ => "Password"
+    };
+
+    private string GetStepClass(int step) =>
+        step < CurrentStep ? "signup-progress-step is-complete"
+            : step == CurrentStep ? "signup-progress-step is-current"
+            : "signup-progress-step";
+
+    private void ContinueToContact()
+    {
+        Error = "";
+        CurrentStep = 2;
+    }
+
+    private void ContinueToPassword()
+    {
+        Error = "";
+        CurrentStep = 3;
+    }
+
+    private void GoToPreviousStep()
+    {
+        if (CurrentStep > 1)
+            CurrentStep--;
+        Error = "";
+    }
+
+    private async Task RegisterAsync()
+    {
+        Saving = true;
+        Error = "";
+        try
+        {
+            await Api.RegisterAccountAsync(new AccountRegistrationForm
+            {
+                FullName = IdentityForm.FullName.Trim(),
+                Username = IdentityForm.Username.Trim(),
+                Email = ContactForm.Email.Trim(),
+                PhoneNumber = ContactForm.PhoneNumber.Trim(),
+                Password = PasswordForm.Password
+            });
+            Submitted = true;
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Saving = false; }
+    }
+
+    private sealed class IdentityFormModel
+    {
+        [Required, StringLength(200, MinimumLength = 1)]
+        public string FullName { get; set; } = "";
+
+        [Required, StringLength(32, MinimumLength = 3)]
+        [RegularExpression(@"^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            ErrorMessage = "Username must start with a letter or number and use only letters, numbers, periods, underscores, or hyphens.")]
+        public string Username { get; set; } = "";
+    }
+
+    private sealed class ContactFormModel
+    {
+        [Required, EmailAddress, StringLength(320)]
+        public string Email { get; set; } = "";
+
+        [Required, Phone, StringLength(32, MinimumLength = 7)]
+        public string PhoneNumber { get; set; } = "";
+    }
+
+    private sealed class PasswordFormModel
+    {
+        [Required, StringLength(1024, MinimumLength = 12)]
+        public string Password { get; set; } = "";
+
+        [Required, Compare(nameof(Password), ErrorMessage = "The passwords do not match.")]
+        public string ConfirmPassword { get; set; } = "";
+    }
+}

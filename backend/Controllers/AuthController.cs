@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using SafePassage.Api.Contracts.Auth;
 using SafePassage.Api.Models;
@@ -7,8 +8,38 @@ namespace SafePassage.Api.Controllers;
 
 [ApiController]
 [Route("api/auth")]
-public sealed class AuthController(IAuthFlowService authFlow) : ControllerBase
+public sealed class AuthController(
+    IAuthFlowService authFlow,
+    IAccountRegistrationService accountRegistrationService) : ControllerBase
 {
+    /// <summary>Creates a regular account and sends an email activation link.</summary>
+    [HttpPost("register")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> Register(
+        [FromBody] RegisterRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await accountRegistrationService.RegisterAsync(request, cancellationToken);
+        if (result == AccountRegistrationResult.EmailDeliveryFailed)
+            return StatusCode(StatusCodes.Status503ServiceUnavailable,
+                new { message = "We could not send your activation email. Please try again later." });
+        if (result == AccountRegistrationResult.UsernameUnavailable)
+            return Conflict(new ProblemDetails
+            {
+                Title = "Username unavailable",
+                Detail = "That username is unavailable. Choose another username and try again.",
+                Status = StatusCodes.Status409Conflict
+            });
+
+        return Accepted(new
+        {
+            message = "If the address can be registered, an activation link will be sent by email."
+        });
+    }
+
     /// <summary>Validates credentials and starts a device-based MFA challenge.</summary>
     [HttpPost("login")]
     [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]

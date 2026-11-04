@@ -1,4 +1,5 @@
 @page "/activate"
+@layout AuthLayout
 @rendermode InteractiveServer
 @using System.ComponentModel.DataAnnotations
 @using SafePassage.Web.Services
@@ -17,23 +18,30 @@
         }
         else if (Activated)
         {
-            <p class="activation-success" role="status">Your account is activated. You can now sign in.</p>
+            <p class="activation-success" role="status">Your account is activated. Sign in on the Safe Passage mobile app and enroll your first phone to approve future sign-ins.</p>
             <button class="activation-button" @onclick="NavigateToLogin">Go to sign in</button>
         }
         else
         {
-            <p class="activation-copy">Choose a password to finish activating your account.</p>
+            <p class="activation-copy">@(SetPassword ? "Choose a password to finish activating your account." : "Verify your email address to activate your account.")</p>
             @if (!string.IsNullOrWhiteSpace(Error)) { <div class="activation-error" role="alert">@Error</div> }
-            <EditForm Model="Form" OnValidSubmit="ActivateAsync">
-                <DataAnnotationsValidator />
-                <label for="activation-password">Password</label>
-                <InputText id="activation-password" type="password" @bind-Value="Form.Password" autocomplete="new-password" />
-                <ValidationMessage For="() => Form.Password" />
-                <label for="activation-confirm">Confirm password</label>
-                <InputText id="activation-confirm" type="password" @bind-Value="Form.ConfirmPassword" autocomplete="new-password" />
-                <ValidationMessage For="() => Form.ConfirmPassword" />
-                <button class="activation-button" type="submit" disabled="@Saving">@(Saving ? "Activating…" : "Activate account")</button>
-            </EditForm>
+            @if (SetPassword)
+            {
+                <EditForm Model="Form" OnValidSubmit="ActivateAsync">
+                    <DataAnnotationsValidator />
+                    <label for="activation-password">Password</label>
+                    <InputText id="activation-password" type="password" @bind-Value="Form.Password" autocomplete="new-password" />
+                    <ValidationMessage For="() => Form.Password" />
+                    <label for="activation-confirm">Confirm password</label>
+                    <InputText id="activation-confirm" type="password" @bind-Value="Form.ConfirmPassword" autocomplete="new-password" />
+                    <ValidationMessage For="() => Form.ConfirmPassword" />
+                    <button class="activation-button" type="submit" disabled="@Saving">@(Saving ? "Activating…" : "Activate account")</button>
+                </EditForm>
+            }
+            else
+            {
+                <button class="activation-button" @onclick="ActivateAsync" disabled="@Saving">@(Saving ? "Verifying…" : "Verify email and activate")</button>
+            }
         }
     </section>
 </main>
@@ -45,6 +53,11 @@
 @code {
     [SupplyParameterFromQuery(Name = "token")]
     public string? Token { get; set; }
+
+    [SupplyParameterFromQuery(Name = "setPassword")]
+    public bool? SetPasswordFromQuery { get; set; }
+
+    private bool SetPassword => SetPasswordFromQuery != false;
 
     private readonly ActivationForm Form = new();
     private string Error = "";
@@ -65,7 +78,7 @@
         Error = "";
         try
         {
-            await Api.ActivateAccountAsync(Token, Form.Password);
+            await Api.ActivateAccountAsync(Token, SetPassword ? Form.Password : null);
             Activated = true;
         }
         catch (Exception exception) { Error = exception.Message; }

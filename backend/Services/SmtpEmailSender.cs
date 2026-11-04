@@ -10,6 +10,7 @@ public interface IActivationEmailSender
         string email,
         string username,
         string activationUrl,
+        bool requiresPasswordSetup,
         CancellationToken cancellationToken);
 }
 
@@ -19,6 +20,7 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
         string email,
         string username,
         string activationUrl,
+        bool requiresPasswordSetup,
         CancellationToken cancellationToken)
     {
         var settings = options.Value;
@@ -40,10 +42,11 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
                 From = string.IsNullOrWhiteSpace(settings.FromName)
                     ? new MailAddress(settings.FromAddress)
                     : new MailAddress(settings.FromAddress, settings.FromName),
-                Subject = "Activate your Safe Passage account",
+                Subject = "Finish setting up your Safe Passage account",
                 Body = $"Hello {username},\n\n"
-                    + "An administrator created a Safe Passage account for you. "
-                    + "Open the following one-time link to activate your account and choose your password:\n\n"
+                    + (requiresPasswordSetup
+                        ? "Open the following one-time link to activate your Safe Passage account and choose your password:\n\n"
+                        : "Open the following one-time link to verify your email address and activate your Safe Passage account:\n\n")
                     + $"{activationUrl}\n\n"
                     + "This link expires soon. If you did not expect this invitation, you can ignore this message.",
                 IsBodyHtml = false

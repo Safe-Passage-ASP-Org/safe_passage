@@ -24,8 +24,11 @@ public sealed class DeviceBootstrapService(
             || string.IsNullOrWhiteSpace(request.SigningPublicKey))
             throw new ArgumentException("All device enrollment fields are required.");
 
+        var identifier = request.Username.Trim();
+        var normalizedIdentifier = identifier.ToUpperInvariant();
         var user = await dbContext.Users.SingleOrDefaultAsync(
-            candidate => candidate.Username == request.Username.Trim() && candidate.IsActive,
+            candidate => (candidate.Username.ToUpper() == normalizedIdentifier
+                || candidate.Email.ToUpper() == normalizedIdentifier) && candidate.IsActive,
             cancellationToken);
         if (user is null || passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password)
             == PasswordVerificationResult.Failed)

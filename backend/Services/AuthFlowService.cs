@@ -28,8 +28,11 @@ public sealed class AuthFlowService(
         LoginRequest request,
         CancellationToken cancellationToken)
     {
+        var identifier = request.Username.Trim();
+        var normalizedIdentifier = identifier.ToUpperInvariant();
         var user = await dbContext.Users.SingleOrDefaultAsync(
-            candidate => candidate.Username == request.Username,
+            candidate => candidate.Username.ToUpper() == normalizedIdentifier
+                || candidate.Email.ToUpper() == normalizedIdentifier,
             cancellationToken);
         var verification = passwordHasher.VerifyHashedPassword(
             user ?? _dummyUser,
@@ -47,6 +50,43 @@ public sealed class AuthFlowService(
             user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
 
         var policy = await securityPolicyEvaluator.EvaluateAsync(cancellationToken);
+        var loginTimestampNow = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        if (request.DeviceSignature is not null
+            && request.DeviceSignatureTimestamp is long signatureTimestamp
+            && policy.IsValid
+            && signatureTimestamp >= loginTimestampNow - 60_000
+            && signatureTimestamp <= loginTimestampNow + 60_000
+            && !string.IsNullOrWhiteSpace(request.DeviceId))
+        {
+            var signingDevice = await dbContext.Devices.FirstOrDefaultAsync(candidate =>
+                candidate.UserId == user.Id
+                && candidate.DeviceId == request.DeviceId
+                && candidate.Status == DeviceStatus.Active
+                && candidate.TrustStatus == DeviceTrustStatus.Trusted,
+                cancellationToken);
+
+            if (signingDevice is not null
+                && MfaApprovalSignature.VerifyDeviceLogin(
+                    signingDevice.SigningPublicKey,
+                    signingDevice.DeviceId,
+                    signatureTimestamp,
+                    request.DeviceSignature))
+            {
+                signingDevice.LastActiveDate = DateTimeOffset.UtcNow;
+                AddActivity(user.Id, "Login", "Trusted mobile device proved possession of its signing key", ActivityLogStatus.Success);
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return AuthFlowResult<LoginResponse>.Success(new(
+                    false,
+                    null,
+                    signingDevice.DeviceId,
+                    null,
+                    null,
+                    jwtTokenService.CreateAccessToken(user, signingDevice.DeviceId),
+                    "Bearer",
+                    "Credentials accepted; this trusted device authenticated with its registered signing key."));
+            }
+        }
+
         if (policy.IsValid && !policy.RequiresStepUp)
         {
             AddActivity(user.Id, "Login", "MFA not required by enforced policy", ActivityLogStatus.Success);

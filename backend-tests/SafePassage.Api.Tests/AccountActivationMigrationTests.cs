@@ -23,11 +23,14 @@ public sealed class AccountActivationMigrationTests
         await using var command = dbConnection.CreateCommand();
         command.CommandText = "PRAGMA table_info(\"Users\")";
         string? emailVerifiedDefault = null;
+        var userColumns = new HashSet<string>(StringComparer.Ordinal);
         await using (var reader = await command.ExecuteReaderAsync())
         {
             while (await reader.ReadAsync())
             {
-                if (reader.GetString(1) == "IsEmailVerified")
+                var name = reader.GetString(1);
+                userColumns.Add(name);
+                if (name == "IsEmailVerified")
                     emailVerifiedDefault = reader.IsDBNull(4) ? null : reader.GetString(4);
             }
         }
@@ -36,5 +39,7 @@ public sealed class AccountActivationMigrationTests
         var activationTokenTableExists = Convert.ToInt32(await command.ExecuteScalarAsync());
         Assert.Equal("1", emailVerifiedDefault);
         Assert.Equal(1, activationTokenTableExists);
+        Assert.Contains("FullName", userColumns);
+        Assert.Contains("PhoneNumber", userColumns);
     }
 }

@@ -61,10 +61,10 @@ export default function LoginScreen({ navigation }) {
 
       <View style={styles.formContainer}>
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Username</Text>
+          <Text style={styles.label}>Email or username</Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter your username"
+            placeholder="Enter your email or username"
             placeholderTextColor="#64748b"
             value={username}
             onChangeText={setUsername}

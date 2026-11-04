@@ -37,6 +37,9 @@ describe('mobile auth flow', () => {
       expect.stringContaining('/api/auth/login'),
       expect.objectContaining({ method: 'POST' }),
     );
+    const requestBody = JSON.parse(global.fetch.mock.calls[0][1].body);
+    expect(requestBody.deviceSignature).toBeTruthy();
+    expect(requestBody.deviceSignatureTimestamp).toEqual(expect.any(Number));
   });
 
   it('signs the MFA approval payload and resolves a token after approval', async () => {
