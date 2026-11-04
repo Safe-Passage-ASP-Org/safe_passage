@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Json;
 
 namespace SafePassage.Web.Services;
 
@@ -8,6 +10,11 @@ public sealed class AdminApiClient(HttpClient http)
 {
     public string? AccessToken { get; private set; }
     public string? CurrentUsername { get; private set; }
+    public string? CurrentRole { get; private set; }
+    public bool IsAdministrator =>
+        string.Equals(CurrentRole, "Admin", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(CurrentRole, "Administrator", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(CurrentRole, "Super Admin", StringComparison.OrdinalIgnoreCase);
 
     public async Task<LoginResult> LoginAsync(string username, string password, CancellationToken cancellationToken = default)
     {
@@ -192,9 +199,48 @@ public sealed class AdminApiClient(HttpClient http)
     private void SetToken(string? token)
     {
         AccessToken = token;
+        CurrentRole = ReadRole(token);
         http.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(token)
             ? null
             : new AuthenticationHeaderValue("Bearer", token);
+    }
+
+    private static string? ReadRole(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            return null;
+
+        var parts = token.Split('.');
+        if (parts.Length < 2)
+            return null;
+
+        var payload = parts[1].Replace('-', '+').Replace('_', '/');
+        payload = payload.PadRight((payload.Length + 3) / 4 * 4, '=');
+
+        try
+        {
+            using var document = JsonDocument.Parse(Convert.FromBase64String(payload));
+            foreach (var claimType in new[] { "role", "roles", ClaimTypes.Role })
+            {
+                if (!document.RootElement.TryGetProperty(claimType, out var role))
+                    continue;
+
+                if (role.ValueKind == JsonValueKind.String)
+                    return role.GetString();
+                if (role.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var value in role.EnumerateArray())
+                    {
+                        if (value.ValueKind == JsonValueKind.String)
+                            return value.GetString();
+                    }
+                }
+            }
+        }
+        catch (FormatException) { }
+        catch (JsonException) { }
+
+        return null;
     }
 
     private sealed record LoginResponse(bool MfaRequired, string? SessionToken, string? AccessToken, string? Message);

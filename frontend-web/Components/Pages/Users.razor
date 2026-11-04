@@ -10,10 +10,10 @@
 </div>
 
 <div class="user-summary">
-    <div><span>Directory accounts</span><strong>@DirectoryUsers.Count</strong></div>
-    <div><span>Active</span><strong class="good">@DirectoryUsers.Count(user => user.IsActive)</strong></div>
-    <div><span>Pending activation</span><strong class="muted">@DirectoryUsers.Count(user => !user.IsEmailVerified)</strong></div>
-    <div><span>Suspended</span><strong class="muted">@DirectoryUsers.Count(user => user.IsEmailVerified && !user.IsActive)</strong></div>
+    <div><span>Directory accounts</span><strong>@FormatCount(DirectoryUsers.Count)</strong></div>
+    <div><span>Active</span><strong class="good">@FormatCount(DirectoryUsers.Count(user => user.IsActive))</strong></div>
+    <div><span>Pending activation</span><strong class="muted">@FormatCount(DirectoryUsers.Count(user => !user.IsEmailVerified))</strong></div>
+    <div><span>Suspended</span><strong class="muted">@FormatCount(DirectoryUsers.Count(user => user.IsEmailVerified && !user.IsActive))</strong></div>
     <button class="user-primary" @onclick="OpenCreate" disabled="@Busy">＋ Create user</button>
 </div>
 
@@ -25,6 +25,10 @@
     @if (Loading)
     {
         <p class="user-state" role="status">Loading users…</p>
+    }
+    else if (!string.IsNullOrWhiteSpace(Error))
+    {
+        <p class="user-state">Directory records are unavailable.</p>
     }
     else if (DirectoryUsers.Count == 0)
     {
@@ -89,6 +93,8 @@
     private string Notice = "";
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private string FormatCount(int count) => string.IsNullOrWhiteSpace(Error) ? count.ToString() : "—";
 
     private async Task LoadAsync()
     {
