@@ -2,9 +2,9 @@
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
 
-<PageTitle>Devices – Safe Passage</PageTitle>
+<PageTitle>@(Api.IsAdministrator ? "Devices" : "My Devices") – Safe Passage</PageTitle>
 
-<div class="sp-page-header"><h1 class="sp-page-title">Devices</h1><p class="sp-page-subtitle">Review device enrollment and manage trust for registered devices.</p></div>
+<div class="sp-page-header"><h1 class="sp-page-title">@(Api.IsAdministrator ? "Devices" : "My Devices")</h1><p class="sp-page-subtitle">@(Api.IsAdministrator ? "Review device enrollment and manage trust for registered devices." : "View the devices registered to your account.")</p></div>
 
 <div class="device-stats">
     <div><span>Trusted</span><strong>@RegisteredDevices.Count(device => device.TrustStatus == "TRUSTED" && device.Status == "ACTIVE")</strong></div>
@@ -15,22 +15,22 @@
 @if (!string.IsNullOrWhiteSpace(Notice)) { <div class="device-notice" role="status">@Notice</div> }
 
 <section class="sp-card device-card">
-    <div class="device-heading"><div><h2>Registered devices</h2><p>Trust posture and assigned owners</p></div><span>@RegisteredDevices.Count devices</span></div>
+    <div class="device-heading"><div><h2>Registered devices</h2><p>@(Api.IsAdministrator ? "Trust posture and assigned owners" : "Your registered devices")</p></div><span>@RegisteredDevices.Count devices</span></div>
     @if (Loading) { <p class="device-state" role="status">Loading devices…</p> }
     else if (RegisteredDevices.Count == 0) { <p class="device-state">No devices are registered.</p> }
     else
     {
         <div class="device-scroll"><table class="device-table">
-            <thead><tr><th>Device name</th><th>Assigned user</th><th>Operating system</th><th>Device status</th><th>Trust</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Device name</th>@if (Api.IsAdministrator) { <th>Assigned user</th> }<th>Operating system</th><th>Device status</th><th>Trust</th>@if (Api.IsAdministrator) { <th>Actions</th> }</tr></thead>
             <tbody>
                 @foreach (var device in RegisteredDevices)
                 {
                     <tr>
                         <td><div class="device-name"><span class="device-glyph">▣</span><strong>@device.DeviceName</strong></div><small>@device.DeviceId</small></td>
-                        <td>@(UserNames.GetValueOrDefault(device.UserId) ?? "Unknown user")</td><td class="device-os">@device.OS</td>
+                        @if (Api.IsAdministrator) { <td>@(UserNames.GetValueOrDefault(device.UserId) ?? "Unknown user")</td> }<td class="device-os">@device.OS</td>
                         <td><span class="device-pill @StatusClass(device.Status)">@FormatStatus(device.Status)</span></td>
                         <td><span class="trust-pill @(device.TrustStatus == "TRUSTED" ? "" : "untrusted")"><i></i>@FormatStatus(device.TrustStatus)</span></td>
-                        <td><div class="device-actions"><button @onclick="() => TrustAsync(device)" disabled="@(Busy || device.Status == "DISABLED" || device.TrustStatus == "TRUSTED")">Trust</button><button class="disable" @onclick="() => RevokeAsync(device)" disabled="@(Busy || device.Status == "DISABLED")">Disable</button><button class="details" @onclick="() => SelectedDevice = device">Details</button></div></td>
+                        @if (Api.IsAdministrator) { <td><div class="device-actions"><button @onclick="() => TrustAsync(device)" disabled="@(Busy || device.Status == "DISABLED" || device.TrustStatus == "TRUSTED")">Trust</button><button class="disable" @onclick="() => RevokeAsync(device)" disabled="@(Busy || device.Status == "DISABLED")">Disable</button><button class="details" @onclick="() => SelectedDevice = device">Details</button></div></td> }
                     </tr>
                 }
             </tbody>
@@ -43,7 +43,7 @@
     <div class="device-backdrop" @onclick="() => SelectedDevice = null">
         <section class="device-modal" role="dialog" aria-modal="true" aria-labelledby="device-detail-title" @onclick:stopPropagation="true">
             <div class="device-modal-heading"><div><span>DEVICE RECORD</span><h2 id="device-detail-title">@SelectedDevice.DeviceName</h2></div><button aria-label="Close" @onclick="() => SelectedDevice = null">×</button></div>
-            <dl><dt>Assigned user</dt><dd>@(UserNames.GetValueOrDefault(SelectedDevice.UserId) ?? "Unknown user")</dd><dt>Operating system</dt><dd>@SelectedDevice.OS</dd><dt>Device status</dt><dd>@FormatStatus(SelectedDevice.Status)</dd><dt>Trust status</dt><dd>@FormatStatus(SelectedDevice.TrustStatus)</dd><dt>Registered</dt><dd>@SelectedDevice.RegistrationDate.ToLocalTime().ToString("g")</dd><dt>Last active</dt><dd>@(SelectedDevice.LastActiveDate?.ToLocalTime().ToString("g") ?? "Never")</dd><dt>Device ID</dt><dd>@SelectedDevice.DeviceId</dd></dl>
+            <dl>@if (Api.IsAdministrator) { <dt>Assigned user</dt><dd>@(UserNames.GetValueOrDefault(SelectedDevice.UserId) ?? "Unknown user")</dd> }<dt>Operating system</dt><dd>@SelectedDevice.OS</dd><dt>Device status</dt><dd>@FormatStatus(SelectedDevice.Status)</dd><dt>Trust status</dt><dd>@FormatStatus(SelectedDevice.TrustStatus)</dd><dt>Registered</dt><dd>@SelectedDevice.RegistrationDate.ToLocalTime().ToString("g")</dd><dt>Last active</dt><dd>@(SelectedDevice.LastActiveDate?.ToLocalTime().ToString("g") ?? "Never")</dd><dt>Device ID</dt><dd>@SelectedDevice.DeviceId</dd></dl>
             <button class="device-done" @onclick="() => SelectedDevice = null">Done</button>
         </section>
     </div>
@@ -73,7 +73,8 @@
         try
         {
             RegisteredDevices = await Api.GetDevicesAsync();
-            UserNames = (await Api.GetUsersAsync()).ToDictionary(user => user.Id, user => user.Username);
+            if (Api.IsAdministrator)
+                UserNames = (await Api.GetUsersAsync()).ToDictionary(user => user.Id, user => user.Username);
         }
         catch (Exception exception) { Error = exception.Message; }
         finally { Loading = false; }
