@@ -5,6 +5,7 @@ import { getApprovalDeviceId } from './DeviceSigningService';
 
 let connection;
 let activeDeviceId;
+let activeUserId;
 let requestHandler;
 let retryTimer;
 let stopped = false;
@@ -17,21 +18,32 @@ export async function startMfaRealtime() {
   stopped = false;
   const token = await getToken();
   const deviceId = await getApprovalDeviceId();
-  if (!token || !deviceId) return false;
+  const userId = getUserIdFromToken(token);
+  if (!token || !deviceId || !userId) return false;
 
-  if (connection && activeDeviceId === deviceId && connection.state === 'Connected') return true;
+  if (connection
+    && activeDeviceId === deviceId
+    && activeUserId === userId
+    && connection.state === 'Connected') return true;
   await stopMfaRealtime();
   stopped = false;
   activeDeviceId = deviceId;
+  activeUserId = userId;
+  const connectionUserId = userId;
 
   const current = new HubConnectionBuilder()
-    .withUrl(`${BASE_URL}/mfaHub`, { accessTokenFactory: async () => (await getToken()) ?? '' })
+    .withUrl(`${BASE_URL}/mfaHub`, {
+      accessTokenFactory: async () => {
+        const currentToken = await getToken();
+        return getUserIdFromToken(currentToken) === connectionUserId ? currentToken : '';
+      },
+    })
     .withAutomaticReconnect()
     .configureLogging(LogLevel.Warning)
     .build();
 
   current.on('MfaRequested', payload => {
-    if (!payload?.sessionToken || payload.deviceId !== activeDeviceId) return;
+    if (!isMfaRequestForAccount(payload, connectionUserId, deviceId)) return;
     requestHandler?.({
       requestId: payload.sessionToken,
       deviceId: payload.deviceId,
@@ -73,6 +85,7 @@ export async function stopMfaRealtime() {
   const current = connection;
   connection = null;
   activeDeviceId = null;
+  activeUserId = null;
   if (current) {
     try { await current.stop(); } catch {}
   }
@@ -84,4 +97,40 @@ function scheduleRetry() {
     retryTimer = null;
     if (!stopped) startMfaRealtime();
   }, 5000);
+}
+
+export function getUserIdFromToken(token) {
+  try {
+    const encodedPayload = token?.split('.')[1];
+    if (!encodedPayload) return null;
+    const base64 = encodedPayload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64.padEnd(base64.length + (4 - (base64.length % 4)) % 4, '=');
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=';
+    let bytes = '';
+    for (let index = 0; index < padded.length;) {
+      const first = alphabet.indexOf(padded[index++]);
+      const second = alphabet.indexOf(padded[index++]);
+      const third = alphabet.indexOf(padded[index++]);
+      const fourth = alphabet.indexOf(padded[index++]);
+      bytes += String.fromCharCode(((first << 2) | (second >> 4)) & 0xff);
+      if (third !== 64) bytes += String.fromCharCode(((second << 4) | (third >> 2)) & 0xff);
+      if (fourth !== 64) bytes += String.fromCharCode(((third << 6) | fourth) & 0xff);
+    }
+
+    const payload = JSON.parse(decodeURIComponent(bytes.split('')
+      .map(character => `%${character.charCodeAt(0).toString(16).padStart(2, '0')}`)
+      .join('')));
+    return payload.sub ?? payload['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier'] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+export function isMfaRequestForAccount(payload, userId, deviceId) {
+  return Boolean(
+    payload?.sessionToken
+    && payload.deviceId === deviceId
+    && typeof payload.userId === 'string'
+    && payload.userId.toLowerCase() === userId?.toLowerCase(),
+  );
 }
