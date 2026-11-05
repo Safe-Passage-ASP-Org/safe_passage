@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { collectDeviceTelemetry } from '../services/DeviceService';
 import { saveAccessToken } from '../services/AuthService';
-import { getDeviceSigningPublicKey, storeApprovalDeviceId } from '../services/DeviceSigningService';
+import { bindSigningKeyToAccount, getDeviceSigningPublicKey, getUserIdFromToken, storeApprovalDeviceId } from '../services/DeviceSigningService';
 import { startMfaRealtime } from '../services/RealtimeService';
 import { BASE_URL, getApplicationHeaders } from '../config';
 
@@ -25,11 +25,13 @@ export default function DeviceEnrollmentScreen({ navigation }) {
           username: username.trim(), password,
           deviceId: telemetry.deviceId, deviceName: telemetry.deviceName,
           deviceType: telemetry.deviceType, os: telemetry.os,
-          signingPublicKey: await getDeviceSigningPublicKey(),
+          signingPublicKey: await getDeviceSigningPublicKey(username.trim()),
         }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail ?? data.title ?? 'Phone setup failed.');
+      const accountId = getUserIdFromToken(data.accessToken);
+      if (accountId) await bindSigningKeyToAccount(username.trim(), accountId);
       await saveAccessToken(data.accessToken);
       await storeApprovalDeviceId(data.deviceId);
       await startMfaRealtime();

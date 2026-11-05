@@ -5,18 +5,9 @@ jest.mock('@microsoft/signalr', () => ({
 jest.mock('../AuthService', () => ({ getToken: jest.fn() }));
 jest.mock('../DeviceSigningService', () => ({ getApprovalDeviceId: jest.fn() }));
 
-const { getUserIdFromToken, isMfaRequestForAccount } = require('../RealtimeService');
-
-function createToken(payload) {
-  const encoded = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  return `header.${encoded}.signature`;
-}
+const { isMfaRequestForAccount } = require('../RealtimeService');
 
 describe('MFA realtime account isolation', () => {
-  it('reads the account ID from the access token', () => {
-    expect(getUserIdFromToken(createToken({ sub: 'account-123' }))).toBe('account-123');
-  });
-
   it('ignores a valid request addressed to a different account on the same phone', () => {
     const request = {
       sessionToken: 'session-123',

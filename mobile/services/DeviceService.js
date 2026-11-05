@@ -2,7 +2,7 @@ import * as Device from 'expo-device';
 import * as Application from 'expo-application';
 import { Platform } from 'react-native';
 import { getToken } from './AuthService';
-import { getApprovalDeviceId, getDeviceSigningPublicKey, signMfaApproval } from './DeviceSigningService';
+import { getApprovalDeviceId, getDeviceSigningPublicKey, getUserIdFromToken, signMfaApproval } from './DeviceSigningService';
 import { BASE_URL, getApplicationHeaders } from '../config';
 
 /**
@@ -76,7 +76,7 @@ export async function registerDeviceWithBackend(telemetry) {
     deviceName: telemetry.deviceName,
     deviceType: telemetry.deviceType || 'Phone',
     os: telemetry.os || `${telemetry.osName} ${telemetry.osVersion}`.trim(),
-    signingPublicKey: await getDeviceSigningPublicKey(),
+    signingPublicKey: await getDeviceSigningPublicKey(getUserIdFromToken(token)),
   };
 
   const response = await fetch(`${BASE_URL}/api/devices/register`, {
@@ -128,12 +128,12 @@ export async function submitMfaDecision(requestId, deviceId, decision) {
     ? JSON.stringify({
       sessionToken: requestId,
       deviceId: approvalDeviceId,
-      signature: await signMfaApproval(requestId, approvalDeviceId),
+      signature: await signMfaApproval(requestId, approvalDeviceId, getUserIdFromToken(token)),
     })
     : JSON.stringify({
       sessionToken: requestId,
       deviceId: approvalDeviceId,
-      signature: await signMfaApproval(requestId, approvalDeviceId),
+      signature: await signMfaApproval(requestId, approvalDeviceId, getUserIdFromToken(token)),
     });
 
   const response = await fetch(endpoint, {

@@ -1,6 +1,6 @@
 import * as SecureStore from 'expo-secure-store';
 import { BASE_URL, getApplicationHeaders } from '../config';
-import { signDeviceLogin, storeApprovalDeviceId } from './DeviceSigningService';
+import { bindSigningKeyToAccount, getUserIdFromToken, signDeviceLogin, storeApprovalDeviceId } from './DeviceSigningService';
 
 const TOKEN_KEY = 'auth_token';
 
@@ -16,7 +16,7 @@ const TOKEN_KEY = 'auth_token';
 export async function login(username, password, deviceId) {
   await SecureStore.deleteItemAsync(TOKEN_KEY);
   const deviceSignatureTimestamp = Date.now();
-  const deviceSignature = await signDeviceLogin(deviceId, deviceSignatureTimestamp);
+  const deviceSignature = await signDeviceLogin(deviceId, deviceSignatureTimestamp, username);
 
   let response;
   try {
@@ -37,6 +37,8 @@ export async function login(username, password, deviceId) {
 
   const accessToken = data.accessToken ?? data.token;
   if (accessToken) {
+    const accountId = getUserIdFromToken(accessToken);
+    if (accountId) await bindSigningKeyToAccount(username, accountId);
     await saveAccessToken(accessToken);
   }
   await storeApprovalDeviceId(data.approvalDeviceId ?? deviceId);

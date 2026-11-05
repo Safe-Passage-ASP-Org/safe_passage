@@ -1,21 +1,40 @@
-jest.mock('expo-secure-store', () => ({
-  deleteItemAsync: jest.fn(async () => {}),
-  setItemAsync: jest.fn(async () => {}),
-  getItemAsync: jest.fn(async () => null),
-}));
+jest.mock('expo-secure-store', () => {
+  const values = new Map();
+  return {
+    __values: values,
+    deleteItemAsync: jest.fn(async key => values.delete(key)),
+    setItemAsync: jest.fn(async (key, value) => values.set(key, value)),
+    getItemAsync: jest.fn(async key => values.get(key) ?? null),
+  };
+});
 
 jest.mock('expo-crypto', () => ({
-  getRandomBytesAsync: jest.fn(async () => Uint8Array.from(Array.from({ length: 32 }, (_, index) => index + 1))),
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+  digestStringAsync: jest.fn(async (_algorithm, value) => {
+    const { createHash } = require('node:crypto');
+    return createHash('sha256').update(value).digest('hex');
+  }),
+  getRandomBytesAsync: jest.fn(async () => {
+    const { randomBytes } = require('node:crypto');
+    return randomBytes(32);
+  }),
 }));
 
 const SecureStore = require('expo-secure-store');
 const { createPublicKey, verify } = require('node:crypto');
 const { login, getMfaStatus } = require('../AuthService');
-const { getDeviceSigningPublicKey, signDeviceLogin, signMfaApproval } = require('../DeviceSigningService');
+const {
+  bindSigningKeyToAccount,
+  getDeviceSigningPublicKey,
+  getUserIdFromToken,
+  signDeviceLogin,
+  signMfaApproval,
+} = require('../DeviceSigningService');
 
 describe('mobile auth flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    SecureStore.__values.clear();
     global.fetch = jest.fn();
   });
 
@@ -86,5 +105,19 @@ describe('mobile auth flow', () => {
     const status = await getMfaStatus('session-123', undefined, 'device-123');
     expect(status.accessToken).toBe('jwt-token');
     expect(status.deviceId).toBe('device-123');
+  });
+
+  it('keeps signing keys separate per account and binds enrollment keys to account IDs', async () => {
+    const aliceId = 'c0a80123-4567-489a-bcde-123456789abc';
+    const aliceKey = await getDeviceSigningPublicKey('alice@example.com');
+    const bobKey = await getDeviceSigningPublicKey('bob@example.com');
+    expect(aliceKey).not.toBe(bobKey);
+
+    await bindSigningKeyToAccount('alice@example.com', aliceId);
+    expect(await getDeviceSigningPublicKey(aliceId)).toBe(aliceKey);
+    expect(await getDeviceSigningPublicKey('bob@example.com')).toBe(bobKey);
+
+    const token = `header.${Buffer.from(JSON.stringify({ sub: aliceId })).toString('base64url')}.signature`;
+    expect(getUserIdFromToken(token)).toBe(aliceId);
   });
 });

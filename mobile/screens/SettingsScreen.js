@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
 import { logout, getToken } from '../services/AuthService';
-import { getApprovalDeviceId, getDeviceSigningPublicKey } from '../services/DeviceSigningService';
+import { getApprovalDeviceId, getDeviceSigningPublicKey, getUserIdFromToken } from '../services/DeviceSigningService';
 import { stopMfaRealtime } from '../services/RealtimeService';
 
 /**
@@ -104,7 +104,8 @@ export default function SettingsScreen({ navigation }) {
     try {
       const deviceId = await getApprovalDeviceId();
       if (!deviceId) throw new Error('Sign in first to identify the trusted MFA device.');
-      const signingPublicKey = await getDeviceSigningPublicKey();
+      const token = await getToken();
+      const signingPublicKey = await getDeviceSigningPublicKey(getUserIdFromToken(token));
       await Clipboard.setStringAsync(JSON.stringify({ deviceId, signingPublicKey }));
       Alert.alert('Enrollment info copied', 'Use this public key to enroll the trusted device. The private key stays on this phone.');
     } catch (error) {
