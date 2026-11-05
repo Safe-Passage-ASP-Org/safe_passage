@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using SafePassage.Api.Contracts.Auth;
 using SafePassage.Api.Data;
+using SafePassage.Api.Hubs;
 using SafePassage.Api.Models;
 using SafePassage.Api.Services;
 
@@ -13,6 +14,15 @@ namespace SafePassage.Api.Tests;
 
 public sealed class AuthFlowServiceTests
 {
+    [Fact]
+    public void MfaDeviceGroups_AreScopedToAccountWhenDeviceIdIsShared()
+    {
+        var firstUserGroup = MfaHub.DeviceGroupName(Guid.NewGuid(), "shared-phone");
+        var secondUserGroup = MfaHub.DeviceGroupName(Guid.NewGuid(), "shared-phone");
+
+        Assert.NotEqual(firstUserGroup, secondUserGroup);
+    }
+
     [Fact]
     public async Task Login_WithFreshSignatureFromTrustedMobileDevice_IssuesTokenWithoutMfaChallenge()
     {
@@ -59,10 +69,11 @@ public sealed class AuthFlowServiceTests
             SigningKey = new string('x', 64),
             AccessTokenMinutes = 60
         };
+        var notifications = new TestNotificationService();
         var service = new AuthFlowService(
             dbContext,
             new PasswordHasher<User>(),
-            new TestNotificationService(),
+            notifications,
             new JwtTokenService(settings),
             new SecurityPolicyEvaluator(dbContext),
             NullLogger<AuthFlowService>.Instance);
@@ -103,7 +114,9 @@ public sealed class AuthFlowServiceTests
             DeviceSignatureTimestamp = staleTimestamp
         }, CancellationToken.None);
 
-        Assert.True(staleResult.Response!.MfaRequired);
+        Assert.Null(staleResult.Response);
+        Assert.Equal(AuthFlowFailure.SelfApprovalNotAllowed, staleResult.Failure);
+        Assert.Equal(0, notifications.RequestCount);
     }
 
     [Fact]
@@ -162,7 +175,7 @@ public sealed class AuthFlowServiceTests
             NullLogger<AuthFlowService>.Instance);
 
         var loginResult = await service.LoginAsync(
-            new LoginRequest { Username = "ALICE@example.com", Password = "Password123!", DeviceId = "device-123" },
+            new LoginRequest { Username = "ALICE@example.com", Password = "Password123!" },
             CancellationToken.None);
 
         Assert.NotNull(loginResult.Response);
@@ -170,7 +183,7 @@ public sealed class AuthFlowServiceTests
         Assert.False(string.IsNullOrWhiteSpace(loginResult.Response.SessionToken));
 
         var usernameLogin = await service.LoginAsync(
-            new LoginRequest { Username = "ALICE", Password = "Password123!", DeviceId = "device-123" },
+            new LoginRequest { Username = "ALICE", Password = "Password123!" },
             CancellationToken.None);
         Assert.True(usernameLogin.Response!.MfaRequired);
 
@@ -233,7 +246,12 @@ public sealed class AuthFlowServiceTests
 
     private sealed class TestNotificationService : INotificationService
     {
+        public int RequestCount { get; private set; }
+
         public Task SendMfaApprovalRequestAsync(User user, Device device, string sessionToken, CancellationToken cancellationToken)
-            => Task.CompletedTask;
+        {
+            RequestCount++;
+            return Task.CompletedTask;
+        }
     }
 }

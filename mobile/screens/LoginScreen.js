@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { login } from '../services/AuthService';
 import { collectDeviceTelemetry } from '../services/DeviceService';
-import { startMfaRealtime } from '../services/RealtimeService';
+import { startMfaRealtime, stopMfaRealtime } from '../services/RealtimeService';
 
 export default function LoginScreen({ navigation }) {
   const [username, setUsername] = useState('');
@@ -30,6 +30,7 @@ export default function LoginScreen({ navigation }) {
     setErrorMessage('');
 
     try {
+      await stopMfaRealtime();
       const telemetry = await collectDeviceTelemetry();
       const result = await login(username.trim(), password, telemetry.deviceId);
       if (!result?.mfaRequired) await startMfaRealtime();

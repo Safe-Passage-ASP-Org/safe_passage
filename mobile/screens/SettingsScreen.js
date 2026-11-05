@@ -5,6 +5,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
 import { logout, getToken } from '../services/AuthService';
 import { getApprovalDeviceId, getDeviceSigningPublicKey } from '../services/DeviceSigningService';
+import { stopMfaRealtime } from '../services/RealtimeService';
 
 /**
  * Decode the payload from a JWT token without verifying the signature.
@@ -86,6 +87,7 @@ export default function SettingsScreen({ navigation }) {
   }, []));
 
   const handleLogout = async () => {
+    await stopMfaRealtime();
     await logout();
     navigation.replace('Login');
   };

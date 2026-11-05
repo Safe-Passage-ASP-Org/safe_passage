@@ -128,18 +128,24 @@ public sealed class AuthFlowService(
             }
         }
 
-        var device = await dbContext.Devices
+        var mfaDevices = await dbContext.Devices
             .Where(candidate => candidate.UserId == user.Id
                 && candidate.Status == DeviceStatus.Active
+                && candidate.TrustStatus == DeviceTrustStatus.Trusted
                 && (candidate.DeviceType.ToLower() == "mobile"
                     || candidate.DeviceType.ToLower() == "phone"
                     || candidate.OS.ToLower().StartsWith("android")
                     || candidate.OS.ToLower().StartsWith("ios")))
-            .OrderByDescending(candidate => candidate.TrustStatus == DeviceTrustStatus.Trusted)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+        var device = mfaDevices.FirstOrDefault(candidate =>
+            !string.Equals(candidate.DeviceId, request.DeviceId, StringComparison.Ordinal));
 
         if (device is null)
         {
+            if (mfaDevices.Any(candidate =>
+                string.Equals(candidate.DeviceId, request.DeviceId, StringComparison.Ordinal)))
+                return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.SelfApprovalNotAllowed);
+
             AddActivity(user.Id, "Login", "No active mobile device available for MFA", ActivityLogStatus.Denied);
             await dbContext.SaveChangesAsync(cancellationToken);
             return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.NoActiveMobileDevice);

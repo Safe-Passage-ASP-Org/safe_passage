@@ -26,9 +26,19 @@ public sealed class MfaHub(ApplicationDbContext dbContext) : Hub
         if (!canReceiveRequests)
             throw new HubException("This device is not active and trusted for the signed-in user.");
 
-        await Groups.AddToGroupAsync(Context.ConnectionId, $"device:{deviceId}", Context.ConnectionAborted);
+        await Groups.AddToGroupAsync(Context.ConnectionId, DeviceGroupName(userId, deviceId), Context.ConnectionAborted);
     }
 
-    public Task LeaveDeviceGroup(string deviceId) =>
-        Groups.RemoveFromGroupAsync(Context.ConnectionId, $"device:{deviceId}", Context.ConnectionAborted);
+    public Task LeaveDeviceGroup(string deviceId)
+    {
+        var userClaim = Context.User?.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? Context.User?.FindFirstValue("sub");
+        if (!Guid.TryParse(userClaim, out var userId) || string.IsNullOrWhiteSpace(deviceId))
+            throw new HubException("A valid signed-in user and device are required.");
+
+        return Groups.RemoveFromGroupAsync(Context.ConnectionId, DeviceGroupName(userId, deviceId), Context.ConnectionAborted);
+    }
+
+    public static string DeviceGroupName(Guid userId, string deviceId) =>
+        $"user:{userId}:device:{deviceId}";
 }

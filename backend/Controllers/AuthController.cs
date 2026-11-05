@@ -130,6 +130,7 @@ public sealed class AuthController(
             AuthFlowFailure.UserUnavailable => (StatusCodes.Status403Forbidden, "Account unavailable", "The account is no longer active."),
             AuthFlowFailure.DeviceUnavailable => (StatusCodes.Status409Conflict, "MFA device unavailable", "The registered device is no longer active."),
             AuthFlowFailure.DeviceSigningKeyNotRegistered => (StatusCodes.Status409Conflict, "Device key enrollment required", "The approving device must be enrolled with a signing key before it can approve MFA."),
+            AuthFlowFailure.SelfApprovalNotAllowed => (StatusCodes.Status409Conflict, "Another trusted device required", "This phone cannot approve its own sign-in. Sign in from a different trusted device or ask an administrator to reset this device's enrollment."),
             _ => (StatusCodes.Status500InternalServerError, "Authentication error", "The authentication request could not be completed.")
         };
 

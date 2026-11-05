@@ -14,7 +14,8 @@ public enum AuthFlowFailure
     InvalidSessionState,
     UserUnavailable,
     DeviceUnavailable,
-    DeviceSigningKeyNotRegistered
+    DeviceSigningKeyNotRegistered,
+    SelfApprovalNotAllowed
 }
 
 public sealed record AuthFlowResult<T>(T? Response, AuthFlowFailure Failure)
