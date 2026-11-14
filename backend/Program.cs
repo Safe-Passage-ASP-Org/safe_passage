@@ -1,10 +1,13 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using OpenIddict.Abstractions;
+using OpenIddict.Server.AspNetCore;
 using SafePassage.Api.Data;
 using SafePassage.Api.Hubs;
 using SafePassage.Api.Middleware;
@@ -35,6 +38,9 @@ builder.Services.AddDbContext<ApplicationDbContext>(options =>
             throw new InvalidOperationException(
                 $"Unsupported Database:Provider '{databaseProvider}'. Use 'SqlServer', 'PostgreSQL', or 'Sqlite'.");
     }
+    options.UseOpenIddict();
+    options.ConfigureWarnings(w =>
+        w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
 });
 
 var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>()
@@ -42,6 +48,7 @@ var jwtSettings = builder.Configuration.GetSection(JwtSettings.SectionName).Get<
 jwtSettings.Validate();
 
 builder.Services.AddSingleton(jwtSettings);
+builder.Services.AddMemoryCache();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthFlowService, AuthFlowService>();
 builder.Services.AddScoped<ISecurityPolicyEvaluator, SecurityPolicyEvaluator>();
@@ -55,6 +62,35 @@ builder.Services.AddScoped<DeviceBootstrapService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
 builder.Services.Configure<AccountActivationOptions>(builder.Configuration.GetSection(AccountActivationOptions.SectionName));
+
+var oidcIssuer = builder.Configuration["OpenIddict:Issuer"] ?? "http://localhost:5143";
+builder.Services.AddOpenIddict()
+    .AddCore(options => options
+        .UseEntityFrameworkCore()
+        .UseDbContext<ApplicationDbContext>())
+    .AddServer(options =>
+    {
+        options.SetIssuer(new Uri(oidcIssuer))
+            .SetAuthorizationEndpointUris("/connect/authorize")
+            .SetTokenEndpointUris("/connect/token")
+            .SetUserInfoEndpointUris("/connect/userinfo")
+            .AllowAuthorizationCodeFlow()
+            .RequireProofKeyForCodeExchange()
+            .RegisterScopes(
+                OpenIddictConstants.Scopes.Email,
+                OpenIddictConstants.Scopes.Profile,
+                OpenIddictConstants.Scopes.Roles)
+            .AddDevelopmentEncryptionCertificate()
+            .AddDevelopmentSigningCertificate()
+            .UseAspNetCore(aspNetCoreOptions =>
+            {
+                aspNetCoreOptions.EnableAuthorizationEndpointPassthrough();
+                aspNetCoreOptions.EnableTokenEndpointPassthrough();
+                aspNetCoreOptions.EnableUserInfoEndpointPassthrough();
+                if (builder.Environment.IsDevelopment())
+                    aspNetCoreOptions.DisableTransportSecurityRequirement();
+            });
+    });
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
 if (allowedOrigins.Length == 0)
@@ -79,7 +115,11 @@ builder.Services.AddSignalR();
 builder.Services.AddOpenApi();
 builder.Services.AddProblemDetails();
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+        options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+    })
     .AddJwtBearer(options =>
     {
         options.Events = new JwtBearerEvents
@@ -105,6 +145,17 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
             ClockSkew = TimeSpan.FromSeconds(30)
         };
+    })
+    .AddCookie("oidc", options =>
+    {
+        options.Cookie.Name = "SafePassage.OidcSession";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest
+            : CookieSecurePolicy.Always;
+        options.SlidingExpiration = false;
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(10);
     });
 builder.Services.AddAuthorization();
 
