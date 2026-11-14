@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -86,8 +86,13 @@ export default function App() {
 
   if (restoredSession === null) {
     return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#020617' }}>
-        <ActivityIndicator color="#0ea5e9" size="large" />
+      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#020617', padding: 32 }}>
+        <View style={{ width: 88, height: 88, borderRadius: 28, alignItems: 'center', justifyContent: 'center', backgroundColor: '#0f172a', borderWidth: 1, borderColor: '#1e293b' }}>
+          <Ionicons name="shield-checkmark" size={48} color="#0ea5e9" />
+        </View>
+        <Text style={{ color: '#f8fafc', fontSize: 24, fontWeight: '700', letterSpacing: -0.5, marginTop: 22 }}>Safe Passage</Text>
+        <Text style={{ color: '#94a3b8', fontSize: 13, marginTop: 7 }}>Identity &amp; device security</Text>
+        <ActivityIndicator color="#0ea5e9" size="small" style={{ marginTop: 32 }} />
       </View>
     );
   }

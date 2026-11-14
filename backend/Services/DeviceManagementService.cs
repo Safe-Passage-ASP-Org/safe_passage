@@ -42,9 +42,8 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
         if (!includeAll)
             query = query.Where(device => device.UserId == requesterId);
 
-        var devices = await query
-            .OrderByDescending(device => device.RegistrationDate)
-            .ToListAsync(cancellationToken);
+        var devices = await query.ToListAsync(cancellationToken);
+        devices.Sort((left, right) => right.RegistrationDate.CompareTo(left.RegistrationDate));
         return devices.Select(ToResponse).ToList();
     }
 
@@ -72,7 +71,7 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
             return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.UserUnavailable);
 
         var deviceExists = await dbContext.Devices.AnyAsync(
-            device => device.DeviceId == request.DeviceId,
+            device => device.UserId == userId && device.DeviceId == request.DeviceId,
             cancellationToken);
         if (deviceExists)
             return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.DuplicateDevice);

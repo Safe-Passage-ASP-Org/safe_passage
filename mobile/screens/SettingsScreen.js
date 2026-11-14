@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
 import { logout, getToken } from '../services/AuthService';
-import { getApprovalDeviceId, getDeviceSigningPublicKey } from '../services/DeviceSigningService';
+import { getApprovalDeviceId, getDeviceSigningPublicKey, getUserIdFromToken } from '../services/DeviceSigningService';
+import { stopMfaRealtime } from '../services/RealtimeService';
 
 /**
  * Decode the payload from a JWT token without verifying the signature.
@@ -53,35 +55,39 @@ export default function SettingsScreen({ navigation }) {
   const [userInfo, setUserInfo] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
-  useEffect(() => {
+  useFocusEffect(React.useCallback(() => {
+    let active = true;
+    setUserInfo(null);
+    setLoadingUser(true);
     (async () => {
       try {
         const token = await getToken();
-        if (token) {
-          const payload = decodeJwtPayload(token);
-          if (payload) {
-            setUserInfo({
-              name: payload.name ?? payload.unique_name ?? payload.username ?? 'John Doe',
-              email: payload.email ?? 'john.doe@enterprise.com',
-              role: payload.role ?? 'User',
-              initials: ((payload.name ?? payload.unique_name ?? 'JD')
-                .split(' ')
-                .map((n) => n[0])
-                .join('')
-                .toUpperCase()
-                .substring(0, 2)),
-            });
-          }
-        }
-      } catch (_) {
-        // Fall back to defaults
+        const payload = token ? decodeJwtPayload(token) : null;
+        const name = payload?.name
+          ?? payload?.unique_name
+          ?? payload?.username
+          ?? payload?.['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/name']
+          ?? '';
+        const email = payload?.email
+          ?? payload?.['http://schemas.xmlsoap.org/ws/2005/05/identity/claims/emailaddress']
+          ?? '';
+        const role = payload?.role
+          ?? payload?.['http://schemas.microsoft.com/ws/2008/06/identity/claims/role']
+          ?? '';
+        const nameParts = name.trim().split(/\s+/).filter(Boolean);
+        const initials = nameParts.length > 1
+          ? nameParts.slice(0, 2).map((part) => part[0]).join('').toUpperCase()
+          : (nameParts[0] ?? '?').slice(0, 2).toUpperCase();
+        if (active) setUserInfo({ name, email, role, initials });
       } finally {
-        setLoadingUser(false);
+        if (active) setLoadingUser(false);
       }
     })();
-  }, []);
+    return () => { active = false; };
+  }, []));
 
   const handleLogout = async () => {
+    await stopMfaRealtime();
     await logout();
     navigation.replace('Login');
   };
@@ -98,7 +104,8 @@ export default function SettingsScreen({ navigation }) {
     try {
       const deviceId = await getApprovalDeviceId();
       if (!deviceId) throw new Error('Sign in first to identify the trusted MFA device.');
-      const signingPublicKey = await getDeviceSigningPublicKey();
+      const token = await getToken();
+      const signingPublicKey = await getDeviceSigningPublicKey(getUserIdFromToken(token));
       await Clipboard.setStringAsync(JSON.stringify({ deviceId, signingPublicKey }));
       Alert.alert('Enrollment info copied', 'Use this public key to enroll the trusted device. The private key stays on this phone.');
     } catch (error) {
@@ -106,10 +113,10 @@ export default function SettingsScreen({ navigation }) {
     }
   };
 
-  const displayName = userInfo?.name ?? 'John Doe';
-  const displayEmail = userInfo?.email ?? 'john.doe@enterprise.com';
-  const displayInitials = userInfo?.initials ?? 'JD';
-  const displayRole = userInfo?.role ?? 'User';
+  const displayName = userInfo?.name || 'Signed-in account';
+  const displayEmail = userInfo?.email;
+  const displayInitials = userInfo?.initials || '?';
+  const displayRole = userInfo?.role || 'Role unavailable';
 
   return (
     <ScrollView style={styles.container}>
@@ -123,7 +130,7 @@ export default function SettingsScreen({ navigation }) {
               <Text style={styles.avatarText}>{displayInitials}</Text>
             </View>
             <Text style={styles.profileName}>{displayName}</Text>
-            <Text style={styles.profileEmail}>{displayEmail}</Text>
+            {displayEmail ? <Text style={styles.profileEmail}>{displayEmail}</Text> : null}
             <View style={styles.roleBadge}>
               <Text style={styles.roleText}>{displayRole}</Text>
             </View>

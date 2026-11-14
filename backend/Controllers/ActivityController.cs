@@ -23,9 +23,11 @@ public sealed class ActivityController(ApplicationDbContext dbContext) : Control
 
         var logs = await dbContext.ActivityLogs.AsNoTracking()
             .Where(activity => activity.UserId == userId)
+            .ToListAsync(cancellationToken);
+        logs = logs
             .OrderByDescending(log => log.Timestamp)
             .Take(25)
-            .ToListAsync(cancellationToken);
+            .ToList();
 
         var result = logs
             .Select(log =>

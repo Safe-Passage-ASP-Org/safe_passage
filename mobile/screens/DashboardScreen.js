@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -8,12 +8,15 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { getMfaStatus, getToken, saveAccessToken } from '../services/AuthService';
 import { getApprovalDeviceId, storeApprovalDeviceId } from '../services/DeviceSigningService';
 import { BASE_URL, getApplicationHeaders } from '../config';
 import { startMfaRealtime } from '../services/RealtimeService';
 
-async function fetchRecentActivity(token, deviceId) {
+async function fetchRecentActivity(deviceId) {
+  const token = await getToken();
+  if (!token || !deviceId) throw new Error('Sign in on an enrolled device.');
   const response = await fetch(`${BASE_URL}/api/activity`, {
     headers: { Authorization: `Bearer ${token}`, ...getApplicationHeaders(deviceId) },
   });
@@ -28,24 +31,39 @@ export default function DashboardScreen({ navigation, route }) {
   const [recentActivity, setRecentActivity] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const [activityError, setActivityError] = useState('');
+
+  useFocusEffect(useCallback(() => {
     let active = true;
-    (async () => {
+    let refreshing = false;
+    setLoading(true);
+    setRecentActivity([]);
+    setActivityError('');
+    const loadRecentActivity = async () => {
+      if (refreshing) return;
+      refreshing = true;
       try {
-        const token = await getToken();
         const deviceId = approvalDeviceId ?? await getApprovalDeviceId();
-        if (token && deviceId) {
-          const data = await fetchRecentActivity(token, deviceId);
-          if (active) setRecentActivity(data.slice(0, 3));
+        const data = await fetchRecentActivity(deviceId);
+        if (active) {
+          setRecentActivity(data.slice(0, 3));
+          setActivityError('');
         }
-      } catch (_) {
+      } catch (error) {
+        if (active) setActivityError('Could not load live alerts. Check your connection.');
       } finally {
+        refreshing = false;
         if (active) setLoading(false);
       }
-    })();
+    };
 
-    return () => { active = false; };
-  }, [approvalDeviceId]);
+    loadRecentActivity();
+    const intervalId = setInterval(loadRecentActivity, 30000);
+    return () => {
+      active = false;
+      clearInterval(intervalId);
+    };
+  }, [approvalDeviceId]));
 
   useEffect(() => {
     if (!sessionToken) return undefined;
@@ -66,7 +84,7 @@ export default function DashboardScreen({ navigation, route }) {
             await startMfaRealtime();
             if (!active) return;
             navigation.setParams({ sessionToken: null, approvalDeviceId: approvedDeviceId });
-            const activity = await fetchRecentActivity(result.accessToken, approvedDeviceId);
+            const activity = await fetchRecentActivity(approvedDeviceId);
             if (active) setRecentActivity(activity.slice(0, 3));
             return;
           }
@@ -121,23 +139,11 @@ export default function DashboardScreen({ navigation, route }) {
           {loading && (
             <ActivityIndicator color="#0ea5e9" style={{ padding: 20 }} />
           )}
-          {!loading && recentActivity.length === 0 && (
-            <>
-              <View style={styles.alertRow}>
-                <Ionicons name="checkmark-circle" size={24} color="#10b981" />
-                <View style={styles.alertContent}>
-                  <Text style={styles.alertTitle}>New Device Registered</Text>
-                  <Text style={styles.alertDesc}>John's Primary Android • 14 days ago</Text>
-                </View>
-              </View>
-              <View style={[styles.alertRow, styles.lastAlertRow]}>
-                <Ionicons name="close-circle" size={24} color="#ef4444" />
-                <View style={styles.alertContent}>
-                  <Text style={styles.alertTitle}>Blocked Sign-in Attempt</Text>
-                  <Text style={styles.alertDesc}>Unknown Location • Yesterday</Text>
-                </View>
-              </View>
-            </>
+          {!loading && activityError ? (
+            <Text style={styles.emptyText}>{activityError}</Text>
+          ) : null}
+          {!loading && !activityError && recentActivity.length === 0 && (
+            <Text style={styles.emptyText}>No recent alerts.</Text>
           )}
           {!loading && recentActivity.map((item, idx) => (
             <View
@@ -192,6 +198,7 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   alertContent: { flex: 1 },
+  emptyText: { color: '#64748b', textAlign: 'center', padding: 20 },
   alertTitle: { fontSize: 16, fontWeight: '500', color: '#f8fafc' },
   alertDesc: { fontSize: 14, color: '#94a3b8', marginTop: 2 },
   card: {

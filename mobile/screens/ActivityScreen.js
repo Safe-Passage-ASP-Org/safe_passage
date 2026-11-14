@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, ActivityIndicator } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { getToken } from '../services/AuthService';
 import { getApprovalDeviceId } from '../services/DeviceSigningService';
 import { BASE_URL, getApplicationHeaders } from '../config';
@@ -10,7 +11,11 @@ export default function ActivityScreen() {
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState('');
 
-  useEffect(() => {
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setActivity([]);
+    setLoading(true);
+    setError('');
     (async () => {
       try {
         const token = await getToken();
@@ -21,14 +26,15 @@ export default function ActivityScreen() {
         });
         if (!response.ok) throw new Error(response.statusText);
         const data = await response.json();
-        setActivity(data);
+        if (active) setActivity(data);
       } catch (err) {
-        setError('Failed to load activity. Check your connection.');
+        if (active) setError('Failed to load activity. Check your connection.');
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     })();
-  }, []);
+    return () => { active = false; };
+  }, []));
 
   const renderItem = ({ item }) => (
     <View style={styles.activityItem}>

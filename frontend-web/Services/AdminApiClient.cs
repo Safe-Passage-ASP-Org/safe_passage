@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Security.Claims;
+using System.Text.Json;
 
 namespace SafePassage.Web.Services;
 
@@ -8,6 +10,11 @@ public sealed class AdminApiClient(HttpClient http)
 {
     public string? AccessToken { get; private set; }
     public string? CurrentUsername { get; private set; }
+    public string? CurrentRole { get; private set; }
+    public bool IsAdministrator =>
+        string.Equals(CurrentRole, "Admin", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(CurrentRole, "Administrator", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(CurrentRole, "Super Admin", StringComparison.OrdinalIgnoreCase);
 
     public async Task<LoginResult> LoginAsync(string username, string password, CancellationToken cancellationToken = default)
     {
@@ -51,12 +58,25 @@ public sealed class AdminApiClient(HttpClient http)
         throw new InvalidOperationException($"The MFA request is {status?.Status ?? "unavailable"}. Please sign in again.");
     }
 
-    public async Task ActivateAccountAsync(string token, string password, CancellationToken cancellationToken = default)
+    public async Task ActivateAccountAsync(string token, string? password = null, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync(
             "api/auth/activate",
             new { token, password },
             cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task RegisterAccountAsync(AccountRegistrationForm registration, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/register", new
+        {
+            registration.FullName,
+            registration.Username,
+            registration.Email,
+            registration.PhoneNumber,
+            registration.Password
+        }, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
@@ -119,6 +139,9 @@ public sealed class AdminApiClient(HttpClient http)
     public async Task<List<AdminApplication>> GetApplicationsAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminApplication>>("api/admin/applications", cancellationToken) ?? [];
 
+    public async Task<List<AccessibleApplication>> GetMyApplicationsAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<AccessibleApplication>>("api/applications/mine", cancellationToken) ?? [];
+
     public async Task<List<AdminActivity>> GetAdminActivityAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminActivity>>("api/admin/activity", cancellationToken) ?? [];
 
@@ -179,9 +202,48 @@ public sealed class AdminApiClient(HttpClient http)
     private void SetToken(string? token)
     {
         AccessToken = token;
+        CurrentRole = ReadRole(token);
         http.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(token)
             ? null
             : new AuthenticationHeaderValue("Bearer", token);
+    }
+
+    private static string? ReadRole(string? token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            return null;
+
+        var parts = token.Split('.');
+        if (parts.Length < 2)
+            return null;
+
+        var payload = parts[1].Replace('-', '+').Replace('_', '/');
+        payload = payload.PadRight((payload.Length + 3) / 4 * 4, '=');
+
+        try
+        {
+            using var document = JsonDocument.Parse(Convert.FromBase64String(payload));
+            foreach (var claimType in new[] { "role", "roles", ClaimTypes.Role })
+            {
+                if (!document.RootElement.TryGetProperty(claimType, out var role))
+                    continue;
+
+                if (role.ValueKind == JsonValueKind.String)
+                    return role.GetString();
+                if (role.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var value in role.EnumerateArray())
+                    {
+                        if (value.ValueKind == JsonValueKind.String)
+                            return value.GetString();
+                    }
+                }
+            }
+        }
+        catch (FormatException) { }
+        catch (JsonException) { }
+
+        return null;
     }
 
     private sealed record LoginResponse(bool MfaRequired, string? SessionToken, string? AccessToken, string? Message);
@@ -191,12 +253,13 @@ public sealed class AdminApiClient(HttpClient http)
 
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
 public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
-    string Role, List<string> Groups);
+    string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null);
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
 public sealed class AdminGroupForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
 public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, string DeviceType, string OS,
     DateTimeOffset RegistrationDate, DateTimeOffset? LastActiveDate, string Status, string TrustStatus, Guid UserId);
 public sealed record AdminApplication(Guid Id, string Name, string Description, int UserAccessCount, int GroupAccessCount);
+public sealed record AccessibleApplication(Guid Id, string Name, string Description);
 public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
 public sealed record AdminApplicationAccess(List<Guid> UserIds, List<Guid> GroupIds);
 public sealed record AdminActivity(Guid Id, DateTimeOffset Timestamp, string Username, string Action, string Resource, string Status);
@@ -210,4 +273,13 @@ public sealed class AdminUserForm
     public string Email { get; set; } = "";
     public string Role { get; set; } = "User";
     public List<string> Groups { get; set; } = [];
+}
+
+public sealed class AccountRegistrationForm
+{
+    public string FullName { get; set; } = "";
+    public string Username { get; set; } = "";
+    public string Email { get; set; } = "";
+    public string PhoneNumber { get; set; } = "";
+    public string Password { get; set; } = "";
 }

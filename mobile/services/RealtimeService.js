@@ -1,10 +1,11 @@
 import { HubConnectionBuilder, LogLevel } from '@microsoft/signalr';
 import { BASE_URL } from '../config';
 import { getToken } from './AuthService';
-import { getApprovalDeviceId } from './DeviceSigningService';
+import { getApprovalDeviceId, getUserIdFromToken } from './DeviceSigningService';
 
 let connection;
 let activeDeviceId;
+let activeUserId;
 let requestHandler;
 let retryTimer;
 let stopped = false;
@@ -17,21 +18,32 @@ export async function startMfaRealtime() {
   stopped = false;
   const token = await getToken();
   const deviceId = await getApprovalDeviceId();
-  if (!token || !deviceId) return false;
+  const userId = getUserIdFromToken(token);
+  if (!token || !deviceId || !userId) return false;
 
-  if (connection && activeDeviceId === deviceId && connection.state === 'Connected') return true;
+  if (connection
+    && activeDeviceId === deviceId
+    && activeUserId === userId
+    && connection.state === 'Connected') return true;
   await stopMfaRealtime();
   stopped = false;
   activeDeviceId = deviceId;
+  activeUserId = userId;
+  const connectionUserId = userId;
 
   const current = new HubConnectionBuilder()
-    .withUrl(`${BASE_URL}/mfaHub`, { accessTokenFactory: async () => (await getToken()) ?? '' })
+    .withUrl(`${BASE_URL}/mfaHub`, {
+      accessTokenFactory: async () => {
+        const currentToken = await getToken();
+        return getUserIdFromToken(currentToken) === connectionUserId ? currentToken : '';
+      },
+    })
     .withAutomaticReconnect()
     .configureLogging(LogLevel.Warning)
     .build();
 
   current.on('MfaRequested', payload => {
-    if (!payload?.sessionToken || payload.deviceId !== activeDeviceId) return;
+    if (!isMfaRequestForAccount(payload, connectionUserId, deviceId)) return;
     requestHandler?.({
       requestId: payload.sessionToken,
       deviceId: payload.deviceId,
@@ -73,6 +85,7 @@ export async function stopMfaRealtime() {
   const current = connection;
   connection = null;
   activeDeviceId = null;
+  activeUserId = null;
   if (current) {
     try { await current.stop(); } catch {}
   }
@@ -84,4 +97,13 @@ function scheduleRetry() {
     retryTimer = null;
     if (!stopped) startMfaRealtime();
   }, 5000);
+}
+
+export function isMfaRequestForAccount(payload, userId, deviceId) {
+  return Boolean(
+    payload?.sessionToken
+    && payload.deviceId === deviceId
+    && typeof payload.userId === 'string'
+    && payload.userId.toLowerCase() === userId?.toLowerCase(),
+  );
 }

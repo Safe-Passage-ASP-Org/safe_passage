@@ -20,9 +20,10 @@ public sealed class AccountActivationController(
     {
         if (string.IsNullOrWhiteSpace(request.Token))
             return BadRequest(new { message = "An activation token is required." });
-        if (string.IsNullOrWhiteSpace(request.Password)
-            || request.Password.Length < 12
-            || request.Password.Length > 1024)
+        if (request.Password is not null
+            && (string.IsNullOrWhiteSpace(request.Password)
+                || request.Password.Length < 12
+                || request.Password.Length > 1024))
         {
             return BadRequest(new { message = "Password must be between 12 and 1024 characters." });
         }
@@ -33,11 +34,13 @@ public sealed class AccountActivationController(
             cancellationToken);
         return result == AccountActivationResult.Activated
             ? NoContent()
-            : Problem(
+            : result == AccountActivationResult.PasswordRequired
+                ? BadRequest(new { message = "Choose a password with at least 12 characters to activate this account." })
+                : Problem(
                 statusCode: StatusCodes.Status410Gone,
                 title: "Activation link unavailable",
                 detail: "This activation link is invalid, expired, or has already been used.");
     }
 
-    public sealed record ActivateAccountRequest(string? Token, string? Password);
+    public sealed record ActivateAccountRequest(string? Token, string? Password = null);
 }

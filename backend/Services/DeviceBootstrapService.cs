@@ -24,8 +24,11 @@ public sealed class DeviceBootstrapService(
             || string.IsNullOrWhiteSpace(request.SigningPublicKey))
             throw new ArgumentException("All device enrollment fields are required.");
 
+        var identifier = request.Username.Trim();
+        var normalizedIdentifier = identifier.ToUpperInvariant();
         var user = await dbContext.Users.SingleOrDefaultAsync(
-            candidate => candidate.Username == request.Username.Trim() && candidate.IsActive,
+            candidate => (candidate.Username.ToUpper() == normalizedIdentifier
+                || candidate.Email.ToUpper() == normalizedIdentifier) && candidate.IsActive,
             cancellationToken);
         if (user is null || passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password)
             == PasswordVerificationResult.Failed)
@@ -35,12 +38,6 @@ public sealed class DeviceBootstrapService(
             throw new ArgumentException("The device signing key is invalid.");
 
         var deviceId = request.DeviceId.Trim();
-        var duplicate = await dbContext.Devices.AnyAsync(
-            device => device.DeviceId == deviceId && device.UserId != user.Id,
-            cancellationToken);
-        if (duplicate)
-            throw new InvalidOperationException("This device is already registered to another account.");
-
         // Development bootstrap is permitted only while the account has no enrolled MFA key.
         var alreadyEnrolled = await dbContext.Devices.AnyAsync(device =>
             device.UserId == user.Id

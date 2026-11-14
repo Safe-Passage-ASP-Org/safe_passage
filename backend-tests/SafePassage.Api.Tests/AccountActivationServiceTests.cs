@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -52,6 +53,31 @@ public sealed class AccountActivationServiceTests
         Assert.Equal(PasswordVerificationResult.Success,
             new PasswordHasher<User>().VerifyHashedPassword(user, user.PasswordHash, "NewPassword123!"));
         Assert.NotNull(dbContext.AccountActivationTokens.Single().UsedAt);
+    }
+
+    [Fact]
+    public async Task ActivateAsync_PublicRegistrationVerifiesEmailWithoutChangingPassword()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = NewPendingUser();
+        var passwordHasher = new PasswordHasher<User>();
+        user.PasswordHash = passwordHasher.HashPassword(user, "Chosen-at-signup-123");
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+        var emailSender = new TestEmailSender();
+        var service = CreateService(dbContext, emailSender);
+        await service.CreateAndSendInvitationAsync(user, CancellationToken.None, requiresPasswordSetup: false);
+        var token = ReadToken(emailSender.ActivationUrl!);
+
+        var result = await service.ActivateAsync(token, null, CancellationToken.None);
+
+        Assert.Equal(AccountActivationResult.Activated, result);
+        Assert.True(user.IsActive);
+        Assert.True(user.IsEmailVerified);
+        Assert.Equal(PasswordVerificationResult.Success,
+            passwordHasher.VerifyHashedPassword(user, user.PasswordHash, "Chosen-at-signup-123"));
+        Assert.False(passwordHasher.VerifyHashedPassword(user, user.PasswordHash, "AnotherPassword123!")
+            is PasswordVerificationResult.Success);
     }
 
     [Fact]
@@ -132,7 +158,8 @@ public sealed class AccountActivationServiceTests
                 "person@example.com",
                 "person",
                 "https://example.com/activate?token=token",
-                CancellationToken.None));
+                requiresPasswordSetup: true,
+                cancellationToken: CancellationToken.None));
 
         Assert.Contains("SMTP is not configured", exception.Message);
     }
@@ -173,7 +200,7 @@ public sealed class AccountActivationServiceTests
     private static string ReadToken(string activationUrl)
     {
         var query = new Uri(activationUrl).Query;
-        return Uri.UnescapeDataString(query["?token=".Length..]);
+        return QueryHelpers.ParseQuery(query)["token"].ToString();
     }
 
     private sealed class TestEmailSender : IActivationEmailSender
@@ -186,6 +213,7 @@ public sealed class AccountActivationServiceTests
             string email,
             string username,
             string activationUrl,
+            bool requiresPasswordSetup,
             CancellationToken cancellationToken)
         {
             Email = email;

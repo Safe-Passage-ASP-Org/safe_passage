@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { collectDeviceTelemetry, registerDeviceWithBackend } from '../services/DeviceService';
 import { getToken } from '../services/AuthService';
 import { getApprovalDeviceId } from '../services/DeviceSigningService';
@@ -105,8 +106,12 @@ export default function DevicesScreen() {
   const [registrationResult, setRegistrationResult] = useState(null);
   const [collectedTelemetry, setCollectedTelemetry] = useState(null);
 
-  // ── Fetch devices from backend on mount ──────────────────────────────────
-  useEffect(() => {
+  // ── Refresh this account's devices whenever the screen is opened ────────
+  useFocusEffect(useCallback(() => {
+    let active = true;
+    setDevices([]);
+    setFetching(true);
+    setFetchError('');
     (async () => {
       try {
         const token = await getToken();
@@ -117,14 +122,15 @@ export default function DevicesScreen() {
         });
         if (!response.ok) throw new Error(response.statusText);
         const data = await response.json();
-        setDevices(data);
+        if (active) setDevices(data);
       } catch (err) {
-        setFetchError('Failed to load devices. Check your connection.');
+        if (active) setFetchError('Failed to load devices. Check your connection.');
       } finally {
-        setFetching(false);
+        if (active) setFetching(false);
       }
     })();
-  }, []);
+    return () => { active = false; };
+  }, []));
 
   const handleRegisterDevice = async () => {
     setLoading(true);

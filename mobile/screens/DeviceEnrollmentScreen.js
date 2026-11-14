@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { collectDeviceTelemetry } from '../services/DeviceService';
 import { saveAccessToken } from '../services/AuthService';
-import { getDeviceSigningPublicKey, storeApprovalDeviceId } from '../services/DeviceSigningService';
+import { bindSigningKeyToAccount, getDeviceSigningPublicKey, getUserIdFromToken, storeApprovalDeviceId } from '../services/DeviceSigningService';
 import { startMfaRealtime } from '../services/RealtimeService';
 import { BASE_URL, getApplicationHeaders } from '../config';
 
@@ -25,11 +25,13 @@ export default function DeviceEnrollmentScreen({ navigation }) {
           username: username.trim(), password,
           deviceId: telemetry.deviceId, deviceName: telemetry.deviceName,
           deviceType: telemetry.deviceType, os: telemetry.os,
-          signingPublicKey: await getDeviceSigningPublicKey(),
+          signingPublicKey: await getDeviceSigningPublicKey(username.trim()),
         }),
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.detail ?? data.title ?? 'Phone setup failed.');
+      const accountId = getUserIdFromToken(data.accessToken);
+      if (accountId) await bindSigningKeyToAccount(username.trim(), accountId);
       await saveAccessToken(data.accessToken);
       await storeApprovalDeviceId(data.deviceId);
       await startMfaRealtime();
@@ -42,10 +44,10 @@ export default function DeviceEnrollmentScreen({ navigation }) {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.card}>
-        <Text style={styles.title}>Enroll your first phone</Text>
-        <Text style={styles.description}>For local development setup only. Enter your account credentials to bind this phone as the initial trusted MFA device.</Text>
-        <Text style={styles.label}>Username</Text>
-        <TextInput style={styles.input} autoCapitalize="none" value={username} onChangeText={setUsername} editable={!busy} />
+        <Text style={styles.title}>Set up this account on your phone</Text>
+        <Text style={styles.description}>For local development setup only. Enter this account’s credentials to enroll this phone separately. Device approval and trust are managed for each account.</Text>
+        <Text style={styles.label}>Email or username</Text>
+        <TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} value={username} onChangeText={setUsername} editable={!busy} />
         <Text style={styles.label}>Password</Text>
         <TextInput style={styles.input} secureTextEntry value={password} onChangeText={setPassword} editable={!busy} />
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}

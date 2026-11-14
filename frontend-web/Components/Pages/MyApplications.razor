@@ -1,0 +1,62 @@
+@page "/my-applications"
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
+
+<PageTitle>My Applications – Safe Passage</PageTitle>
+<div class="sp-page-header">
+    <h1 class="sp-page-title">My Applications</h1>
+    <p class="sp-page-subtitle">Applications assigned directly to you or through one of your groups.</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <div class="my-apps-error" role="alert">@Error</div>
+}
+
+<section class="sp-card my-apps-card">
+    @if (Loading)
+    {
+        <p class="my-apps-state" role="status">Loading your applications…</p>
+    }
+    else if (!string.IsNullOrWhiteSpace(Error))
+    {
+        <p class="my-apps-state">Your application assignments are unavailable.</p>
+    }
+    else if (Applications.Count == 0)
+    {
+        <p class="my-apps-state">No applications are assigned to your account yet. Contact your administrator if you expected access.</p>
+    }
+    else
+    {
+        @foreach (var application in Applications)
+        {
+            <article class="my-apps-row">
+                <span class="my-apps-mark">@Mark(application.Name)</span>
+                <div><h2>@application.Name</h2><p>@(string.IsNullOrWhiteSpace(application.Description) ? "No description provided." : application.Description)</p></div>
+                <span class="my-apps-badge">Assigned</span>
+            </article>
+        }
+        <p class="my-apps-note">Application assignments do not bypass Safe Passage security policies, MFA, or trusted-device requirements.</p>
+    }
+</section>
+
+<style>
+    .my-apps-card{padding:4px 20px}.my-apps-row{display:flex;align-items:center;gap:14px;padding:17px 0;border-bottom:1px solid #edf0f2}.my-apps-row:last-of-type{border-bottom:0}.my-apps-mark{width:40px;height:40px;flex:0 0 auto;display:grid;place-items:center;border-radius:7px;background:#e5f2ed;color:#087f75;font-weight:800}.my-apps-row div{min-width:0;flex:1}.my-apps-row h2{margin:0 0 4px;font-size:15px}.my-apps-row p{margin:0;color:#64748b;font-size:12px}.my-apps-badge{padding:5px 8px;border-radius:12px;background:#edf7f2;color:#087f5b;font-size:10px;font-weight:650;white-space:nowrap}.my-apps-state,.my-apps-note{padding:20px 0;color:#64748b;font-size:13px}.my-apps-note{border-top:1px solid #edf0f2;margin:0;font-size:11px}.my-apps-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}
+    @@media(max-width:520px){.my-apps-card{padding:4px 14px}.my-apps-row{gap:10px}.my-apps-row h2{font-size:13px}.my-apps-row p{font-size:11px}}
+</style>
+
+@code {
+    private List<AccessibleApplication> Applications = [];
+    private bool Loading = true;
+    private string Error = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try { Applications = await Api.GetMyApplicationsAsync(); }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Loading = false; }
+    }
+
+    private static string Mark(string name) =>
+        string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
+}

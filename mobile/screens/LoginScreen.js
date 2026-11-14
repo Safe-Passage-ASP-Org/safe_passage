@@ -12,7 +12,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { login } from '../services/AuthService';
 import { collectDeviceTelemetry } from '../services/DeviceService';
-import { startMfaRealtime } from '../services/RealtimeService';
+import { startMfaRealtime, stopMfaRealtime } from '../services/RealtimeService';
 
 export default function LoginScreen({ navigation }) {
   const [username, setUsername] = useState('');
@@ -31,6 +31,7 @@ export default function LoginScreen({ navigation }) {
     setErrorMessage('');
 
     try {
+      await stopMfaRealtime();
       const telemetry = await collectDeviceTelemetry();
       const result = await login(username.trim(), password, telemetry.deviceId);
       if (!result?.mfaRequired) await startMfaRealtime();
@@ -62,10 +63,10 @@ export default function LoginScreen({ navigation }) {
 
       <View style={styles.formContainer}>
         <View style={styles.inputGroup}>
-          <Text style={styles.label}>Username</Text>
+          <Text style={styles.label}>Email or username</Text>
           <TextInput
             style={styles.input}
-            placeholder="Enter your username"
+            placeholder="Enter your email or username"
             placeholderTextColor="#64748b"
             value={username}
             onChangeText={setUsername}
@@ -122,7 +123,7 @@ export default function LoginScreen({ navigation }) {
           disabled={loading}
           accessibilityRole="button"
         >
-          <Text style={styles.enrollLinkText}>Set up this phone for first-time use</Text>
+          <Text style={styles.enrollLinkText}>Set up this phone for another account</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>

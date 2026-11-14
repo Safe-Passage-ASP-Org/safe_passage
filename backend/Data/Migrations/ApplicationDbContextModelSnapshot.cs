@@ -29,6 +29,9 @@ namespace SafePassage.Api.Data.Migrations
                     b.Property<DateTimeOffset>("ExpiresAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("RequiresPasswordSetup")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -189,10 +192,8 @@ namespace SafePassage.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("DeviceId")
+                    b.HasIndex("UserId", "DeviceId")
                         .IsUnique();
-
-                    b.HasIndex("UserId");
 
                     b.ToTable("Devices");
                 });
@@ -305,6 +306,10 @@ namespace SafePassage.Api.Data.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("FullName")
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
@@ -314,6 +319,10 @@ namespace SafePassage.Api.Data.Migrations
                     b.Property<string>("PasswordHash")
                         .IsRequired()
                         .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PhoneNumber")
+                        .HasMaxLength(32)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Role")

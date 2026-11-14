@@ -14,13 +14,11 @@ public sealed class AdminActivityController(ApplicationDbContext dbContext) : Co
     public async Task<ActionResult<IReadOnlyList<AdminActivityRecord>>> GetRecent(CancellationToken cancellationToken)
     {
         var logs = await dbContext.ActivityLogs.AsNoTracking()
-            .OrderByDescending(log => log.Timestamp)
-            .Take(250)
             .Select(log => new AdminActivityRecord(log.Id, log.Timestamp,
                 log.User == null ? "Unknown user" : log.User.Username,
                 log.Action, log.Resource, log.Status.ToString()))
             .ToListAsync(cancellationToken);
-        return Ok(logs);
+        return Ok(logs.OrderByDescending(log => log.Timestamp).Take(250).ToList());
     }
 
     public sealed record AdminActivityRecord(Guid Id, DateTimeOffset Timestamp, string Username,

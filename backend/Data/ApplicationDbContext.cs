@@ -29,6 +29,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(user => user.Username).HasMaxLength(100).IsRequired();
             entity.Property(user => user.PasswordHash).HasMaxLength(512).IsRequired();
             entity.Property(user => user.Email).HasMaxLength(320).IsRequired();
+            entity.Property(user => user.FullName).HasMaxLength(200);
+            entity.Property(user => user.PhoneNumber).HasMaxLength(32);
             entity.Property(user => user.Role).HasMaxLength(64).IsRequired();
         });
 
@@ -62,8 +64,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         modelBuilder.Entity<Device>(entity =>
         {
             entity.HasKey(device => device.Id);
-            entity.HasIndex(device => device.DeviceId).IsUnique();
-            entity.HasIndex(device => device.UserId);
+            entity.HasIndex(device => new { device.UserId, device.DeviceId }).IsUnique();
             entity.Property(device => device.DeviceId).HasMaxLength(256).IsRequired();
             entity.Property(device => device.DeviceName).HasMaxLength(200).IsRequired();
             entity.Property(device => device.DeviceType).HasMaxLength(100).IsRequired();
