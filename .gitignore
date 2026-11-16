@@ -10,6 +10,9 @@ obj/
 appsettings.Development.json
 appsettings.*.json
 !appsettings.json
+.env
+.env.*
+!.env.*.example
 
 ## SQLite Local Database (ignore local db file so members don't overwrite each other)
 *.db
