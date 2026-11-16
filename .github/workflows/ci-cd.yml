@@ -29,10 +29,7 @@ jobs:
         run: dotnet test backend-tests/SafePassage.Api.Tests/SafePassage.Api.Tests.csproj --configuration Release --no-restore
 
       - name: Publish Frontend Web
-        run: |
-          dotnet publish frontend-web/SafePassage.Web.csproj --configuration Release --no-restore --output ./out/web
-          ls -la ./out/web/wwwroot ./out/web/wwwroot/_framework 2>&1 || true
-          grep -i "blazor" ./out/web/SafePassage.Web.staticwebassets.endpoints.json 2>&1 || true
+        run: dotnet publish frontend-web/SafePassage.Web.csproj --configuration Release --no-restore --output ./out/web
 
   mobile:
     name: Test Mobile & Verify Vercel Web Export
@@ -71,7 +68,12 @@ jobs:
         run: docker build -f backend/Dockerfile -t safepassage-api:ci .
 
       - name: Build Frontend Web Docker image
-        run: docker build -f frontend-web/Dockerfile -t safepassage-web:ci .
+        run: |
+          docker build -f frontend-web/Dockerfile -t safepassage-web:ci .
+          cid=$(docker run -d -p 10000:10000 -e ASPNETCORE_ENVIRONMENT=Production safepassage-web:ci)
+          sleep 3
+          curl -sS -o /dev/null -w "docker-blazor-js:%{http_code}\n" http://localhost:10000/_framework/blazor.web.js || true
+          docker rm -f "$cid" || true
 
   verify-live-deployments:
     name: Verify Live Deployments
