@@ -1,0 +1,74 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [development, main]
+    paths:
+      - "mobile/**"
+      - ".github/workflows/mobile-apk.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-android-apk:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: npm ci
+
+      - name: Generate Android project (Expo prebuild)
+        working-directory: mobile
+        env:
+          EXPO_PUBLIC_API_URL: https://safe-passage-api.onrender.com
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build release APK
+        working-directory: mobile/android
+        env:
+          EXPO_PUBLIC_API_URL: https://safe-passage-api.onrender.com
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: Prepare APK artifact
+        run: cp mobile/android/app/build/outputs/apk/release/app-release.apk safepassage-mobile.apk
+
+      - name: Upload APK workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: safepassage-mobile-apk
+          path: safepassage-mobile.apk
+
+      - name: Publish APK to mobile-latest GitHub Release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view mobile-latest >/dev/null 2>&1; then
+            gh release upload mobile-latest safepassage-mobile.apk --clobber
+          else
+            gh release create mobile-latest safepassage-mobile.apk \
+              --target "${{ github.sha }}" \
+              --title "Safe Passage Mobile (Latest Android APK)" \
+              --notes "Automated Android APK build from main (${{ github.sha }})."
+          fi

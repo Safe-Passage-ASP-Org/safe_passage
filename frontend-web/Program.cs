@@ -72,4 +72,12 @@ app.MapGet("/downloads/safepassage-extension.zip", (IWebHostEnvironment env) =>
     return Results.File(memoryStream.ToArray(), "application/zip", "safepassage-extension.zip");
 });
 
+app.MapGet("/downloads/safepassage-mobile.apk", (IConfiguration config) =>
+{
+    var apkUrl = config["Mobile:ApkDownloadUrl"];
+    if (string.IsNullOrWhiteSpace(apkUrl))
+        apkUrl = "https://github.com/Safe-Passage-ASP-Org/safe_passage/releases/download/mobile-latest/safepassage-mobile.apk";
+    return Results.Redirect(apkUrl, permanent: false);
+});
+
 app.Run();
