@@ -20,23 +20,7 @@ public sealed class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Ap
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection must be configured.");
         var options = new DbContextOptionsBuilder<ApplicationDbContext>();
-
-        switch (provider.Trim().ToLowerInvariant())
-        {
-            case "sqlserver":
-                options.UseSqlServer(connectionString);
-                break;
-            case "postgresql":
-            case "postgres":
-                options.UseNpgsql(connectionString);
-                break;
-            case "sqlite":
-                options.UseSqlite(ResolveSqliteConnectionString(connectionString, contentRoot));
-                break;
-            default:
-                throw new InvalidOperationException(
-                    $"Unsupported Database:Provider '{provider}'. Use 'SqlServer', 'PostgreSQL', or 'Sqlite'.");
-        }
+        options.ConfigureSafePassageDatabase(provider, connectionString, contentRoot);
 
         return new ApplicationDbContext(options.Options);
     }
@@ -51,18 +35,5 @@ public sealed class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Ap
         return File.Exists(Path.Combine(backendDirectory, "SafePassage.Api.csproj"))
             ? backendDirectory
             : currentDirectory;
-    }
-
-    private static string ResolveSqliteConnectionString(string connectionString, string contentRoot)
-    {
-        var sqliteBuilder = new SqliteConnectionStringBuilder(connectionString);
-        if (!string.IsNullOrWhiteSpace(sqliteBuilder.DataSource) && !Path.IsPathRooted(sqliteBuilder.DataSource))
-            sqliteBuilder.DataSource = Path.GetFullPath(Path.Combine(contentRoot, sqliteBuilder.DataSource));
-
-        var databaseDirectory = Path.GetDirectoryName(sqliteBuilder.DataSource);
-        if (!string.IsNullOrEmpty(databaseDirectory))
-            Directory.CreateDirectory(databaseDirectory);
-
-        return sqliteBuilder.ConnectionString;
     }
 }

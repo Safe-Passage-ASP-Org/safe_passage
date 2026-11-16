@@ -1,0 +1,22 @@
+<button class="@CssClass" type="submit" disabled="@(!RendererInfo.IsInteractive || Busy)">
+    @if (!RendererInfo.IsInteractive)
+    {
+        @ConnectingText
+    }
+    else if (Busy)
+    {
+        @BusyText
+    }
+    else
+    {
+        @ChildContent
+    }
+</button>
+
+@code {
+    [Parameter] public string CssClass { get; set; } = "signup-button";
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public string ConnectingText { get; set; } = "Connecting…";
+    [Parameter] public string BusyText { get; set; } = "Submitting…";
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}

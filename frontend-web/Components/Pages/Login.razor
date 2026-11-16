@@ -78,7 +78,7 @@
                     </button>
                 </div>
                 <ValidationMessage For="() => Credentials.Password" />
-                <button class="signup-button" type="submit" disabled="@(!RendererInfo.IsInteractive || Busy)">@(!RendererInfo.IsInteractive ? "Connecting…" : (Busy ? "Signing in…" : "Sign in")) <span aria-hidden="true">→</span></button>
+                <InteractiveSubmitButton Busy="@Busy" BusyText="Signing in…">Sign in <span aria-hidden="true">→</span></InteractiveSubmitButton>
             </EditForm>
             @if (FacebookEnabled || GitHubEnabled || GitLabEnabled)
             {

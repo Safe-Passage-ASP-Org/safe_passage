@@ -5,7 +5,7 @@ using SafePassage.Api.Data;
 
 namespace SafePassage.Api.Controllers;
 
-[Authorize(Roles = "Admin,Administrator,Super Admin,Auditor")]
+[Authorize(Policy = "AuditorOrAbove")]
 [ApiController]
 [Route("api/admin/activity")]
 public sealed class AdminActivityController(ApplicationDbContext dbContext) : ControllerBase
