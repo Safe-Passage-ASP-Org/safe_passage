@@ -80,14 +80,37 @@
 
   <script>
     let refreshTimer = null;
+    let tickTimer = null;
+    let lastCheckedIso = null;
+    let lastHasActiveRun = false;
 
     function esc(str) {
       return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
     }
 
+    function timeAgo(iso) {
+      if (!iso) return '';
+      const diffSec = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+      if (diffSec < 60) return `${diffSec}s ago`;
+      const mins = Math.floor(diffSec / 60);
+      if (mins < 60) return `${mins}m ago`;
+      const hrs = Math.floor(mins / 60);
+      if (hrs < 24) return `${hrs}h ago`;
+      return `${Math.floor(hrs / 24)}d ago`;
+    }
+
+    function updateFooter() {
+      if (!lastCheckedIso) return;
+      document.getElementById('checkedAt').textContent =
+        `Last checked: ${timeAgo(lastCheckedIso)} (${new Date(lastCheckedIso).toLocaleTimeString()}, auto-refreshes every ${lastHasActiveRun ? '30' : '60'}s)`;
+    }
+
     function scheduleRefresh(hasActiveRun) {
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(loadStatus, hasActiveRun ? 30000 : 60000);
+      if (!tickTimer) {
+        tickTimer = setInterval(updateFooter, 1000);
+      }
     }
 
     async function loadStatus() {
@@ -96,8 +119,11 @@
       try {
         const res = await fetch('/api/status');
         const data = await res.json();
+        lastCheckedIso = data.checkedAt;
+        lastHasActiveRun = Boolean(data.hasActiveRun);
         render(data);
-        scheduleRefresh(data.hasActiveRun);
+        updateFooter();
+        scheduleRefresh(lastHasActiveRun);
       } catch (err) {
         document.getElementById('overallSummary').className = 'summary fail';
         document.getElementById('overallSummary').innerHTML = `<p class="summary-title">Unable to check status</p><p class="summary-desc">${esc(err.message)}</p>`;
@@ -110,13 +136,15 @@
     function render(data) {
       const dev = data.branches.development;
       const latestSha = dev.commit?.sha || '';
-      const latestShort = dev.commit?.shortSha || 'unknown';
+      const latestShort = dev.commit?.shortSha || '';
       const activeRun = dev.activeRun;
       const lastRun = dev.latestCompletedRun;
 
       const summary = document.getElementById('overallSummary');
       const downServices = data.services.filter((s) => !s.ok);
-      const behindServices = data.services.filter((s) => s.commit && latestSha && s.commit !== latestSha);
+      const behindServices = latestSha
+        ? data.services.filter((s) => s.commit && s.commit !== 'local' && s.commit !== latestSha)
+        : [];
 
       if (downServices.length > 0) {
         summary.className = 'summary fail';
@@ -128,7 +156,7 @@
         const totalCount = (activeRun.jobs || []).length;
         summary.className = 'summary warn';
         summary.innerHTML = `
-          <p class="summary-title">Build in progress for ${esc(activeRun.shortSha)}</p>
+          <p class="summary-title">Build in progress for ${esc(activeRun.shortSha)} (${esc(timeAgo(activeRun.updatedAt))})</p>
           <p class="summary-desc">
             CI/CD is currently running (${doneCount}/${totalCount} jobs finished). Live services stay online while this finishes.
             <a href="${esc(activeRun.url)}" target="_blank" rel="noopener">View live run</a>
@@ -137,7 +165,7 @@
         const jobsText = (lastRun.failedJobs || []).map((j) => `${j.name}${j.failedSteps.length ? ` (${j.failedSteps.join(', ')})` : ''}`).join('; ');
         summary.className = 'summary fail';
         summary.innerHTML = `
-          <p class="summary-title">Latest code (${esc(latestShort)}) has an error</p>
+          <p class="summary-title">Latest code (${esc(latestShort || lastRun.shortSha)}) has an error (${esc(timeAgo(lastRun.updatedAt))})</p>
           <p class="summary-desc">
             Live services stayed on the previous working build.
             ${jobsText ? `Failed in: <strong>${esc(jobsText)}</strong>. ` : ''}
@@ -151,18 +179,20 @@
       } else {
         summary.className = 'summary ok';
         summary.innerHTML = `
-          <p class="summary-title">Everything is online and running the latest commit (${esc(latestShort)})</p>
-          <p class="summary-desc">All services returned HTTP 200 and CI/CD is green.</p>`;
+          <p class="summary-title">Everything is online${latestShort ? ` and running the latest commit (${esc(latestShort)})` : ''}</p>
+          <p class="summary-desc">All services returned HTTP 200${dev.commit?.date ? ` · latest commit ${esc(timeAgo(dev.commit.date))}` : ''}.</p>`;
       }
 
       document.getElementById('servicesGrid').innerHTML = data.services.map((s) => {
-        const isBehind = s.commit && latestSha && s.commit !== latestSha;
+        const isBehind = Boolean(latestSha && s.commit && s.commit !== 'local' && s.commit !== latestSha);
         const pillClass = !s.ok ? 'fail' : (isBehind ? 'warn' : 'ok');
         const pillText = !s.ok ? `Offline (${s.status || 'ERR'})` : (isBehind ? 'Old Commit' : 'Online');
         const liveShort = s.commit ? (s.commit === 'local' ? 'local' : s.commit.slice(0, 7)) : 'Auto (Vercel)';
         const syncText = !s.commit
           ? 'Deployed by Vercel'
-          : (s.commit === latestSha ? 'Up to date with development' : `Behind latest (${latestShort})`);
+          : (!latestSha
+              ? `Serving ${liveShort}`
+              : (s.commit === latestSha ? 'Up to date with development' : `Behind latest (${latestShort})`));
 
         return `
           <div class="card">
@@ -186,7 +216,7 @@
         const completed = info.latestCompletedRun;
 
         let pillClass = 'warn';
-        let pillLabel = 'Unknown';
+        let pillLabel = info.ciRateLimited ? 'CI Rate Limited' : 'Unknown';
         if (active) {
           pillClass = 'warn';
           pillLabel = 'CI Running';
@@ -206,10 +236,10 @@
             </div>
             <div class="meta">
               ${c ? `
-                <div>Latest Commit: <a href="${esc(c.url)}" target="_blank" rel="noopener"><code>${esc(c.shortSha)}</code></a> by ${esc(c.author)}</div>
+                <div>Latest Commit: <a href="${esc(c.url)}" target="_blank" rel="noopener"><code>${esc(c.shortSha)}</code></a> by ${esc(c.author)}${c.date ? ` (${esc(timeAgo(c.date))})` : ''}</div>
                 <div>Message: ${esc(c.message)}</div>
               ` : '<div>Unable to load commit info</div>'}
-              ${displayRun ? `<div>CI Run: <a href="${esc(displayRun.url)}" target="_blank" rel="noopener">#${esc(displayRun.id)} (${esc(displayRun.status)})</a></div>` : ''}
+              ${displayRun ? `<div>CI Run: <a href="${esc(displayRun.url)}" target="_blank" rel="noopener">#${esc(displayRun.id)} (${esc(displayRun.status)}${displayRun.updatedAt ? `, ${esc(timeAgo(displayRun.updatedAt))}` : ''})</a></div>` : (info.ciRateLimited ? '<div><a href="https://github.com/Safe-Passage-ASP-Org/safe_passage/actions" target="_blank" rel="noopener">View GitHub Actions runs</a> (GitHub API rate limit reached on shared IP)</div>' : '')}
               ${jobs.length ? `
                 <ul class="job-list">
                   ${jobs.map((j) => {
@@ -223,8 +253,6 @@
             </div>
           </div>`;
       }).join('');
-
-      document.getElementById('checkedAt').textContent = `Last checked: ${new Date(data.checkedAt).toLocaleString()} (auto-refreshes every ${data.hasActiveRun ? '30' : '60'}s)`;
     }
 
     loadStatus();

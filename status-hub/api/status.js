@@ -1,19 +1,60 @@
 const OWNER = 'Safe-Passage-ASP-Org';
 const REPO = 'safe_passage';
-const GH_HEADERS = {
-  'User-Agent': 'SafePassage-StatusHub',
-  'Accept': 'application/vnd.github+json',
-};
+
+function getGitHubHeaders() {
+  const headers = {
+    'User-Agent': 'SafePassage-StatusHub',
+    'Accept': 'application/vnd.github+json',
+  };
+  if (process.env.GITHUB_TOKEN) {
+    headers.Authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
+  }
+  return headers;
+}
 
 async function fetchJson(url, timeoutMs = 8000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { headers: GH_HEADERS, signal: controller.signal });
+    const res = await fetch(url, { headers: getGitHubHeaders(), signal: controller.signal });
     if (!res.ok) return { ok: false, status: res.status, data: null };
     return { ok: true, status: res.status, data: await res.json() };
   } catch (err) {
     return { ok: false, status: 0, error: err.message, data: null };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function fetchCommitFromAtom(branch) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8000);
+  try {
+    const res = await fetch(`https://github.com/${OWNER}/${REPO}/commits/${branch}.atom`, {
+      headers: { 'User-Agent': 'SafePassage-StatusHub' },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    const xml = await res.text();
+    const entryMatch = xml.match(/<entry>([\s\S]*?)<\/entry>/);
+    if (!entryMatch) return null;
+    const entry = entryMatch[1];
+    const shaMatch = entry.match(/Commit\/([0-9a-f]{40})/);
+    const titleMatch = entry.match(/<title>([\s\S]*?)<\/title>/);
+    const authorMatch = entry.match(/<name>([\s\S]*?)<\/name>/);
+    const dateMatch = entry.match(/<updated>([\s\S]*?)<\/updated>/);
+    if (!shaMatch) return null;
+    const sha = shaMatch[1];
+    return {
+      sha,
+      shortSha: sha.slice(0, 7),
+      message: (titleMatch?.[1] || '').trim(),
+      author: (authorMatch?.[1] || 'unknown').trim(),
+      date: (dateMatch?.[1] || '').trim() || null,
+      url: `https://github.com/${OWNER}/${REPO}/commit/${sha}`,
+    };
+  } catch {
+    return null;
   } finally {
     clearTimeout(timer);
   }
@@ -75,7 +116,7 @@ async function getBranchState(branch) {
     fetchJson(`https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?branch=${branch}&per_page=3`),
   ]);
 
-  const commit = commitRes.data
+  let commit = commitRes.data
     ? {
         sha: commitRes.data.sha,
         shortSha: commitRes.data.sha.slice(0, 7),
@@ -86,6 +127,11 @@ async function getBranchState(branch) {
       }
     : null;
 
+  if (!commit) {
+    commit = await fetchCommitFromAtom(branch);
+  }
+
+  const rateLimited = !runsRes.ok && (runsRes.status === 403 || runsRes.status === 429);
   const runs = runsRes.data?.workflow_runs || [];
   const activeRaw = runs.find((r) => r.status === 'in_progress' || r.status === 'queued' || r.status === 'waiting') || null;
   const completedRaw = runs.find((r) => r.status === 'completed') || null;
@@ -100,6 +146,7 @@ async function getBranchState(branch) {
     commit,
     activeRun,
     latestCompletedRun,
+    ciRateLimited: rateLimited,
   };
 }
 
@@ -113,7 +160,7 @@ export default async function handler(req, res) {
   ]);
 
   const hasActiveRun = Boolean(devState.activeRun || mainState.activeRun);
-  const ttl = hasActiveRun ? 15 : 30;
+  const ttl = hasActiveRun ? 15 : 60;
   res.setHeader('Cache-Control', `s-maxage=${ttl}, stale-while-revalidate=${ttl}`);
 
   res.status(200).json({
