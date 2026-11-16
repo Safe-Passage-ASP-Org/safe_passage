@@ -1,0 +1,102 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using Microsoft.Extensions.Options;
+
+namespace SafePassage.Api.Services;
+
+public sealed class HttpApiActivationEmailSender(
+    HttpClient httpClient,
+    IConfiguration configuration,
+    IOptions<SmtpOptions> smtpOptions) : IActivationEmailSender
+{
+    public async Task SendActivationEmailAsync(
+        string email,
+        string username,
+        string activationUrl,
+        bool requiresPasswordSetup,
+        CancellationToken cancellationToken)
+    {
+        var subject = "Finish setting up your Safe Passage account";
+        var body = $"Hello {username},\n\n"
+            + (requiresPasswordSetup
+                ? "Open the following one-time link to activate your Safe Passage account and choose your password:\n\n"
+                : "Open the following one-time link to verify your email address and activate your Safe Passage account:\n\n")
+            + $"{activationUrl}\n\n"
+            + "This link expires soon. If you did not expect this invitation, you can ignore this message.";
+
+        var brevoApiKey = configuration["Brevo:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(brevoApiKey))
+        {
+            await SendViaBrevoAsync(brevoApiKey, email, username, subject, body, cancellationToken);
+            return;
+        }
+
+        var resendApiKey = configuration["Resend:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(resendApiKey))
+        {
+            await SendViaResendAsync(resendApiKey, email, subject, body, cancellationToken);
+            return;
+        }
+
+        var smtpFallback = new SmtpEmailSender(smtpOptions);
+        await smtpFallback.SendActivationEmailAsync(email, username, activationUrl, requiresPasswordSetup, cancellationToken);
+    }
+
+    private async Task SendViaBrevoAsync(
+        string apiKey,
+        string recipientEmail,
+        string recipientName,
+        string subject,
+        string textContent,
+        CancellationToken cancellationToken)
+    {
+        var fromEmail = configuration["Brevo:FromAddress"] ?? smtpOptions.Value.FromAddress;
+        var fromName = configuration["Brevo:FromName"] ?? smtpOptions.Value.FromName ?? "Safe Passage";
+        if (string.IsNullOrWhiteSpace(fromEmail))
+            throw new EmailDeliveryException("Configure Brevo:FromAddress to send activation emails via Brevo.");
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.brevo.com/v3/smtp/email");
+        request.Headers.Add("api-key", apiKey.Trim());
+        request.Content = JsonContent.Create(new
+        {
+            sender = new { email = fromEmail.Trim(), name = fromName.Trim() },
+            to = new[] { new { email = recipientEmail, name = recipientName } },
+            subject,
+            textContent
+        });
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new EmailDeliveryException($"Brevo email delivery failed ({(int)response.StatusCode}): {detail}");
+        }
+    }
+
+    private async Task SendViaResendAsync(
+        string apiKey,
+        string recipientEmail,
+        string subject,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        var fromEmail = configuration["Resend:FromAddress"] ?? "Safe Passage <onboarding@resend.dev>";
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
+        request.Content = JsonContent.Create(new
+        {
+            from = fromEmail.Trim(),
+            to = new[] { recipientEmail },
+            subject,
+            text
+        });
+
+        using var response = await httpClient.SendAsync(request, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var detail = await response.Content.ReadAsStringAsync(cancellationToken);
+            throw new EmailDeliveryException($"Resend email delivery failed ({(int)response.StatusCode}): {detail}");
+        }
+    }
+}

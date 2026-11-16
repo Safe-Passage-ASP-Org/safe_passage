@@ -50,7 +50,7 @@ builder.Services.AddScoped<IApplicationAccessVerificationService, ApplicationAcc
 builder.Services.AddScoped<INotificationService, MockNotificationService>();
 builder.Services.AddScoped<IDeviceManagementService, DeviceManagementService>();
 builder.Services.AddScoped<PendingDeviceRegistrationService>();
-builder.Services.AddScoped<IActivationEmailSender, SmtpEmailSender>();
+builder.Services.AddHttpClient<IActivationEmailSender, HttpApiActivationEmailSender>();
 builder.Services.AddScoped<IAccountActivationService, AccountActivationService>();
 builder.Services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
 builder.Services.AddScoped<DeviceBootstrapService>();
