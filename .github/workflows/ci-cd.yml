@@ -5,6 +5,7 @@ on:
     branches: [development, main]
   pull_request:
     branches: [development, main]
+  workflow_dispatch:
 
 jobs:
   backend-and-web:
@@ -27,11 +28,11 @@ jobs:
       - name: Build & Test Backend
         run: dotnet test backend-tests/SafePassage.Api.Tests/SafePassage.Api.Tests.csproj --configuration Release --no-restore
 
-      - name: Build Frontend Web
-        run: dotnet build frontend-web/SafePassage.Web.csproj --configuration Release --no-restore
+      - name: Publish Frontend Web
+        run: dotnet publish frontend-web/SafePassage.Web.csproj --configuration Release --no-restore --output ./out/web
 
   mobile:
-    name: Test Mobile & Export Web
+    name: Test Mobile & Verify Vercel Web Export
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -49,5 +50,49 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run tests
+      - name: Run unit tests
         run: npm test
+
+      - name: Export Web bundle (Vercel build check)
+        env:
+          EXPO_PUBLIC_API_URL: https://safe-passage-api.onrender.com
+        run: npx expo export --platform web
+
+  docker:
+    name: Verify Render Docker Builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Backend Docker image
+        run: docker build -f backend/Dockerfile -t safepassage-api:ci .
+
+      - name: Build Frontend Web Docker image
+        run: docker build -f frontend-web/Dockerfile -t safepassage-web:ci .
+
+  verify-live-deployments:
+    name: Verify Live Deployments
+    needs: [backend-and-web, mobile, docker]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Backend API, Admin Web, and Mobile Web
+        run: |
+          check_url() {
+            local url="$1"
+            for i in $(seq 1 12); do
+              code=$(curl -sS -L -m 20 -o /dev/null -w "%{http_code}" "$url" || echo "000")
+              if [ "$code" = "200" ]; then
+                echo "OK ($code): $url"
+                return 0
+              fi
+              echo "Attempt $i/12 for $url returned $code; retrying in 10s..."
+              sleep 10
+            done
+            echo "FAILED: $url did not return 200"
+            return 1
+          }
+
+          check_url "https://safe-passage-api.onrender.com/api/status"
+          check_url "https://safe-passage-web.onrender.com/"
+          check_url "https://safepassage-mobile.vercel.app/"

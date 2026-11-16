@@ -5,8 +5,25 @@ Identity, MFA, and device trust platform consisting of an ASP.NET Core 10 API (`
 ## Deployed Services
 
 - **Backend API (Render):** `https://safe-passage-api.onrender.com` (Health check: `https://safe-passage-api.onrender.com/api/status`)
+- **Admin Web Portal (Render):** `https://safe-passage-web.onrender.com/`
 - **Mobile Web App (Vercel):** `https://safepassage-mobile.vercel.app/`
 - **Database:** Supabase PostgreSQL (Session Pooler)
+
+## Verify All Deployments Are Running
+
+```bash
+curl -fsS https://safe-passage-api.onrender.com/api/status
+curl -fsS -o /dev/null -w "%{http_code}\n" https://safe-passage-web.onrender.com/
+curl -fsS -o /dev/null -w "%{http_code}\n" https://safepassage-mobile.vercel.app/
+```
+
+## CI/CD (GitHub Actions)
+
+The workflow in `.github/workflows/ci-cd.yml` runs automatically on pushes and pull requests to `development` and `main`:
+1. **`.NET` Build & Test:** Runs `backend-tests/SafePassage.Api.Tests` and publishes `frontend-web`.
+2. **`mobile` Test & Web Export:** Runs `npm test` and `npx expo export --platform web` (matching Vercel).
+3. **Docker Builds:** Builds both `backend/Dockerfile` and `frontend-web/Dockerfile` (matching Render).
+4. **Live Health Checks:** Verifies HTTP `200` on all three deployed URLs after pushes.
 
 ## Deploying the Admin Web Portal (`frontend-web`) on Render
 
