@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Safe Passage | Deployment Status Hub</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0c1210;
+      --card: #131c19;
+      --border: #23332d;
+      --text: #edf3f0;
+      --muted: #93a69d;
+      --green: #22c55e;
+      --green-bg: rgba(34, 197, 94, 0.14);
+      --amber: #f59e0b;
+      --amber-bg: rgba(245, 158, 11, 0.14);
+      --red: #ef4444;
+      --red-bg: rgba(239, 68, 68, 0.14);
+      --accent: #34d399;
+      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.5; }
+    .container { max-width: 1020px; margin: 0 auto; padding: 32px 20px 60px; }
+    header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+    .subtitle { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; }
+    button { background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    button:disabled { opacity: 0.6; cursor: wait; }
+
+    .banner { border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; border: 1px solid var(--border); background: var(--card); }
+    .banner.ok { border-color: rgba(34, 197, 94, 0.4); background: var(--green-bg); }
+    .banner.warn { border-color: rgba(245, 158, 11, 0.45); background: var(--amber-bg); }
+    .banner.fail { border-color: rgba(239, 68, 68, 0.45); background: var(--red-bg); }
+    .banner-title { font-weight: 700; font-size: 1rem; margin: 0 0 4px; }
+    .banner-desc { margin: 0; font-size: 0.9rem; color: var(--text); }
+
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 28px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+    .card-title { font-weight: 650; font-size: 1rem; margin: 0; }
+    .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
+    .badge.ok { background: var(--green-bg); color: var(--green); }
+    .badge.warn { background: var(--amber-bg); color: var(--amber); }
+    .badge.fail { background: var(--red-bg); color: var(--red); }
+
+    .meta { font-size: 0.85rem; color: var(--muted); display: grid; gap: 6px; }
+    .meta code { color: var(--text); background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px; font-size: 0.8rem; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .section-title { font-size: 1.05rem; font-weight: 700; margin: 0 0 12px; }
+    .ci-fail-list { margin: 10px 0 0; padding-left: 18px; font-size: 0.85rem; color: #fca5a5; }
+    .footer { margin-top: 24px; font-size: 0.8rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Safe Passage Deployment Hub</h1>
+        <p class="subtitle">Live service health, deployed commit sync, and CI/CD status for <code>Safe-Passage-ASP-Org/safe_passage</code></p>
+      </div>
+      <button id="refreshBtn" onclick="loadStatus()">Refresh</button>
+    </header>
+
+    <div id="overallBanner" class="banner">Loading deployment status...</div>
+
+    <h2 class="section-title">Live Deployments</h2>
+    <div id="servicesGrid" class="grid"></div>
+
+    <h2 class="section-title">Git Branches &amp; CI/CD</h2>
+    <div id="branchesGrid" class="grid"></div>
+
+    <div id="checkedAt" class="footer"></div>
+  </div>
+
+  <script>
+    function esc(str) {
+      return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    async function loadStatus() {
+      const btn = document.getElementById('refreshBtn');
+      btn.disabled = true;
+      try {
+        const res = await fetch('/api/status');
+        const data = await res.json();
+        render(data);
+      } catch (err) {
+        document.getElementById('overallBanner').className = 'banner fail';
+        document.getElementById('overallBanner').innerHTML = `<p class="banner-title">Unable to fetch status</p><p class="banner-desc">${esc(err.message)}</p>`;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    function render(data) {
+      const dev = data.branches.development;
+      const latestDevSha = dev.commit?.sha || '';
+      const latestDevShort = dev.commit?.shortSha || 'unknown';
+      const ci = dev.ci;
+
+      const banner = document.getElementById('overallBanner');
+      const downServices = data.services.filter((s) => !s.ok);
+      const behindServices = data.services.filter((s) => s.commit && latestDevSha && s.commit !== latestDevSha);
+
+      if (ci && ci.conclusion === 'failure') {
+        const jobsText = (ci.failedJobs || []).map((j) => `${j.name}${j.failedSteps.length ? ` (${j.failedSteps.join(', ')})` : ''}`).join('; ');
+        banner.className = 'banner fail';
+        banner.innerHTML = `
+          <p class="banner-title">Latest development commit (${esc(latestDevShort)}) failed CI/CD</p>
+          <p class="banner-desc">
+            Live services remain online on the last working build.
+            ${jobsText ? `Failed in: <strong>${esc(jobsText)}</strong>. ` : ''}
+            <a href="${esc(ci.url)}" target="_blank" rel="noopener">Open GitHub Actions error logs</a>
+          </p>`;
+      } else if (downServices.length > 0) {
+        banner.className = 'banner fail';
+        banner.innerHTML = `<p class="banner-title">Service unreachable</p><p class="banner-desc">${downServices.map((s) => esc(s.name)).join(', ')} did not return HTTP 200.</p>`;
+      } else if (behindServices.length > 0) {
+        banner.className = 'banner warn';
+        banner.innerHTML = `<p class="banner-title">Rollout in progress or behind latest commit (${esc(latestDevShort)})</p><p class="banner-desc">${behindServices.map((s) => `${esc(s.name)} is serving ${esc(s.commit.slice(0, 7))}`).join(' | ')}</p>`;
+      } else {
+        banner.className = 'banner ok';
+        banner.innerHTML = `<p class="banner-title">All services are online and synced with latest commit (${esc(latestDevShort)})</p><p class="banner-desc">CI/CD passed and all live endpoints returned HTTP 200.</p>`;
+      }
+
+      document.getElementById('servicesGrid').innerHTML = data.services.map((s) => {
+        const badgeClass = !s.ok ? 'fail' : (s.commit && latestDevSha && s.commit !== latestDevSha ? 'warn' : 'ok');
+        const badgeText = !s.ok ? `Offline (${s.status || 'ERR'})` : (s.commit && latestDevSha && s.commit !== latestDevSha ? 'Old Commit' : 'Online');
+        const liveShort = s.commit ? (s.commit === 'local' ? 'local' : s.commit.slice(0, 7)) : 'N/A (static/SPA)';
+        const syncText = !s.commit ? 'Verified via Vercel production branch' : (s.commit === latestDevSha ? 'Matches latest development' : `Behind latest (${latestDevShort})`);
+        return `
+          <div class="card">
+            <div class="card-head">
+              <h3 class="card-title">${esc(s.name)}</h3>
+              <span class="badge ${badgeClass}">${esc(badgeText)}</span>
+            </div>
+            <div class="meta">
+              <div>URL: <a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a></div>
+              <div>HTTP: <code>${esc(s.status)}</code> (${esc(s.latencyMs)} ms)</div>
+              <div>Deployed Commit: <code>${esc(liveShort)}</code></div>
+              <div>Sync: ${esc(syncText)}</div>
+            </div>
+          </div>`;
+      }).join('');
+
+      document.getElementById('branchesGrid').innerHTML = ['development', 'main'].map((b) => {
+        const info = data.branches[b];
+        const c = info.commit;
+        const r = info.ci;
+        const ciBadge = !r ? 'warn' : (r.status !== 'completed' ? 'warn' : (r.conclusion === 'success' ? 'ok' : 'fail'));
+        const ciLabel = !r ? 'Unknown' : (r.status !== 'completed' ? r.status : r.conclusion);
+        return `
+          <div class="card">
+            <div class="card-head">
+              <h3 class="card-title">Branch: <code>${esc(b)}</code></h3>
+              <span class="badge ${ciBadge}">CI: ${esc(ciLabel)}</span>
+            </div>
+            <div class="meta">
+              ${c ? `
+                <div>Latest Commit: <a href="${esc(c.url)}" target="_blank" rel="noopener"><code>${esc(c.shortSha)}</code></a> by ${esc(c.author)}</div>
+                <div>Message: ${esc(c.message)}</div>
+              ` : '<div>Unable to load commit info</div>'}
+              ${r ? `<div>Workflow Run: <a href="${esc(r.url)}" target="_blank" rel="noopener">#${esc(r.id)}</a></div>` : ''}
+              ${r && r.failedJobs && r.failedJobs.length ? `
+                <ul class="ci-fail-list">
+                  ${r.failedJobs.map((j) => `<li><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.name)}</a>${j.failedSteps.length ? ` — ${esc(j.failedSteps.join(', '))}` : ''}</li>`).join('')}
+                </ul>
+              ` : ''}
+            </div>
+          </div>`;
+      }).join('');
+
+      document.getElementById('checkedAt').textContent = `Last checked: ${new Date(data.checkedAt).toLocaleString()} (auto-refreshes every 60s)`;
+    }
+
+    loadStatus();
+    setInterval(loadStatus, 60000);
+  </script>
+</body>
+</html>

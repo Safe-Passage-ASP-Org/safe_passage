@@ -38,4 +38,12 @@ app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
+app.MapGet("/health", () => Results.Ok(new
+{
+    Status = "Online",
+    System = "Safe Passage Web",
+    Commit = Environment.GetEnvironmentVariable("RENDER_GIT_COMMIT") ?? "local",
+    Timestamp = DateTime.UtcNow
+}));
+
 app.Run();
