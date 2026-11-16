@@ -7,7 +7,6 @@ RUN dotnet restore frontend-web/SafePassage.Web.csproj
 COPY frontend-web/ frontend-web/
 RUN dotnet publish frontend-web/SafePassage.Web.csproj \
     --configuration Release \
-    --no-restore \
     --output /app/publish
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
