@@ -3,6 +3,7 @@
 @using System.ComponentModel.DataAnnotations
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
+@inject IConfiguration Configuration
 @inject NavigationManager Navigation
 
 <PageTitle>Activate account – Safe Passage</PageTitle>
@@ -17,8 +18,10 @@
         }
         else if (Activated)
         {
-            <p class="activation-success" role="status">Your account is activated. Sign in on the Safe Passage mobile app and enroll your first phone to approve future sign-ins.</p>
-            <button class="activation-button" @onclick="NavigateToLogin">Go to sign in</button>
+            var mobileUrl = Configuration["Mobile:PublicUrl"] ?? "https://safepassage-mobile.vercel.app/";
+            <p class="activation-success" role="status">Your account is activated. Step 1: sign in on Safe Passage Mobile to enroll your first device for MFA approvals.</p>
+            <a class="activation-button" href="@mobileUrl" target="_blank" rel="noopener noreferrer" style="display:block;text-align:center;text-decoration:none;">Open Safe Passage Mobile</a>
+            <button class="activation-button" style="background:#fff;color:#087f75;border:1px solid #cbd5dc;margin-top:10px;" @onclick="NavigateToLogin">Go to web sign in</button>
         }
         else
         {

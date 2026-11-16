@@ -5,6 +5,7 @@
 @using Microsoft.JSInterop
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
+@inject IConfiguration Configuration
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @implements IDisposable
@@ -30,7 +31,16 @@
             <p class="signup-subtitle">Approve this request on your registered mobile device. This page will continue after approval.</p>
             @if (!string.IsNullOrWhiteSpace(Error))
             {
-                <div class="signup-error" role="alert">@Error</div>
+                <div class="signup-error" role="alert">
+                    <div>@Error</div>
+                    @if (Error.Contains("No active mobile device", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var mobileUrl = Configuration["Mobile:PublicUrl"] ?? "https://safepassage-mobile.vercel.app/";
+                        <div style="margin-top:6px;">
+                            <a href="@mobileUrl" target="_blank" rel="noopener noreferrer" style="font-weight:600;text-decoration:underline;">Open Safe Passage Mobile</a> to sign in and enroll your first device, then try again here.
+                        </div>
+                    }
+                </div>
             }
             <div class="login-pending" role="status" aria-live="polite">
                 <span class="pending-indicator"></span>
@@ -56,7 +66,16 @@
             <p class="signup-subtitle">Use your email or username and password to continue securely.</p>
             @if (!string.IsNullOrWhiteSpace(Error))
             {
-                <div class="signup-error" role="alert">@Error</div>
+                <div class="signup-error" role="alert">
+                    <div>@Error</div>
+                    @if (Error.Contains("No active mobile device", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var mobileUrl = Configuration["Mobile:PublicUrl"] ?? "https://safepassage-mobile.vercel.app/";
+                        <div style="margin-top:6px;">
+                            <a href="@mobileUrl" target="_blank" rel="noopener noreferrer" style="font-weight:600;text-decoration:underline;">Open Safe Passage Mobile</a> to sign in and enroll your first device, then try again here.
+                        </div>
+                    }
+                </div>
             }
             <EditForm Model="Credentials" OnValidSubmit="SignInAsync">
                 <DataAnnotationsValidator />
