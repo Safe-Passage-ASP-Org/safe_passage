@@ -7,7 +7,7 @@ using SafePassage.Api.Models;
 
 namespace SafePassage.Api.Controllers;
 
-[Authorize(Roles = "Admin,Administrator,Super Admin")]
+[Authorize(Policy = "OperatorOrAdmin")]
 [ApiController]
 [Route("api/admin/access-requests")]
 public sealed class AdminAccessRequestsController(ApplicationDbContext dbContext) : ControllerBase

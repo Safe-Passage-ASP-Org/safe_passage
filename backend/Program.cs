@@ -31,22 +31,7 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
 {
-    switch (databaseProvider.Trim().ToLowerInvariant())
-    {
-        case "sqlserver":
-            options.UseSqlServer(connectionString);
-            break;
-        case "postgresql":
-        case "postgres":
-            options.UseNpgsql(connectionString);
-            break;
-        case "sqlite":
-            options.UseSqlite(ResolveSqliteConnectionString(connectionString, builder.Environment.ContentRootPath));
-            break;
-        default:
-            throw new InvalidOperationException(
-                $"Unsupported Database:Provider '{databaseProvider}'. Use 'SqlServer', 'PostgreSQL', or 'Sqlite'.");
-    }
+    options.ConfigureSafePassageDatabase(databaseProvider, connectionString, builder.Environment.ContentRootPath);
     options.UseOpenIddict();
     options.ConfigureWarnings(w =>
         w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
@@ -447,7 +432,15 @@ builder.Services.AddOpenIddict().AddValidation(options =>
     options.UseLocalServer();
     options.UseAspNetCore();
 });
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy("AdminOnly", policy =>
+        policy.RequireRole("Admin", "Administrator", "Super Admin"));
+    options.AddPolicy("OperatorOrAdmin", policy =>
+        policy.RequireRole("Admin", "Administrator", "Super Admin", "Operator"));
+    options.AddPolicy("AuditorOrAbove", policy =>
+        policy.RequireRole("Admin", "Administrator", "Super Admin", "Operator", "Auditor"));
+});
 
 var app = builder.Build();
 
@@ -548,24 +541,6 @@ app.MapGet("/api/status", () => Results.Ok(new
 .WithName("GetSystemStatus");
 
 app.Run();
-
-// SQLite resolves a relative Data Source against the process working directory, which differs
-// depending on how the API is launched (project folder, repo root, or a published output folder).
-// Anchor it to the content root so every launch uses the same database file.
-static string ResolveSqliteConnectionString(string connectionString, string contentRootPath)
-{
-    var sqliteBuilder = new SqliteConnectionStringBuilder(connectionString);
-    if (!string.IsNullOrWhiteSpace(sqliteBuilder.DataSource) && !Path.IsPathRooted(sqliteBuilder.DataSource))
-        sqliteBuilder.DataSource = Path.GetFullPath(Path.Combine(contentRootPath, sqliteBuilder.DataSource));
-
-    // SQLite will not create missing directories for the database file, so make sure the
-    // folder exists before the provider tries to open it.
-    var databaseDirectory = Path.GetDirectoryName(sqliteBuilder.DataSource);
-    if (!string.IsNullOrEmpty(databaseDirectory))
-        Directory.CreateDirectory(databaseDirectory);
-
-    return sqliteBuilder.ConnectionString;
-}
 
 static X509Certificate2? LoadCertificate(string? path, string? base64, string? password)
 {

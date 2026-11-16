@@ -48,24 +48,8 @@ public sealed class AuthController(
 
     [HttpGet("gitlab")]
     [AllowAnonymous]
-    public IActionResult GitLabSignIn()
-    {
-        if (string.IsNullOrWhiteSpace(configuration["GitLab:ClientId"])
-            || string.IsNullOrWhiteSpace(configuration["GitLab:ClientSecret"]))
-            return GitLabError("unavailable");
-
-        var properties = new AuthenticationProperties { RedirectUri = "/api/auth/gitlab/complete" };
-        var returnUrl = Request.Query["returnUrl"].ToString();
-        if (!string.IsNullOrWhiteSpace(returnUrl))
-        {
-            var issuer = new Uri(configuration["OpenIddict:Issuer"] ?? "http://localhost:5143");
-            if (!Uri.TryCreate(returnUrl, UriKind.Absolute, out var target)
-                || target.GetLeftPart(UriPartial.Authority) != issuer.GetLeftPart(UriPartial.Authority)
-                || target.AbsolutePath != "/connect/authorize") return BadRequest("Invalid OIDC continuation.");
-            properties.Items["SafePassage:OidcReturnUrl"] = target.ToString();
-        }
-        return Challenge(properties, "GitLab");
-    }
+    public IActionResult GitLabSignIn() =>
+        StartExternalChallenge("GitLab", "/api/auth/gitlab/complete", "GitLab:ClientId", "GitLab:ClientSecret", () => GitLabError("unavailable"));
 
     [HttpGet("gitlab/complete")]
     [Authorize(AuthenticationSchemes = "gitlab-external")]
@@ -145,34 +129,12 @@ public sealed class AuthController(
 
     [HttpGet("gitlab/exchange/{ticket}")]
     [AllowAnonymous]
-    public IActionResult ExchangeGitLabTicket(string ticket)
-    {
-        var key = "gitlab-login:" + ticket;
-        if (!cache.TryGetValue(key, out LoginResponse? response) || response is null) return Unauthorized();
-        cache.Remove(key);
-        return Ok(response);
-    }
+    public IActionResult ExchangeGitLabTicket(string ticket) => ExchangeExternalTicket("gitlab-login:", ticket);
 
     [HttpGet("facebook")]
     [AllowAnonymous]
-    public IActionResult FacebookSignIn()
-    {
-        if (string.IsNullOrWhiteSpace(configuration["Facebook:AppId"])
-            || string.IsNullOrWhiteSpace(configuration["Facebook:AppSecret"]))
-            return FacebookError("unavailable");
-
-        var properties = new AuthenticationProperties { RedirectUri = "/api/auth/facebook/complete" };
-        var returnUrl = Request.Query["returnUrl"].ToString();
-        if (!string.IsNullOrWhiteSpace(returnUrl))
-        {
-            var issuer = new Uri(configuration["OpenIddict:Issuer"] ?? "http://localhost:5143");
-            if (!Uri.TryCreate(returnUrl, UriKind.Absolute, out var target)
-                || target.GetLeftPart(UriPartial.Authority) != issuer.GetLeftPart(UriPartial.Authority)
-                || target.AbsolutePath != "/connect/authorize") return BadRequest("Invalid OIDC continuation.");
-            properties.Items["SafePassage:OidcReturnUrl"] = target.ToString();
-        }
-        return Challenge(properties, "Facebook");
-    }
+    public IActionResult FacebookSignIn() =>
+        StartExternalChallenge("Facebook", "/api/auth/facebook/complete", "Facebook:AppId", "Facebook:AppSecret", () => FacebookError("unavailable"));
 
     [HttpGet("facebook/complete")]
     [Authorize(AuthenticationSchemes = "facebook-external")]
@@ -273,34 +235,12 @@ public sealed class AuthController(
 
     [HttpGet("facebook/exchange/{ticket}")]
     [AllowAnonymous]
-    public IActionResult ExchangeFacebookTicket(string ticket)
-    {
-        var key = "facebook-login:" + ticket;
-        if (!cache.TryGetValue(key, out LoginResponse? response) || response is null) return Unauthorized();
-        cache.Remove(key);
-        return Ok(response);
-    }
+    public IActionResult ExchangeFacebookTicket(string ticket) => ExchangeExternalTicket("facebook-login:", ticket);
 
     [HttpGet("github")]
     [AllowAnonymous]
-    public IActionResult GitHubSignIn()
-    {
-        if (string.IsNullOrWhiteSpace(configuration["GitHub:ClientId"])
-            || string.IsNullOrWhiteSpace(configuration["GitHub:ClientSecret"]))
-            return GitHubError("unavailable");
-
-        var properties = new AuthenticationProperties { RedirectUri = "/api/auth/github/complete" };
-        var returnUrl = Request.Query["returnUrl"].ToString();
-        if (!string.IsNullOrWhiteSpace(returnUrl))
-        {
-            var issuer = new Uri(configuration["OpenIddict:Issuer"] ?? "http://localhost:5143");
-            if (!Uri.TryCreate(returnUrl, UriKind.Absolute, out var target)
-                || target.GetLeftPart(UriPartial.Authority) != issuer.GetLeftPart(UriPartial.Authority)
-                || target.AbsolutePath != "/connect/authorize") return BadRequest("Invalid OIDC continuation.");
-            properties.Items["SafePassage:OidcReturnUrl"] = target.ToString();
-        }
-        return Challenge(properties, "GitHub");
-    }
+    public IActionResult GitHubSignIn() =>
+        StartExternalChallenge("GitHub", "/api/auth/github/complete", "GitHub:ClientId", "GitHub:ClientSecret", () => GitHubError("unavailable"));
 
     [HttpGet("github/complete")]
     [Authorize(AuthenticationSchemes = "github-external")]
@@ -379,9 +319,36 @@ public sealed class AuthController(
 
     [HttpGet("github/exchange/{ticket}")]
     [AllowAnonymous]
-    public IActionResult ExchangeGitHubTicket(string ticket)
+    public IActionResult ExchangeGitHubTicket(string ticket) => ExchangeExternalTicket("github-login:", ticket);
+
+    private IActionResult StartExternalChallenge(
+        string scheme,
+        string redirectUri,
+        string idConfigKey,
+        string secretConfigKey,
+        Func<IActionResult> unavailableResult)
     {
-        var key = "github-login:" + ticket;
+        if (string.IsNullOrWhiteSpace(configuration[idConfigKey])
+            || string.IsNullOrWhiteSpace(configuration[secretConfigKey]))
+            return unavailableResult();
+
+        var properties = new AuthenticationProperties { RedirectUri = redirectUri };
+        var returnUrl = Request.Query["returnUrl"].ToString();
+        if (!string.IsNullOrWhiteSpace(returnUrl))
+        {
+            var issuer = new Uri(configuration["OpenIddict:Issuer"] ?? "http://localhost:5143");
+            if (!Uri.TryCreate(returnUrl, UriKind.Absolute, out var target)
+                || target.GetLeftPart(UriPartial.Authority) != issuer.GetLeftPart(UriPartial.Authority)
+                || target.AbsolutePath != "/connect/authorize")
+                return BadRequest("Invalid OIDC continuation.");
+            properties.Items["SafePassage:OidcReturnUrl"] = target.ToString();
+        }
+        return Challenge(properties, scheme);
+    }
+
+    private IActionResult ExchangeExternalTicket(string cachePrefix, string ticket)
+    {
+        var key = cachePrefix + ticket;
         if (!cache.TryGetValue(key, out LoginResponse? response) || response is null) return Unauthorized();
         cache.Remove(key);
         return Ok(response);
