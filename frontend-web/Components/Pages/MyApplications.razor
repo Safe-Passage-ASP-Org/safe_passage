@@ -8,6 +8,14 @@
     <p class="sp-page-subtitle">Applications assigned directly to you or through one of your groups.</p>
 </div>
 
+<section class="sp-card" style="margin-bottom: 16px; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;">
+    <div>
+        <h2 style="margin: 0 0 4px; font-size: 1rem;">Safe Passage Browser Extension</h2>
+        <p style="margin: 0; font-size: 0.875rem; opacity: 0.8;">Download and unzip, then open <code>chrome://extensions</code>, enable Developer mode, and click <strong>Load unpacked</strong> to authenticate and autofill custom sites.</p>
+    </div>
+    <a class="my-apps-launch" href="/downloads/safepassage-extension.zip" download="safepassage-extension.zip">Download Extension (.zip)</a>
+</section>
+
 @if (!string.IsNullOrWhiteSpace(Error))
 {
     <div class="my-apps-error" role="alert">@Error</div>

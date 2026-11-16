@@ -13,6 +13,7 @@ RUN dotnet publish frontend-web/SafePassage.Web.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
 COPY --from=build /app/publish .
+COPY extension/ ./extension/
 
 ENV ASPNETCORE_HTTP_PORTS=10000
 EXPOSE 10000

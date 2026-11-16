@@ -1,3 +1,4 @@
+using System.IO.Compression;
 using Microsoft.AspNetCore.HttpOverrides;
 using SafePassage.Web.Components;
 using SafePassage.Web.Services;
@@ -45,5 +46,29 @@ app.MapGet("/health", () => Results.Ok(new
     Commit = Environment.GetEnvironmentVariable("RENDER_GIT_COMMIT") ?? "local",
     Timestamp = DateTime.UtcNow
 }));
+
+app.MapGet("/downloads/safepassage-extension.zip", (IWebHostEnvironment env) =>
+{
+    var candidates = new[]
+    {
+        Path.Combine(env.ContentRootPath, "extension"),
+        Path.GetFullPath(Path.Combine(env.ContentRootPath, "..", "extension"))
+    };
+    var extensionDir = candidates.FirstOrDefault(Directory.Exists);
+    if (extensionDir is null)
+        return Results.NotFound(new { message = "Browser extension package not found." });
+
+    using var memoryStream = new MemoryStream();
+    using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, leaveOpen: true))
+    {
+        foreach (var filePath in Directory.EnumerateFiles(extensionDir, "*", SearchOption.AllDirectories))
+        {
+            var entryName = Path.GetRelativePath(extensionDir, filePath).Replace('\\', '/');
+            archive.CreateEntryFromFile(filePath, entryName, CompressionLevel.Optimal);
+        }
+    }
+
+    return Results.File(memoryStream.ToArray(), "application/zip", "safepassage-extension.zip");
+});
 
 app.Run();
