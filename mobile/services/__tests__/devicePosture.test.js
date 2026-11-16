@@ -1,3 +1,15 @@
+jest.mock('expo-secure-store', () => ({
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => {}),
+  deleteItemAsync: jest.fn(async () => {}),
+}));
+
+jest.mock('expo-crypto', () => ({
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+  digestStringAsync: jest.fn(async () => 'hash'),
+  getRandomBytesAsync: jest.fn(async () => new Uint8Array(32)),
+}));
+
 jest.mock('expo-device', () => ({
   isRootedExperimentalAsync: jest.fn(),
   osName: 'Android',

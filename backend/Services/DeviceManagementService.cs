@@ -198,7 +198,7 @@ public sealed class DeviceManagementService(
         var postureResult = DevicePostureEvaluator.Evaluate(device, policy);
         if (!postureResult.IsCompliant)
         {
-            AddActivity(actorId, "Device Trust Blocked", device.DeviceId, ActivityLogStatus.Failure);
+            AddActivity(actorId, "Device Trust Blocked", device.DeviceId, ActivityLogStatus.Denied);
             await dbContext.SaveChangesAsync(cancellationToken);
             return DeviceManagementResult<DeviceResponse>.Failed(
                 DeviceManagementFailure.PostureNonCompliant,
