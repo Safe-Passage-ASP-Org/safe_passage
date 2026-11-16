@@ -15,6 +15,48 @@ public static class DbInitializer
     public static readonly Guid AdminApplicationId = Guid.Parse("55555555-5555-5555-5555-555555555555");
     public static readonly Guid FinanceTestApplicationId = Guid.Parse("66666666-6666-6666-6666-666666666666");
 
+    public static void InitializeProductionBaseline(
+        ApplicationDbContext dbContext,
+        IPasswordHasher<User> passwordHasher,
+        string? bootstrapAdminEmail = null,
+        string? bootstrapAdminPassword = null)
+    {
+        EnsureApplication(dbContext, MobileApplicationId, "Safe Passage Mobile", "Safe Passage mobile client.");
+        EnsureApplication(dbContext, AdminApplicationId, "Safe Passage Admin", "Safe Passage administration portal.");
+        EnsureApplication(dbContext, FinanceTestApplicationId, "Company Finance Test App", "Demo application for validating Safe Passage access decisions.");
+        EnsurePolicy(
+            dbContext,
+            "Require MFA and trusted devices",
+            "Authentication",
+            "{\"requiresTrustedDevice\":true,\"allowTrustedDeviceMfaBypass\":false,\"requiresStepUp\":true,\"requireMfa\":true}");
+        EnsurePolicy(
+            dbContext,
+            "Trusted device access",
+            "Device",
+            "{\"requiresTrustedDevice\":true,\"allowTrustedDeviceMfaBypass\":false,\"requiresStepUp\":true,\"requireMfa\":true}");
+
+        if (!string.IsNullOrWhiteSpace(bootstrapAdminEmail)
+            && !string.IsNullOrWhiteSpace(bootstrapAdminPassword)
+            && !dbContext.Users.Any(u => u.Role == "Admin" || u.Role == "Administrator"))
+        {
+            var normalizedEmail = bootstrapAdminEmail.Trim();
+            var username = normalizedEmail.Split('@')[0];
+            var admin = new User
+            {
+                Id = Guid.NewGuid(),
+                Username = username,
+                Email = normalizedEmail,
+                FullName = "Safe Passage Admin",
+                Role = "Admin",
+                IsActive = true,
+                IsEmailVerified = true
+            };
+            admin.PasswordHash = passwordHasher.HashPassword(admin, bootstrapAdminPassword);
+            dbContext.Users.Add(admin);
+            dbContext.SaveChanges();
+        }
+    }
+
     public static void Initialize(ApplicationDbContext dbContext, IPasswordHasher<User> passwordHasher)
     {
         EnsureApplication(dbContext, MobileApplicationId, "Safe Passage Mobile", "Safe Passage mobile client.");

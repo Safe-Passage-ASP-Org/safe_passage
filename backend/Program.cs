@@ -496,7 +496,20 @@ using (var scope = app.Services.CreateScope())
             dbContext.Database.Migrate();
         }
         var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>();
-        DbInitializer.Initialize(dbContext, passwordHasher);
+        var seedDemoData = app.Environment.IsDevelopment()
+            || app.Configuration.GetValue<bool>("Database:SeedDemoData");
+        if (seedDemoData)
+        {
+            DbInitializer.Initialize(dbContext, passwordHasher);
+        }
+        else
+        {
+            DbInitializer.InitializeProductionBaseline(
+                dbContext,
+                passwordHasher,
+                app.Configuration["AdminBootstrap:Email"],
+                app.Configuration["AdminBootstrap:Password"]);
+        }
     }
     catch (Exception ex)
     {
