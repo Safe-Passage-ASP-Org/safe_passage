@@ -99,17 +99,26 @@
       return `${Math.floor(hrs / 24)}d ago`;
     }
 
-    function updateFooter() {
-      if (!lastCheckedIso) return;
-      document.getElementById('checkedAt').textContent =
-        `Last checked: ${timeAgo(lastCheckedIso)} (${new Date(lastCheckedIso).toLocaleTimeString()}, auto-refreshes every ${lastHasActiveRun ? '30' : '60'}s)`;
+    function relSpan(iso) {
+      if (!iso) return '';
+      return `<span class="rel-time" data-ts="${esc(iso)}">${esc(timeAgo(iso))}</span>`;
+    }
+
+    function updateTimes() {
+      document.querySelectorAll('.rel-time[data-ts]').forEach((el) => {
+        el.textContent = timeAgo(el.getAttribute('data-ts'));
+      });
+      if (lastCheckedIso) {
+        document.getElementById('checkedAt').textContent =
+          `Last checked: ${timeAgo(lastCheckedIso)} (${new Date(lastCheckedIso).toLocaleTimeString()}, auto-refreshes every ${lastHasActiveRun ? '30' : '60'}s)`;
+      }
     }
 
     function scheduleRefresh(hasActiveRun) {
       if (refreshTimer) clearTimeout(refreshTimer);
       refreshTimer = setTimeout(loadStatus, hasActiveRun ? 30000 : 60000);
       if (!tickTimer) {
-        tickTimer = setInterval(updateFooter, 1000);
+        tickTimer = setInterval(updateTimes, 1000);
       }
     }
 
@@ -122,7 +131,7 @@
         lastCheckedIso = data.checkedAt;
         lastHasActiveRun = Boolean(data.hasActiveRun);
         render(data);
-        updateFooter();
+        updateTimes();
         scheduleRefresh(lastHasActiveRun);
       } catch (err) {
         document.getElementById('overallSummary').className = 'summary fail';
@@ -156,7 +165,7 @@
         const totalCount = (activeRun.jobs || []).length;
         summary.className = 'summary warn';
         summary.innerHTML = `
-          <p class="summary-title">Build in progress for ${esc(activeRun.shortSha)} (${esc(timeAgo(activeRun.updatedAt))})</p>
+          <p class="summary-title">Build in progress for ${esc(activeRun.shortSha)} (${relSpan(activeRun.updatedAt)})</p>
           <p class="summary-desc">
             CI/CD is currently running (${doneCount}/${totalCount} jobs finished). Live services stay online while this finishes.
             <a href="${esc(activeRun.url)}" target="_blank" rel="noopener">View live run</a>
@@ -165,7 +174,7 @@
         const jobsText = (lastRun.failedJobs || []).map((j) => `${j.name}${j.failedSteps.length ? ` (${j.failedSteps.join(', ')})` : ''}`).join('; ');
         summary.className = 'summary fail';
         summary.innerHTML = `
-          <p class="summary-title">Latest code (${esc(latestShort || lastRun.shortSha)}) has an error (${esc(timeAgo(lastRun.updatedAt))})</p>
+          <p class="summary-title">Latest code (${esc(latestShort || lastRun.shortSha)}) has an error (${relSpan(lastRun.updatedAt)})</p>
           <p class="summary-desc">
             Live services stayed on the previous working build.
             ${jobsText ? `Failed in: <strong>${esc(jobsText)}</strong>. ` : ''}
@@ -180,7 +189,7 @@
         summary.className = 'summary ok';
         summary.innerHTML = `
           <p class="summary-title">Everything is online${latestShort ? ` and running the latest commit (${esc(latestShort)})` : ''}</p>
-          <p class="summary-desc">All services returned HTTP 200${dev.commit?.date ? ` · latest commit ${esc(timeAgo(dev.commit.date))}` : ''}.</p>`;
+          <p class="summary-desc">All services returned HTTP 200${dev.commit?.date ? ` · latest commit ${relSpan(dev.commit.date)}` : ''}.</p>`;
       }
 
       document.getElementById('servicesGrid').innerHTML = data.services.map((s) => {
@@ -236,10 +245,10 @@
             </div>
             <div class="meta">
               ${c ? `
-                <div>Latest Commit: <a href="${esc(c.url)}" target="_blank" rel="noopener"><code>${esc(c.shortSha)}</code></a> by ${esc(c.author)}${c.date ? ` (${esc(timeAgo(c.date))})` : ''}</div>
+                <div>Latest Commit: <a href="${esc(c.url)}" target="_blank" rel="noopener"><code>${esc(c.shortSha)}</code></a> by ${esc(c.author)}${c.date ? ` (${relSpan(c.date)})` : ''}</div>
                 <div>Message: ${esc(c.message)}</div>
               ` : '<div>Unable to load commit info</div>'}
-              ${displayRun ? `<div>CI Run: <a href="${esc(displayRun.url)}" target="_blank" rel="noopener">#${esc(displayRun.id)} (${esc(displayRun.status)}${displayRun.updatedAt ? `, ${esc(timeAgo(displayRun.updatedAt))}` : ''})</a></div>` : (info.ciRateLimited ? '<div><a href="https://github.com/Safe-Passage-ASP-Org/safe_passage/actions" target="_blank" rel="noopener">View GitHub Actions runs</a> (GitHub API rate limit reached on shared IP)</div>' : '')}
+              ${displayRun ? `<div>CI Run: <a href="${esc(displayRun.url)}" target="_blank" rel="noopener">#${esc(displayRun.id)} (${esc(displayRun.status)}${displayRun.updatedAt ? `, ${relSpan(displayRun.updatedAt)}` : ''})</a></div>` : (info.ciRateLimited ? '<div><a href="https://github.com/Safe-Passage-ASP-Org/safe_passage/actions" target="_blank" rel="noopener">View GitHub Actions runs</a> (GitHub API rate limit reached on shared IP)</div>' : '')}
               ${jobs.length ? `
                 <ul class="job-list">
                   ${jobs.map((j) => {
