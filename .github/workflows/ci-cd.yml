@@ -70,9 +70,10 @@ jobs:
       - name: Build Frontend Web Docker image
         run: |
           docker build -f frontend-web/Dockerfile -t safepassage-web:ci .
+          docker run --rm --entrypoint sh safepassage-web:ci -c "ls -la /app/wwwroot /app/wwwroot/_framework || true"
           cid=$(docker run -d -p 10000:10000 -e ASPNETCORE_ENVIRONMENT=Production safepassage-web:ci)
           sleep 3
-          curl -sS -o /dev/null -w "docker-blazor-js:%{http_code}\n" http://localhost:10000/_framework/blazor.web.js || true
+          curl -i -sS http://localhost:10000/_framework/blazor.web.js | head -n 15 || true
           docker rm -f "$cid" || true
 
   verify-live-deployments:
