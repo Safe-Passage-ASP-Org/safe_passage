@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Security.Cryptography.X509Certificates;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
@@ -69,6 +70,9 @@ builder.Services.AddScoped<DeviceBootstrapService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
 builder.Services.Configure<AccountActivationOptions>(builder.Configuration.GetSection(AccountActivationOptions.SectionName));
+builder.Services.Configure<PayPalOptions>(builder.Configuration.GetSection(PayPalOptions.SectionName));
+builder.Services.AddHttpClient<IPayPalClient, PayPalHttpClient>();
+builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 
 var oidcIssuer = builder.Configuration["OpenIddict:Issuer"] ?? "http://localhost:5143";
 builder.Services.AddOpenIddict()
@@ -102,18 +106,28 @@ builder.Services.AddOpenIddict()
         }
         else
         {
-            var signingPath = builder.Configuration["OpenIddict:SigningCertificatePath"];
-            var signingPassword = builder.Configuration["OpenIddict:SigningCertificatePassword"];
-            var encryptionPath = builder.Configuration["OpenIddict:EncryptionCertificatePath"];
-            var encryptionPassword = builder.Configuration["OpenIddict:EncryptionCertificatePassword"];
-            if (string.IsNullOrWhiteSpace(signingPath) || string.IsNullOrWhiteSpace(encryptionPath))
-                throw new InvalidOperationException("Configure OpenIddict signing and encryption PFX certificates for production.");
-            var signingCertificate = X509CertificateLoader.LoadPkcs12FromFile(signingPath, signingPassword);
-            var encryptionCertificate = X509CertificateLoader.LoadPkcs12FromFile(encryptionPath, encryptionPassword);
-            if (!signingCertificate.HasPrivateKey || !encryptionCertificate.HasPrivateKey)
-                throw new InvalidOperationException("OpenIddict certificates must include their private keys.");
-            options.AddSigningCertificate(signingCertificate)
-                .AddEncryptionCertificate(encryptionCertificate);
+            var signingCertificate = LoadCertificate(
+                builder.Configuration["OpenIddict:SigningCertificatePath"],
+                builder.Configuration["OpenIddict:SigningCertificateBase64"],
+                builder.Configuration["OpenIddict:SigningCertificatePassword"]);
+            var encryptionCertificate = LoadCertificate(
+                builder.Configuration["OpenIddict:EncryptionCertificatePath"],
+                builder.Configuration["OpenIddict:EncryptionCertificateBase64"],
+                builder.Configuration["OpenIddict:EncryptionCertificatePassword"]);
+
+            if (signingCertificate is not null && encryptionCertificate is not null)
+            {
+                if (!signingCertificate.HasPrivateKey || !encryptionCertificate.HasPrivateKey)
+                    throw new InvalidOperationException("OpenIddict certificates must include their private keys.");
+                options.AddSigningCertificate(signingCertificate)
+                    .AddEncryptionCertificate(encryptionCertificate);
+            }
+            else
+            {
+                // Ephemeral keys allow stateless/PaaS deployments (e.g. Render) to boot without PFX files on disk.
+                options.AddEphemeralEncryptionKey()
+                    .AddEphemeralSigningKey();
+            }
         }
     });
 
@@ -435,6 +449,14 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownIPNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
+
 app.UseExceptionHandler();
 app.UseStatusCodePages();
 
@@ -451,7 +473,15 @@ using (var scope = app.Services.CreateScope())
     try
     {
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        dbContext.Database.Migrate();
+        if (databaseProvider.Trim().ToLowerInvariant() is "postgresql" or "postgres")
+        {
+            // Existing EF migrations target SQLite column types (TEXT/INTEGER); EnsureCreated builds native PostgreSQL types.
+            dbContext.Database.EnsureCreated();
+        }
+        else
+        {
+            dbContext.Database.Migrate();
+        }
         var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>();
         DbInitializer.Initialize(dbContext, passwordHasher);
     }
@@ -508,4 +538,15 @@ static string ResolveSqliteConnectionString(string connectionString, string cont
         Directory.CreateDirectory(databaseDirectory);
 
     return sqliteBuilder.ConnectionString;
+}
+
+static X509Certificate2? LoadCertificate(string? path, string? base64, string? password)
+{
+    if (!string.IsNullOrWhiteSpace(path))
+        return X509CertificateLoader.LoadPkcs12FromFile(path, password);
+
+    if (!string.IsNullOrWhiteSpace(base64))
+        return X509CertificateLoader.LoadPkcs12(Convert.FromBase64String(base64), password);
+
+    return null;
 }

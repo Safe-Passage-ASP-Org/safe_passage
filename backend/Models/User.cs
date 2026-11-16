@@ -21,4 +21,5 @@ public sealed class User
     public ICollection<ActivityLog> ActivityLogs { get; set; } = new List<ActivityLog>();
     public ICollection<MfaSession> MfaSessions { get; set; } = new List<MfaSession>();
     public ICollection<ApplicationAccessRequest> ApplicationAccessRequests { get; set; } = new List<ApplicationAccessRequest>();
+    public ICollection<UserSubscription> Subscriptions { get; set; } = new List<UserSubscription>();
 }

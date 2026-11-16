@@ -17,6 +17,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<ApplicationUserAccess> ApplicationUserAccesses => Set<ApplicationUserAccess>();
     public DbSet<ApplicationGroupAccess> ApplicationGroupAccesses => Set<ApplicationGroupAccess>();
     public DbSet<ApplicationAccessRequest> ApplicationAccessRequests => Set<ApplicationAccessRequest>();
+    public DbSet<UserSubscription> UserSubscriptions => Set<UserSubscription>();
+    public DbSet<SubscriptionWebhookEvent> SubscriptionWebhookEvents => Set<SubscriptionWebhookEvent>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -167,6 +169,30 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .HasForeignKey(session => session.UserId).OnDelete(DeleteBehavior.Restrict);
             entity.HasOne(session => session.Device).WithMany(device => device.MfaSessions)
                 .HasForeignKey(session => session.DeviceId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UserSubscription>(entity =>
+        {
+            entity.HasKey(subscription => subscription.Id);
+            entity.HasIndex(subscription => subscription.PayPalSubscriptionId).IsUnique();
+            entity.HasIndex(subscription => new { subscription.UserId, subscription.Status });
+            entity.Property(subscription => subscription.PayPalSubscriptionId).HasMaxLength(128).IsRequired();
+            entity.Property(subscription => subscription.PayPalPlanId).HasMaxLength(128).IsRequired();
+            entity.Property(subscription => subscription.PlanCode).HasMaxLength(64).IsRequired();
+            entity.Property(subscription => subscription.Status).HasConversion<string>().HasMaxLength(32).IsConcurrencyToken();
+            entity.Property(subscription => subscription.ApprovalUrl).HasMaxLength(2048);
+            entity.HasOne(subscription => subscription.User).WithMany(user => user.Subscriptions)
+                .HasForeignKey(subscription => subscription.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<SubscriptionWebhookEvent>(entity =>
+        {
+            entity.HasKey(evt => evt.Id);
+            entity.HasIndex(evt => evt.PayPalEventId).IsUnique();
+            entity.Property(evt => evt.PayPalEventId).HasMaxLength(128).IsRequired();
+            entity.Property(evt => evt.EventType).HasMaxLength(128).IsRequired();
+            entity.Property(evt => evt.PayPalSubscriptionId).HasMaxLength(128);
+            entity.Property(evt => evt.PayloadSummary).HasMaxLength(1000);
         });
     }
 }

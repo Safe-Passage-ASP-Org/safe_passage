@@ -1,0 +1,354 @@
+@page "/subscription"
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<PageTitle>Subscription – Safe Passage</PageTitle>
+
+<div class="sp-page-header">
+    <h1 class="sp-page-title">Subscription &amp; Billing</h1>
+    <p class="sp-page-subtitle">Manage your personal Safe Passage subscription via PayPal Sandbox.</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(ErrorMessage))
+{
+    <div class="alert alert-danger" role="alert">@ErrorMessage</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(SuccessMessage))
+{
+    <div class="alert alert-success" role="alert">@SuccessMessage</div>
+}
+
+@if (Loading)
+{
+    <div class="sp-card p-4">
+        <div class="text-muted">Loading subscription details...</div>
+    </div>
+}
+else
+{
+    <div class="sub-grid">
+        <section class="sp-card sub-card">
+            <div class="sub-section-title">Current Plan</div>
+            <div class="sub-current-header">
+                <div>
+                    <div class="sub-plan-name">@(Current?.PlanName ?? "Free")</div>
+                    @if (!string.IsNullOrWhiteSpace(Current?.PayPalSubscriptionId))
+                    {
+                        <div class="sub-meta">PayPal ID: <code>@Current.PayPalSubscriptionId</code></div>
+                    }
+                </div>
+                <span class="sub-status-badge @GetStatusClass(Current?.Status)">@(Current?.Status ?? "Free")</span>
+            </div>
+
+            @if (Current?.HasActiveEntitlement == true)
+            {
+                <div class="sub-details">
+                    @if (Current.CurrentPeriodEnd.HasValue)
+                    {
+                        <div>
+                            <strong>@(Current.CancelAtPeriodEnd ? "Active until:" : "Next billing date:")</strong>
+                            @Current.CurrentPeriodEnd.Value.ToLocalTime().ToString("MMM dd, yyyy")
+                        </div>
+                    }
+                    @if (Current.CancelAtPeriodEnd)
+                    {
+                        <div class="text-warning mt-1">
+                            Auto-renewal is off. You retain access until the end of your paid period.
+                        </div>
+                    }
+                </div>
+
+                @if (string.Equals(Current.Status, "Active", StringComparison.OrdinalIgnoreCase))
+                {
+                    <div class="mt-3">
+                        <button class="btn btn-outline-danger btn-sm" type="button" disabled="@Busy" @onclick="CancelCurrentAsync">
+                            @(Busy ? "Cancelling..." : "Cancel Subscription")
+                        </button>
+                    </div>
+                }
+            }
+            else if (string.Equals(Current?.Status, "ApprovalPending", StringComparison.OrdinalIgnoreCase))
+            {
+                <div class="sub-details">
+                    <p class="mb-2">A PayPal checkout is awaiting your approval.</p>
+                    <div class="d-flex flex-wrap gap-2">
+                        @if (!string.IsNullOrWhiteSpace(Current.PendingApprovalUrl))
+                        {
+                            <button class="btn btn-primary btn-sm" type="button" disabled="@Busy"
+                                    @onclick="() => LaunchPopupAsync(Current.PendingApprovalUrl!, Current.PayPalSubscriptionId!)">
+                                Resume PayPal Checkout
+                            </button>
+                        }
+                        @if (!string.IsNullOrWhiteSpace(Current.PayPalSubscriptionId))
+                        {
+                            <button class="btn btn-outline-secondary btn-sm" type="button" disabled="@Busy"
+                                    @onclick="() => ConfirmManuallyAsync(Current.PayPalSubscriptionId!)">
+                                Check / Confirm Status
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm" type="button" disabled="@Busy"
+                                    @onclick="() => AbandonPendingAsync(Current.PayPalSubscriptionId!)">
+                                Discard Pending
+                            </button>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <p class="sub-note mb-0">You are currently on the Free tier. Choose a Sandbox plan below to subscribe with PayPal.</p>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(BlockedPopupUrl))
+            {
+                <div class="alert alert-warning mt-3 mb-0">
+                    Popup was blocked by your browser.
+                    <a href="@BlockedPopupUrl" target="_blank" rel="noopener noreferrer" class="alert-link">Open PayPal Checkout</a>,
+                    then click <strong>Check / Confirm Status</strong> above after approving.
+                </div>
+            }
+        </section>
+
+        <section class="sp-card sub-card">
+            <div class="sub-section-title">Available Sandbox Plans</div>
+            @if (Plans.Count == 0)
+            {
+                <p class="sub-note mb-0">No subscription plans are configured.</p>
+            }
+            else
+            {
+                <div class="sub-plans-list">
+                    @foreach (var plan in Plans)
+                    {
+                        var isCurrentActivePlan = Current?.HasActiveEntitlement == true
+                            && string.Equals(Current.PlanCode, plan.PlanCode, StringComparison.OrdinalIgnoreCase);
+
+                        <div class="sub-plan-item @(isCurrentActivePlan ? "sub-plan-item-active" : "")">
+                            <div class="sub-plan-info">
+                                <div class="sub-plan-title">
+                                    <strong>@plan.Name</strong>
+                                    <span class="sub-price">@plan.PriceDisplay</span>
+                                </div>
+                                <div class="sub-plan-desc">@plan.Description</div>
+                                @if (!plan.IsConfigured)
+                                {
+                                    <div class="sub-unconfigured">PayPal Sandbox Plan ID not configured on server</div>
+                                }
+                            </div>
+                            <button class="btn btn-primary btn-sm" type="button"
+                                    disabled="@(Busy || !plan.IsConfigured || Current?.HasActiveEntitlement == true)"
+                                    @onclick="() => StartCheckoutAsync(plan.PlanCode)">
+                                @(isCurrentActivePlan ? "Current Plan" : Busy ? "Starting..." : "Subscribe with PayPal")
+                            </button>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+}
+
+<style>
+    .sub-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:16px;align-items:start}
+    .sub-card{padding:20px 22px}
+    .sub-section-title{font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#64748b;margin-bottom:14px}
+    .sub-current-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px}
+    .sub-plan-name{font-size:20px;font-weight:700;color:#0f172a}
+    .sub-meta{font-size:12px;color:#64748b;margin-top:2px}
+    .sub-status-badge{padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700;text-transform:uppercase}
+    .sub-badge-active{background:#dcfce7;color:#166534}
+    .sub-badge-pending{background:#fef9c3;color:#854d0e}
+    .sub-badge-cancelled{background:#ffedd5;color:#9a3412}
+    .sub-badge-suspended{background:#fee2e2;color:#991b1b}
+    .sub-badge-free{background:#f1f5f9;color:#475569}
+    .sub-details{font-size:13px;color:#334155}
+    .sub-note{font-size:13px;color:#64748b;line-height:1.5}
+    .sub-plans-list{display:flex;flex-direction:column;gap:12px}
+    .sub-plan-item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px;border:1px solid #e2e8f0;border-radius:8px;background:#fff}
+    .sub-plan-item-active{border-color:#087f75;background:#f0fdfa}
+    .sub-plan-info{flex:1;min-width:0}
+    .sub-plan-title{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+    .sub-price{font-size:12px;font-weight:700;color:#087f75}
+    .sub-plan-desc{font-size:12px;color:#64748b;margin-top:4px}
+    .sub-unconfigured{font-size:11px;color:#b45309;margin-top:4px}
+</style>
+
+@code {
+    private List<SubscriptionPlanDto> Plans { get; set; } = [];
+    private UserSubscriptionDto? Current { get; set; }
+    private bool Loading { get; set; } = true;
+    private bool Busy { get; set; }
+    private string? ErrorMessage { get; set; }
+    private string? SuccessMessage { get; set; }
+    private string? BlockedPopupUrl { get; set; }
+    private DotNetObjectReference<Subscription>? _dotNetRef;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _dotNetRef = DotNetObjectReference.Create(this);
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        Loading = true;
+        ErrorMessage = null;
+        try
+        {
+            Plans = await Api.GetSubscriptionPlansAsync();
+            Current = await Api.GetMySubscriptionAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            Loading = false;
+        }
+    }
+
+    private async Task StartCheckoutAsync(string planCode)
+    {
+        Busy = true;
+        ErrorMessage = null;
+        SuccessMessage = null;
+        BlockedPopupUrl = null;
+        try
+        {
+            var checkout = await Api.CreateSubscriptionCheckoutAsync(planCode);
+            Current = await Api.GetMySubscriptionAsync();
+            await LaunchPopupAsync(checkout.ApprovalUrl, checkout.PayPalSubscriptionId);
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task LaunchPopupAsync(string approvalUrl, string subscriptionId)
+    {
+        _dotNetRef ??= DotNetObjectReference.Create(this);
+        var opened = await JS.InvokeAsync<bool>(
+            "safePassagePayPal.openCheckoutPopup",
+            approvalUrl,
+            subscriptionId,
+            _dotNetRef);
+
+        if (!opened)
+            BlockedPopupUrl = approvalUrl;
+    }
+
+    [JSInvokable]
+    public async Task OnPayPalApproved(string subscriptionId)
+    {
+        await ConfirmManuallyAsync(subscriptionId);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnPayPalCancelled(string subscriptionId)
+    {
+        await AbandonPendingAsync(subscriptionId);
+        ErrorMessage = "PayPal checkout was cancelled.";
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public async Task OnPayPalPopupClosed(string subscriptionId)
+    {
+        await ConfirmManuallyAsync(subscriptionId, silentIfPending: true);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ConfirmManuallyAsync(string subscriptionId, bool silentIfPending = false)
+    {
+        Busy = true;
+        ErrorMessage = null;
+        SuccessMessage = null;
+        BlockedPopupUrl = null;
+        try
+        {
+            Current = await Api.ConfirmSubscriptionAsync(subscriptionId);
+            if (Current.HasActiveEntitlement)
+                SuccessMessage = $"Subscription {Current.PlanName} is now active.";
+            else if (!silentIfPending)
+                ErrorMessage = $"Subscription status is currently {Current.Status}. Complete approval in PayPal first.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task AbandonPendingAsync(string subscriptionId)
+    {
+        Busy = true;
+        ErrorMessage = null;
+        BlockedPopupUrl = null;
+        try
+        {
+            await Api.AbandonSubscriptionAsync(subscriptionId);
+            Current = await Api.GetMySubscriptionAsync();
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private async Task CancelCurrentAsync()
+    {
+        Busy = true;
+        ErrorMessage = null;
+        SuccessMessage = null;
+        try
+        {
+            Current = await Api.CancelSubscriptionAsync("Cancelled by user in Web Portal");
+            SuccessMessage = "Your subscription has been cancelled. Access remains active until the end of the current billing period.";
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private static string GetStatusClass(string? status) => status?.ToLowerInvariant() switch
+    {
+        "active" => "sub-badge-active",
+        "approvalpending" => "sub-badge-pending",
+        "cancelled" => "sub-badge-cancelled",
+        "suspended" or "expired" => "sub-badge-suspended",
+        _ => "sub-badge-free"
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("safePassagePayPal.dispose");
+        }
+        catch (JSDisconnectedException)
+        {
+        }
+        _dotNetRef?.Dispose();
+    }
+}

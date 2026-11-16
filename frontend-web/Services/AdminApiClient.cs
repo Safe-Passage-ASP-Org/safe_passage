@@ -314,6 +314,59 @@ public sealed class AdminApiClient(HttpClient http)
         }
     }
 
+    public async Task<List<SubscriptionPlanDto>> GetSubscriptionPlansAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<SubscriptionPlanDto>>("api/subscriptions/plans", cancellationToken) ?? [];
+
+    public async Task<UserSubscriptionDto> GetMySubscriptionAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<UserSubscriptionDto>("api/subscriptions/me", cancellationToken)
+        ?? new UserSubscriptionDto(false, "Free", null, "Free", null, null, null, null, false, null);
+
+    public async Task<CreateCheckoutDto> CreateSubscriptionCheckoutAsync(string planCode, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/subscriptions/checkout", new { planCode }, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Checkout failed ({(int)response.StatusCode}).");
+        }
+        return await response.Content.ReadFromJsonAsync<CreateCheckoutDto>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty checkout response.");
+    }
+
+    public async Task<UserSubscriptionDto> ConfirmSubscriptionAsync(string subscriptionId, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/subscriptions/confirm", new { subscriptionId }, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Confirmation failed ({(int)response.StatusCode}).");
+        }
+        return await response.Content.ReadFromJsonAsync<UserSubscriptionDto>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty confirmation response.");
+    }
+
+    public async Task AbandonSubscriptionAsync(string subscriptionId, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/subscriptions/abandon", new { subscriptionId }, cancellationToken);
+        if (!response.IsSuccessStatusCode && response.StatusCode != HttpStatusCode.NotFound)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Abandon failed ({(int)response.StatusCode}).");
+        }
+    }
+
+    public async Task<UserSubscriptionDto> CancelSubscriptionAsync(string? reason = null, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/subscriptions/cancel", new { reason }, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Cancellation failed ({(int)response.StatusCode}).");
+        }
+        return await response.Content.ReadFromJsonAsync<UserSubscriptionDto>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty cancellation response.");
+    }
+
     private void SetToken(string? token)
     {
         AccessToken = token;
@@ -413,3 +466,29 @@ public sealed class AccountRegistrationForm
     public string PhoneNumber { get; set; } = "";
     public string Password { get; set; } = "";
 }
+
+public sealed record SubscriptionPlanDto(
+    string PlanCode,
+    string Name,
+    string Description,
+    string PriceDisplay,
+    string Interval,
+    bool IsConfigured);
+
+public sealed record UserSubscriptionDto(
+    bool HasActiveEntitlement,
+    string Status,
+    string? PlanCode,
+    string? PlanName,
+    string? PayPalSubscriptionId,
+    DateTimeOffset? CurrentPeriodStart,
+    DateTimeOffset? CurrentPeriodEnd,
+    DateTimeOffset? CancelledAt,
+    bool CancelAtPeriodEnd,
+    string? PendingApprovalUrl);
+
+public sealed record CreateCheckoutDto(
+    string PayPalSubscriptionId,
+    string ApprovalUrl,
+    string PlanCode,
+    bool ReusedPending);
