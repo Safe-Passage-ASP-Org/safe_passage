@@ -11,6 +11,8 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
@@ -475,8 +477,19 @@ using (var scope = app.Services.CreateScope())
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
         if (databaseProvider.Trim().ToLowerInvariant() is "postgresql" or "postgres")
         {
-            // Existing EF migrations target SQLite column types (TEXT/INTEGER); EnsureCreated builds native PostgreSQL types.
-            dbContext.Database.EnsureCreated();
+            // Supabase databases already contain system schemas/tables, so EnsureCreated() skips creation.
+            // Check explicitly for our public."Applications" table and call CreateTables() if missing.
+            var conn = dbContext.Database.GetDbConnection();
+            if (conn.State != System.Data.ConnectionState.Open)
+                conn.Open();
+            using var checkCmd = conn.CreateCommand();
+            checkCmd.CommandText = "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'Applications');";
+            var exists = checkCmd.ExecuteScalar() is true;
+            if (!exists)
+            {
+                var creator = dbContext.GetService<IRelationalDatabaseCreator>();
+                creator.CreateTables();
+            }
         }
         else
         {
