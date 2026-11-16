@@ -45,10 +45,34 @@ async function checkService(url, fallbackUrl = null) {
   return probe(fallbackUrl);
 }
 
+async function getRunDetails(run) {
+  if (!run) return null;
+  const jobsRes = await fetchJson(run.jobs_url);
+  const jobs = (jobsRes.data?.jobs || []).map((j) => ({
+    name: j.name,
+    status: j.status,
+    conclusion: j.conclusion,
+    url: j.html_url,
+    failedSteps: (j.steps || []).filter((s) => s.conclusion === 'failure').map((s) => s.name),
+  }));
+
+  return {
+    id: run.id,
+    status: run.status,
+    conclusion: run.conclusion,
+    headSha: run.head_sha,
+    shortSha: (run.head_sha || '').slice(0, 7),
+    url: run.html_url,
+    updatedAt: run.updated_at,
+    jobs,
+    failedJobs: jobs.filter((j) => j.conclusion === 'failure'),
+  };
+}
+
 async function getBranchState(branch) {
   const [commitRes, runsRes] = await Promise.all([
     fetchJson(`https://api.github.com/repos/${OWNER}/${REPO}/commits/${branch}`),
-    fetchJson(`https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?branch=${branch}&per_page=1`),
+    fetchJson(`https://api.github.com/repos/${OWNER}/${REPO}/actions/runs?branch=${branch}&per_page=3`),
   ]);
 
   const commit = commitRes.data
@@ -62,38 +86,24 @@ async function getBranchState(branch) {
       }
     : null;
 
-  const run = runsRes.data?.workflow_runs?.[0];
-  let ci = null;
-  if (run) {
-    let failedJobs = [];
-    if (run.conclusion === 'failure') {
-      const jobsRes = await fetchJson(run.jobs_url);
-      failedJobs = (jobsRes.data?.jobs || [])
-        .filter((j) => j.conclusion === 'failure')
-        .map((j) => ({
-          name: j.name,
-          url: j.html_url,
-          failedSteps: (j.steps || []).filter((s) => s.conclusion === 'failure').map((s) => s.name),
-        }));
-    }
-    ci = {
-      id: run.id,
-      status: run.status,
-      conclusion: run.conclusion,
-      headSha: run.head_sha,
-      shortSha: (run.head_sha || '').slice(0, 7),
-      url: run.html_url,
-      updatedAt: run.updated_at,
-      failedJobs,
-    };
-  }
+  const runs = runsRes.data?.workflow_runs || [];
+  const activeRaw = runs.find((r) => r.status === 'in_progress' || r.status === 'queued' || r.status === 'waiting') || null;
+  const completedRaw = runs.find((r) => r.status === 'completed') || null;
 
-  return { branch, commit, ci };
+  const [activeRun, latestCompletedRun] = await Promise.all([
+    getRunDetails(activeRaw),
+    getRunDetails(completedRaw),
+  ]);
+
+  return {
+    branch,
+    commit,
+    activeRun,
+    latestCompletedRun,
+  };
 }
 
 export default async function handler(req, res) {
-  res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=30');
-
   const [devState, mainState, apiHealth, webHealth, mobileHealth] = await Promise.all([
     getBranchState('development'),
     getBranchState('main'),
@@ -102,8 +112,13 @@ export default async function handler(req, res) {
     checkService('https://safepassage-mobile.vercel.app/'),
   ]);
 
+  const hasActiveRun = Boolean(devState.activeRun || mainState.activeRun);
+  const ttl = hasActiveRun ? 15 : 30;
+  res.setHeader('Cache-Control', `s-maxage=${ttl}, stale-while-revalidate=${ttl}`);
+
   res.status(200).json({
     checkedAt: new Date().toISOString(),
+    hasActiveRun,
     branches: {
       development: devState,
       main: mainState,
@@ -113,21 +128,21 @@ export default async function handler(req, res) {
         id: 'api',
         name: 'Backend API (Render)',
         url: 'https://safe-passage-api.onrender.com/api/status',
-        trackedBranch: 'development',
+        provider: 'Render Docker',
         ...apiHealth,
       },
       {
         id: 'web',
         name: 'Admin Web Portal (Render)',
         url: 'https://safe-passage-web.onrender.com/',
-        trackedBranch: 'development',
+        provider: 'Render Docker',
         ...webHealth,
       },
       {
         id: 'mobile',
         name: 'Mobile Web App (Vercel)',
         url: 'https://safepassage-mobile.vercel.app/',
-        trackedBranch: 'development',
+        provider: 'Vercel',
         ...mobileHealth,
       },
     ],

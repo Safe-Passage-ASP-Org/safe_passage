@@ -3,83 +3,91 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Safe Passage | Deployment Status Hub</title>
+  <title>Safe Passage | Deployment Status</title>
   <style>
     :root {
       color-scheme: dark;
-      --bg: #0c1210;
-      --card: #131c19;
-      --border: #23332d;
-      --text: #edf3f0;
-      --muted: #93a69d;
-      --green: #22c55e;
-      --green-bg: rgba(34, 197, 94, 0.14);
-      --amber: #f59e0b;
-      --amber-bg: rgba(245, 158, 11, 0.14);
-      --red: #ef4444;
-      --red-bg: rgba(239, 68, 68, 0.14);
-      --accent: #34d399;
+      --bg: #111315;
+      --card: #171a1e;
+      --border: #262a30;
+      --text: #e6e8eb;
+      --muted: #939aa3;
+      --ok: #4ade80;
+      --ok-bg: rgba(74, 222, 128, 0.10);
+      --warn: #fbbf24;
+      --warn-bg: rgba(251, 191, 36, 0.10);
+      --fail: #f87171;
+      --fail-bg: rgba(248, 113, 113, 0.10);
+      --link: #93c5fd;
       font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
     }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--text); line-height: 1.5; }
-    .container { max-width: 1020px; margin: 0 auto; padding: 32px 20px 60px; }
-    header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
-    h1 { margin: 0; font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
-    .subtitle { margin: 4px 0 0; color: var(--muted); font-size: 0.9rem; }
-    button { background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 0.875rem; font-weight: 600; cursor: pointer; }
-    button:hover { border-color: var(--accent); }
-    button:disabled { opacity: 0.6; cursor: wait; }
+    .container { max-width: 960px; margin: 0 auto; padding: 32px 20px 56px; }
+    header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 20px; }
+    h1 { margin: 0; font-size: 1.35rem; font-weight: 600; letter-spacing: -0.015em; }
+    .subtitle { margin: 4px 0 0; color: var(--muted); font-size: 0.875rem; }
+    button { background: var(--card); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 7px 14px; font-size: 0.85rem; font-weight: 500; cursor: pointer; }
+    button:hover { border-color: #4b5563; }
+    button:disabled { opacity: 0.55; cursor: wait; }
 
-    .banner { border-radius: 12px; padding: 16px 20px; margin-bottom: 24px; border: 1px solid var(--border); background: var(--card); }
-    .banner.ok { border-color: rgba(34, 197, 94, 0.4); background: var(--green-bg); }
-    .banner.warn { border-color: rgba(245, 158, 11, 0.45); background: var(--amber-bg); }
-    .banner.fail { border-color: rgba(239, 68, 68, 0.45); background: var(--red-bg); }
-    .banner-title { font-weight: 700; font-size: 1rem; margin: 0 0 4px; }
-    .banner-desc { margin: 0; font-size: 0.9rem; color: var(--text); }
+    .summary { border-radius: 10px; padding: 14px 18px; margin-bottom: 24px; border: 1px solid var(--border); background: var(--card); }
+    .summary.ok { border-left: 3px solid var(--ok); }
+    .summary.warn { border-left: 3px solid var(--warn); }
+    .summary.fail { border-left: 3px solid var(--fail); }
+    .summary-title { font-weight: 600; font-size: 0.95rem; margin: 0 0 4px; }
+    .summary-desc { margin: 0; font-size: 0.875rem; color: var(--muted); }
 
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-bottom: 28px; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 18px; }
+    .section-title { font-size: 0.85rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0 0 12px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 14px; margin-bottom: 26px; }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
     .card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
-    .card-title { font-weight: 650; font-size: 1rem; margin: 0; }
-    .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
-    .badge.ok { background: var(--green-bg); color: var(--green); }
-    .badge.warn { background: var(--amber-bg); color: var(--amber); }
-    .badge.fail { background: var(--red-bg); color: var(--red); }
+    .card-title { font-weight: 600; font-size: 0.95rem; margin: 0; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.02em; }
+    .pill.ok { background: var(--ok-bg); color: var(--ok); }
+    .pill.warn { background: var(--warn-bg); color: var(--warn); }
+    .pill.fail { background: var(--fail-bg); color: var(--fail); }
 
-    .meta { font-size: 0.85rem; color: var(--muted); display: grid; gap: 6px; }
-    .meta code { color: var(--text); background: rgba(255,255,255,0.06); padding: 1px 6px; border-radius: 4px; font-size: 0.8rem; }
-    a { color: var(--accent); text-decoration: none; }
+    .meta { font-size: 0.84rem; color: var(--muted); display: grid; gap: 6px; }
+    .meta code { color: var(--text); background: rgba(255, 255, 255, 0.05); padding: 1px 5px; border-radius: 4px; font-size: 0.78rem; }
+    a { color: var(--link); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .section-title { font-size: 1.05rem; font-weight: 700; margin: 0 0 12px; }
-    .ci-fail-list { margin: 10px 0 0; padding-left: 18px; font-size: 0.85rem; color: #fca5a5; }
-    .footer { margin-top: 24px; font-size: 0.8rem; color: var(--muted); }
+    .job-list { margin: 8px 0 0; padding-left: 16px; font-size: 0.82rem; color: var(--muted); }
+    .job-list li.fail { color: var(--fail); }
+    .footer { margin-top: 12px; font-size: 0.78rem; color: var(--muted); }
   </style>
 </head>
 <body>
   <div class="container">
     <header>
       <div>
-        <h1>Safe Passage Deployment Hub</h1>
-        <p class="subtitle">Live service health, deployed commit sync, and CI/CD status for <code>Safe-Passage-ASP-Org/safe_passage</code></p>
+        <h1>Safe Passage Deployment Status</h1>
+        <p class="subtitle">Simple view of live services, CI/CD runs, and commit sync for <code>Safe-Passage-ASP-Org/safe_passage</code></p>
       </div>
       <button id="refreshBtn" onclick="loadStatus()">Refresh</button>
     </header>
 
-    <div id="overallBanner" class="banner">Loading deployment status...</div>
+    <div id="overallSummary" class="summary">Checking deployments and CI/CD...</div>
 
-    <h2 class="section-title">Live Deployments</h2>
+    <h2 class="section-title">Live Services</h2>
     <div id="servicesGrid" class="grid"></div>
 
-    <h2 class="section-title">Git Branches &amp; CI/CD</h2>
+    <h2 class="section-title">Branches &amp; CI/CD</h2>
     <div id="branchesGrid" class="grid"></div>
 
     <div id="checkedAt" class="footer"></div>
   </div>
 
   <script>
+    let refreshTimer = null;
+
     function esc(str) {
       return String(str ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function scheduleRefresh(hasActiveRun) {
+      if (refreshTimer) clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(loadStatus, hasActiveRun ? 30000 : 60000);
     }
 
     async function loadStatus() {
@@ -89,9 +97,11 @@
         const res = await fetch('/api/status');
         const data = await res.json();
         render(data);
+        scheduleRefresh(data.hasActiveRun);
       } catch (err) {
-        document.getElementById('overallBanner').className = 'banner fail';
-        document.getElementById('overallBanner').innerHTML = `<p class="banner-title">Unable to fetch status</p><p class="banner-desc">${esc(err.message)}</p>`;
+        document.getElementById('overallSummary').className = 'summary fail';
+        document.getElementById('overallSummary').innerHTML = `<p class="summary-title">Unable to check status</p><p class="summary-desc">${esc(err.message)}</p>`;
+        scheduleRefresh(false);
       } finally {
         btn.disabled = false;
       }
@@ -99,51 +109,72 @@
 
     function render(data) {
       const dev = data.branches.development;
-      const latestDevSha = dev.commit?.sha || '';
-      const latestDevShort = dev.commit?.shortSha || 'unknown';
-      const ci = dev.ci;
+      const latestSha = dev.commit?.sha || '';
+      const latestShort = dev.commit?.shortSha || 'unknown';
+      const activeRun = dev.activeRun;
+      const lastRun = dev.latestCompletedRun;
 
-      const banner = document.getElementById('overallBanner');
+      const summary = document.getElementById('overallSummary');
       const downServices = data.services.filter((s) => !s.ok);
-      const behindServices = data.services.filter((s) => s.commit && latestDevSha && s.commit !== latestDevSha);
+      const behindServices = data.services.filter((s) => s.commit && latestSha && s.commit !== latestSha);
 
-      if (ci && ci.conclusion === 'failure') {
-        const jobsText = (ci.failedJobs || []).map((j) => `${j.name}${j.failedSteps.length ? ` (${j.failedSteps.join(', ')})` : ''}`).join('; ');
-        banner.className = 'banner fail';
-        banner.innerHTML = `
-          <p class="banner-title">Latest development commit (${esc(latestDevShort)}) failed CI/CD</p>
-          <p class="banner-desc">
-            Live services remain online on the last working build.
-            ${jobsText ? `Failed in: <strong>${esc(jobsText)}</strong>. ` : ''}
-            <a href="${esc(ci.url)}" target="_blank" rel="noopener">Open GitHub Actions error logs</a>
+      if (downServices.length > 0) {
+        summary.className = 'summary fail';
+        summary.innerHTML = `
+          <p class="summary-title">A service is offline</p>
+          <p class="summary-desc">${downServices.map((s) => esc(s.name)).join(', ')} did not respond with HTTP 200.</p>`;
+      } else if (activeRun) {
+        const doneCount = (activeRun.jobs || []).filter((j) => j.status === 'completed').length;
+        const totalCount = (activeRun.jobs || []).length;
+        summary.className = 'summary warn';
+        summary.innerHTML = `
+          <p class="summary-title">Build in progress for ${esc(activeRun.shortSha)}</p>
+          <p class="summary-desc">
+            CI/CD is currently running (${doneCount}/${totalCount} jobs finished). Live services stay online while this finishes.
+            <a href="${esc(activeRun.url)}" target="_blank" rel="noopener">View live run</a>
           </p>`;
-      } else if (downServices.length > 0) {
-        banner.className = 'banner fail';
-        banner.innerHTML = `<p class="banner-title">Service unreachable</p><p class="banner-desc">${downServices.map((s) => esc(s.name)).join(', ')} did not return HTTP 200.</p>`;
+      } else if (lastRun && lastRun.conclusion === 'failure') {
+        const jobsText = (lastRun.failedJobs || []).map((j) => `${j.name}${j.failedSteps.length ? ` (${j.failedSteps.join(', ')})` : ''}`).join('; ');
+        summary.className = 'summary fail';
+        summary.innerHTML = `
+          <p class="summary-title">Latest code (${esc(latestShort)}) has an error</p>
+          <p class="summary-desc">
+            Live services stayed on the previous working build.
+            ${jobsText ? `Failed in: <strong>${esc(jobsText)}</strong>. ` : ''}
+            <a href="${esc(lastRun.url)}" target="_blank" rel="noopener">Open error logs</a>
+          </p>`;
       } else if (behindServices.length > 0) {
-        banner.className = 'banner warn';
-        banner.innerHTML = `<p class="banner-title">Rollout in progress or behind latest commit (${esc(latestDevShort)})</p><p class="banner-desc">${behindServices.map((s) => `${esc(s.name)} is serving ${esc(s.commit.slice(0, 7))}`).join(' | ')}</p>`;
+        summary.className = 'summary warn';
+        summary.innerHTML = `
+          <p class="summary-title">Commit ${esc(latestShort)} passed CI — rollout in progress</p>
+          <p class="summary-desc">${behindServices.map((s) => `${esc(s.name)} is still serving ${esc(s.commit.slice(0, 7))}`).join(' | ')}</p>`;
       } else {
-        banner.className = 'banner ok';
-        banner.innerHTML = `<p class="banner-title">All services are online and synced with latest commit (${esc(latestDevShort)})</p><p class="banner-desc">CI/CD passed and all live endpoints returned HTTP 200.</p>`;
+        summary.className = 'summary ok';
+        summary.innerHTML = `
+          <p class="summary-title">Everything is online and running the latest commit (${esc(latestShort)})</p>
+          <p class="summary-desc">All services returned HTTP 200 and CI/CD is green.</p>`;
       }
 
       document.getElementById('servicesGrid').innerHTML = data.services.map((s) => {
-        const badgeClass = !s.ok ? 'fail' : (s.commit && latestDevSha && s.commit !== latestDevSha ? 'warn' : 'ok');
-        const badgeText = !s.ok ? `Offline (${s.status || 'ERR'})` : (s.commit && latestDevSha && s.commit !== latestDevSha ? 'Old Commit' : 'Online');
-        const liveShort = s.commit ? (s.commit === 'local' ? 'local' : s.commit.slice(0, 7)) : 'N/A (static/SPA)';
-        const syncText = !s.commit ? 'Verified via Vercel production branch' : (s.commit === latestDevSha ? 'Matches latest development' : `Behind latest (${latestDevShort})`);
+        const isBehind = s.commit && latestSha && s.commit !== latestSha;
+        const pillClass = !s.ok ? 'fail' : (isBehind ? 'warn' : 'ok');
+        const pillText = !s.ok ? `Offline (${s.status || 'ERR'})` : (isBehind ? 'Old Commit' : 'Online');
+        const liveShort = s.commit ? (s.commit === 'local' ? 'local' : s.commit.slice(0, 7)) : 'Auto (Vercel)';
+        const syncText = !s.commit
+          ? 'Deployed by Vercel'
+          : (s.commit === latestSha ? 'Up to date with development' : `Behind latest (${latestShort})`);
+
         return `
           <div class="card">
             <div class="card-head">
               <h3 class="card-title">${esc(s.name)}</h3>
-              <span class="badge ${badgeClass}">${esc(badgeText)}</span>
+              <span class="pill ${pillClass}">${esc(pillText)}</span>
             </div>
             <div class="meta">
               <div>URL: <a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url)}</a></div>
-              <div>HTTP: <code>${esc(s.status)}</code> (${esc(s.latencyMs)} ms)</div>
-              <div>Deployed Commit: <code>${esc(liveShort)}</code></div>
-              <div>Sync: ${esc(syncText)}</div>
+              <div>Response: HTTP <code>${esc(s.status)}</code> (${esc(s.latencyMs)} ms)</div>
+              <div>Running Commit: <code>${esc(liveShort)}</code></div>
+              <div>Status: ${esc(syncText)}</div>
             </div>
           </div>`;
       }).join('');
@@ -151,35 +182,52 @@
       document.getElementById('branchesGrid').innerHTML = ['development', 'main'].map((b) => {
         const info = data.branches[b];
         const c = info.commit;
-        const r = info.ci;
-        const ciBadge = !r ? 'warn' : (r.status !== 'completed' ? 'warn' : (r.conclusion === 'success' ? 'ok' : 'fail'));
-        const ciLabel = !r ? 'Unknown' : (r.status !== 'completed' ? r.status : r.conclusion);
+        const active = info.activeRun;
+        const completed = info.latestCompletedRun;
+
+        let pillClass = 'warn';
+        let pillLabel = 'Unknown';
+        if (active) {
+          pillClass = 'warn';
+          pillLabel = 'CI Running';
+        } else if (completed) {
+          pillClass = completed.conclusion === 'success' ? 'ok' : 'fail';
+          pillLabel = completed.conclusion === 'success' ? 'CI Passed' : 'CI Failed';
+        }
+
+        const displayRun = active || completed;
+        const jobs = displayRun?.jobs || [];
+
         return `
           <div class="card">
             <div class="card-head">
               <h3 class="card-title">Branch: <code>${esc(b)}</code></h3>
-              <span class="badge ${ciBadge}">CI: ${esc(ciLabel)}</span>
+              <span class="pill ${pillClass}">${esc(pillLabel)}</span>
             </div>
             <div class="meta">
               ${c ? `
                 <div>Latest Commit: <a href="${esc(c.url)}" target="_blank" rel="noopener"><code>${esc(c.shortSha)}</code></a> by ${esc(c.author)}</div>
                 <div>Message: ${esc(c.message)}</div>
               ` : '<div>Unable to load commit info</div>'}
-              ${r ? `<div>Workflow Run: <a href="${esc(r.url)}" target="_blank" rel="noopener">#${esc(r.id)}</a></div>` : ''}
-              ${r && r.failedJobs && r.failedJobs.length ? `
-                <ul class="ci-fail-list">
-                  ${r.failedJobs.map((j) => `<li><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.name)}</a>${j.failedSteps.length ? ` — ${esc(j.failedSteps.join(', '))}` : ''}</li>`).join('')}
+              ${displayRun ? `<div>CI Run: <a href="${esc(displayRun.url)}" target="_blank" rel="noopener">#${esc(displayRun.id)} (${esc(displayRun.status)})</a></div>` : ''}
+              ${jobs.length ? `
+                <ul class="job-list">
+                  ${jobs.map((j) => {
+                    const cls = j.conclusion === 'failure' ? 'fail' : '';
+                    const state = j.status !== 'completed' ? j.status : j.conclusion;
+                    const steps = j.failedSteps.length ? ` — ${j.failedSteps.join(', ')}` : '';
+                    return `<li class="${cls}"><a href="${esc(j.url)}" target="_blank" rel="noopener">${esc(j.name)}</a>: ${esc(state)}${esc(steps)}</li>`;
+                  }).join('')}
                 </ul>
               ` : ''}
             </div>
           </div>`;
       }).join('');
 
-      document.getElementById('checkedAt').textContent = `Last checked: ${new Date(data.checkedAt).toLocaleString()} (auto-refreshes every 60s)`;
+      document.getElementById('checkedAt').textContent = `Last checked: ${new Date(data.checkedAt).toLocaleString()} (auto-refreshes every ${data.hasActiveRun ? '30' : '60'}s)`;
     }
 
     loadStatus();
-    setInterval(loadStatus, 60000);
   </script>
 </body>
 </html>
