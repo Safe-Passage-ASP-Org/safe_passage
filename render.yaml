@@ -1,0 +1,52 @@
+services:
+  - type: web
+    name: safepassage-api
+    runtime: docker
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_HTTP_PORTS
+        value: "10000"
+      - key: Database__Provider
+        value: Postgres
+      - key: ConnectionStrings__DefaultConnection
+        sync: false
+      - key: Jwt__SigningKey
+        generateValue: true
+      - key: PayPal__Environment
+        value: Sandbox
+      - key: PayPal__BaseUrl
+        value: https://api-m.sandbox.paypal.com
+      - key: PayPal__ClientId
+        sync: false
+      - key: PayPal__ClientSecret
+        sync: false
+      - key: PayPal__WebhookId
+        sync: false
+      - key: PayPal__ReturnUrl
+        sync: false
+      - key: PayPal__CancelUrl
+        sync: false
+      - key: PayPal__Plans__pro-monthly__PayPalPlanId
+        sync: false
+      - key: PayPal__Plans__pro-annual__PayPalPlanId
+        sync: false
+      - key: Cors__AllowedOrigins__0
+        sync: false
+
+  - type: web
+    name: safepassage-web-admin
+    runtime: docker
+    dockerfilePath: ./frontend-web/Dockerfile
+    dockerContext: .
+    plan: free
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: ASPNETCORE_HTTP_PORTS
+        value: "10000"
+      - key: Api__BaseUrl
+        sync: false

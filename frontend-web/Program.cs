@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using SafePassage.Web.Components;
 using SafePassage.Web.Services;
 
@@ -12,6 +13,14 @@ builder.Services.AddScoped<AdminApiClient>();
 builder.Services.AddScoped<SecurityAlertCountService>();
 
 var app = builder.Build();
+
+var forwardedHeadersOptions = new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+};
+forwardedHeadersOptions.KnownIPNetworks.Clear();
+forwardedHeadersOptions.KnownProxies.Clear();
+app.UseForwardedHeaders(forwardedHeadersOptions);
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
