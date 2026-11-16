@@ -1,0 +1,10 @@
+.git
+.worktrees
+**/bin
+**/obj
+**/node_modules
+**/.expo
+**/.vs
+**/appsettings.Development.json
+**/appsettings.*.json
+!**/appsettings.json
