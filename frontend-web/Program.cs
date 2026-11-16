@@ -9,6 +9,7 @@ builder.Services.AddRazorComponents()
 var apiBaseUrl = builder.Configuration["Api:BaseUrl"] ?? "http://localhost:5143/";
 builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(apiBaseUrl, UriKind.Absolute) });
 builder.Services.AddScoped<AdminApiClient>();
+builder.Services.AddScoped<SecurityAlertCountService>();
 
 var app = builder.Build();
 

@@ -11,6 +11,7 @@ export default function DeviceEnrollmentScreen({ navigation }) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [recoveryPending, setRecoveryPending] = useState(false);
 
   const enroll = async () => {
     if (!username.trim() || !password) { setError('Enter your username and password.'); return; }
@@ -29,6 +30,23 @@ export default function DeviceEnrollmentScreen({ navigation }) {
         }),
       });
       const data = await response.json().catch(() => ({}));
+      if (!response.ok && response.status === 409 && data.title === 'Device setup unavailable') {
+        const recoveryResponse = await fetch(`${BASE_URL}/api/devices/recover-signing-key`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getApplicationHeaders(telemetry.deviceId) },
+          body: JSON.stringify({
+            username: username.trim(), password,
+            deviceId: telemetry.deviceId, deviceName: telemetry.deviceName,
+            deviceType: telemetry.deviceType, os: telemetry.os,
+            signingPublicKey: await getDeviceSigningPublicKey(username.trim()),
+          }),
+        });
+        const recoveryData = await recoveryResponse.json().catch(() => ({}));
+        if (!recoveryResponse.ok) throw new Error(recoveryData.detail ?? recoveryData.title ?? 'Could not submit the signing-key recovery request.');
+        setRecoveryPending(true);
+        setPassword('');
+        return;
+      }
       if (!response.ok) throw new Error(data.detail ?? data.title ?? 'Phone setup failed.');
       const accountId = getUserIdFromToken(data.accessToken);
       if (accountId) await bindSigningKeyToAccount(username.trim(), accountId);
@@ -44,16 +62,25 @@ export default function DeviceEnrollmentScreen({ navigation }) {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.card}>
-        <Text style={styles.title}>Set up this account on your phone</Text>
-        <Text style={styles.description}>For local development setup only. Enter this account’s credentials to enroll this phone separately. Device approval and trust are managed for each account.</Text>
+        {recoveryPending ? <Text style={styles.title}>Recovery request submitted</Text> : <Text style={styles.title}>Set up or recover this phone</Text>}
+        {recoveryPending ? (
+          <>
+            <Text style={styles.description}>An administrator must approve this phone&apos;s new signing key. After approval, return to Login and sign in again.</Text>
+            <TouchableOpacity style={styles.button} onPress={() => navigation.replace('Login')}>
+              <Text style={styles.buttonText}>Back to sign in</Text>
+            </TouchableOpacity>
+          </>
+        ) : <>
+        <Text style={styles.description}>Enter these account credentials. New setup signs in immediately. Replacing a lost or mismatched signing key requires administrator approval.</Text>
         <Text style={styles.label}>Email or username</Text>
         <TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} value={username} onChangeText={setUsername} editable={!busy} />
         <Text style={styles.label}>Password</Text>
         <TextInput style={styles.input} secureTextEntry value={password} onChangeText={setPassword} editable={!busy} />
         {error ? <Text accessibilityRole="alert" style={styles.error}>{error}</Text> : null}
         <TouchableOpacity style={[styles.button, busy && styles.disabled]} onPress={enroll} disabled={busy}>
-          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Enroll and sign in</Text>}
+          {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.buttonText}>Continue</Text>}
         </TouchableOpacity>
+        </>}
       </View>
     </KeyboardAvoidingView>
   );

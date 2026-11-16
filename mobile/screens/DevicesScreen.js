@@ -5,8 +5,8 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
+  TextInput,
   ActivityIndicator,
-  Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
@@ -105,6 +105,10 @@ export default function DevicesScreen() {
   const [loading, setLoading]                   = useState(false);
   const [registrationResult, setRegistrationResult] = useState(null);
   const [collectedTelemetry, setCollectedTelemetry] = useState(null);
+  const [credentialsRequired, setCredentialsRequired] = useState(false);
+  const [registrationUsername, setRegistrationUsername] = useState('');
+  const [registrationPassword, setRegistrationPassword] = useState('');
+  const [registrationError, setRegistrationError] = useState('');
 
   // ── Refresh this account's devices whenever the screen is opened ────────
   useFocusEffect(useCallback(() => {
@@ -116,7 +120,11 @@ export default function DevicesScreen() {
       try {
         const token = await getToken();
         const deviceId = await getApprovalDeviceId();
-        if (!token || !deviceId) throw new Error('Sign in on an enrolled device.');
+        if (!token) {
+          if (active) setFetchError('Sign-in is waiting for approval. You can submit this device for administrator approval below.');
+          return;
+        }
+        if (!deviceId) throw new Error('Device information is unavailable. Sign in again.');
         const response = await fetch(`${BASE_URL}/api/devices`, {
           headers: { Authorization: `Bearer ${token}`, ...getApplicationHeaders(deviceId) },
         });
@@ -133,17 +141,36 @@ export default function DevicesScreen() {
   }, []));
 
   const handleRegisterDevice = async () => {
+    setRegistrationError('');
+    if (!await getToken()) {
+      setCredentialsRequired(true);
+      return;
+    }
+    await submitDeviceRegistration();
+  };
+
+  const submitDeviceRegistration = async () => {
+    if (credentialsRequired && (!registrationUsername.trim() || !registrationPassword)) {
+      setRegistrationError('Enter your username and password.');
+      return;
+    }
     setLoading(true);
+    setRegistrationError('');
     try {
       // Step 1: Collect telemetry
       const telemetry = await collectDeviceTelemetry();
       setCollectedTelemetry(telemetry);
 
       // Step 2: Submit to backend
-      const result = await registerDeviceWithBackend(telemetry);
+      const credentials = credentialsRequired
+        ? { username: registrationUsername.trim(), password: registrationPassword }
+        : null;
+      const result = await registerDeviceWithBackend(telemetry, credentials);
       setRegistrationResult(result);
+      setCredentialsRequired(false);
+      setRegistrationPassword('');
     } catch (err) {
-      Alert.alert('Registration Failed', err.message ?? 'An unexpected error occurred.');
+      setRegistrationError(err.message ?? 'An unexpected error occurred.');
     } finally {
       setLoading(false);
     }
@@ -165,10 +192,52 @@ export default function DevicesScreen() {
         {devices.map((item) => (
           <DeviceCard key={item.id} item={item} />
         ))}
+        {credentialsRequired && (
+          <View style={styles.credentialsCard}>
+            <Text style={styles.credentialsTitle}>Verify your account</Text>
+            <Text style={styles.credentialsDescription}>
+              This sign-in is waiting for MFA approval. Re-enter your credentials to submit this device. It will remain untrusted until an administrator approves it.
+            </Text>
+            <Text style={styles.credentialsLabel}>Email or username</Text>
+            <TextInput
+              style={styles.credentialsInput}
+              value={registrationUsername}
+              onChangeText={setRegistrationUsername}
+              autoCapitalize="none"
+              autoCorrect={false}
+              editable={!loading}
+              accessibilityLabel="Email or username"
+            />
+            <Text style={styles.credentialsLabel}>Password</Text>
+            <TextInput
+              style={styles.credentialsInput}
+              value={registrationPassword}
+              onChangeText={setRegistrationPassword}
+              secureTextEntry
+              editable={!loading}
+              accessibilityLabel="Password"
+            />
+            {!!registrationError && <Text style={styles.errorText} accessibilityRole="alert">{registrationError}</Text>}
+            <TouchableOpacity
+              style={[styles.registerButton, loading && styles.registerButtonDisabled]}
+              onPress={submitDeviceRegistration}
+              disabled={loading}
+            >
+              {loading ? <ActivityIndicator color="white" /> : <Text style={styles.registerButtonText}>Submit for Approval</Text>}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.cancelRegistrationButton}
+              onPress={() => { setCredentialsRequired(false); setRegistrationPassword(''); setRegistrationError(''); }}
+              disabled={loading}
+            >
+              <Text style={styles.cancelRegistrationText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </ScrollView>
 
       {/* ── Register Button ──────────────────────────────────── */}
-      <TouchableOpacity
+      {!credentialsRequired && <TouchableOpacity
         style={[styles.registerButton, loading && styles.registerButtonDisabled]}
         onPress={handleRegisterDevice}
         disabled={loading}
@@ -184,7 +253,7 @@ export default function DevicesScreen() {
             <Text style={styles.registerButtonText}>Register this Device</Text>
           </>
         )}
-      </TouchableOpacity>
+      </TouchableOpacity>}
 
       {/* ── Registration Result Overlay ──────────────────────── */}
       {registrationResult && collectedTelemetry && (
@@ -208,6 +277,13 @@ const styles = StyleSheet.create({
 
   errorText:  { color: '#ef4444', textAlign: 'center', marginTop: 40, fontSize: 15 },
   emptyText:  { color: '#64748b', textAlign: 'center', marginTop: 40, fontSize: 15 },
+  credentialsCard: { backgroundColor: '#0f172a', borderRadius: 12, padding: 16, marginTop: 18, borderWidth: 1, borderColor: '#1e293b' },
+  credentialsTitle: { color: '#f8fafc', fontSize: 17, fontWeight: '700' },
+  credentialsDescription: { color: '#94a3b8', fontSize: 13, lineHeight: 19, marginTop: 8 },
+  credentialsLabel: { color: '#cbd5e1', fontSize: 13, marginTop: 14, marginBottom: 6 },
+  credentialsInput: { backgroundColor: '#020617', borderWidth: 1, borderColor: '#334155', borderRadius: 7, padding: 12, color: '#f8fafc' },
+  cancelRegistrationButton: { alignItems: 'center', padding: 10, marginTop: 4 },
+  cancelRegistrationText: { color: '#94a3b8', fontWeight: '600' },
 
   deviceCard: {
     flexDirection: 'row',

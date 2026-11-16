@@ -197,6 +197,73 @@ public sealed class AuthFlowService(
             "Credentials accepted. Approve the sign-in on your registered device."));
     }
 
+    public async Task<AuthFlowResult<LoginResponse>> LoginWithExternalProviderAsync(
+        User user,
+        string provider,
+        CancellationToken cancellationToken)
+    {
+        if (!user.IsActive || !user.IsEmailVerified)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.UserUnavailable);
+
+        var policy = await securityPolicyEvaluator.EvaluateAsync(cancellationToken);
+        if (!policy.IsValid)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
+
+        if (!policy.RequiresStepUp)
+        {
+            AddActivity(user.Id, "Login", $"{provider} sign-in", ActivityLogStatus.Success);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Success(new(
+                false, null, null, null, null, jwtTokenService.CreateAccessToken(user), "Bearer",
+                $"Signed in with {provider}."));
+        }
+
+        var devices = await dbContext.Devices
+            .Where(device => device.UserId == user.Id
+                && device.Status == DeviceStatus.Active
+                && device.TrustStatus == DeviceTrustStatus.Trusted
+                && (device.DeviceType.ToLower() == "mobile" || device.DeviceType.ToLower() == "phone"
+                    || device.OS.ToLower().StartsWith("android") || device.OS.ToLower().StartsWith("ios")))
+            .ToListAsync(cancellationToken);
+        var device = devices.FirstOrDefault();
+        if (device is null)
+        {
+            AddActivity(user.Id, "Login", $"{provider} sign-in denied: no MFA device", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.NoActiveMobileDevice);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var expiresAt = now.Add(MfaLifetime);
+        var sessionToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
+        var session = new MfaSession
+        {
+            Id = Guid.NewGuid(), UserId = user.Id, DeviceId = device.Id,
+            SessionToken = HashSessionToken(sessionToken), Status = MfaSessionStatus.Pending,
+            CreatedAt = now, ExpiresAt = expiresAt
+        };
+        dbContext.MfaSessions.Add(session);
+        AddActivity(user.Id, "Login", $"{provider} accepted; MFA pending", ActivityLogStatus.Success);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await notificationService.SendMfaApprovalRequestAsync(user, device, sessionToken, cancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "MFA notification failed after {Provider} sign-in for user {UserId}.", provider, user.Id);
+            session.Status = MfaSessionStatus.Denied;
+            AddActivity(user.Id, "MFA Push", "MFA notification delivery failed", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.NotificationFailed);
+        }
+
+        return AuthFlowResult<LoginResponse>.Success(new(
+            true, sessionToken, device.DeviceId, MfaSessionStatus.Pending, expiresAt, null, null,
+            $"Approve the {provider} sign-in on your registered device."));
+    }
+
     public async Task<AuthFlowResult<MfaActionResponse>> ApproveMfaAsync(
         MfaApprovalRequest request,
         CancellationToken cancellationToken)

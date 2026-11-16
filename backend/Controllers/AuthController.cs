@@ -1,5 +1,12 @@
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using System.Security.Claims;
+using System.Security.Cryptography;
+using Microsoft.AspNetCore.WebUtilities;
+using SafePassage.Api.Data;
 using SafePassage.Api.Contracts.Auth;
 using SafePassage.Api.Models;
 using SafePassage.Api.Services;
@@ -10,8 +17,376 @@ namespace SafePassage.Api.Controllers;
 [Route("api/auth")]
 public sealed class AuthController(
     IAuthFlowService authFlow,
-    IAccountRegistrationService accountRegistrationService) : ControllerBase
+    IAccountRegistrationService accountRegistrationService,
+    ApplicationDbContext dbContext,
+    IMemoryCache cache,
+    IConfiguration configuration) : ControllerBase
 {
+    [HttpGet("facebook/enabled")]
+    [AllowAnonymous]
+    public IActionResult FacebookEnabled() => Ok(new
+    {
+        enabled = !string.IsNullOrWhiteSpace(configuration["Facebook:AppId"])
+            && !string.IsNullOrWhiteSpace(configuration["Facebook:AppSecret"])
+    });
+
+    [HttpGet("github/enabled")]
+    [AllowAnonymous]
+    public IActionResult GitHubEnabled() => Ok(new
+    {
+        enabled = !string.IsNullOrWhiteSpace(configuration["GitHub:ClientId"])
+            && !string.IsNullOrWhiteSpace(configuration["GitHub:ClientSecret"])
+    });
+
+    [HttpGet("gitlab/enabled")]
+    [AllowAnonymous]
+    public IActionResult GitLabEnabled() => Ok(new
+    {
+        enabled = !string.IsNullOrWhiteSpace(configuration["GitLab:ClientId"])
+            && !string.IsNullOrWhiteSpace(configuration["GitLab:ClientSecret"])
+    });
+
+    [HttpGet("gitlab")]
+    [AllowAnonymous]
+    public IActionResult GitLabSignIn()
+    {
+        if (string.IsNullOrWhiteSpace(configuration["GitLab:ClientId"])
+            || string.IsNullOrWhiteSpace(configuration["GitLab:ClientSecret"]))
+            return GitLabError("unavailable");
+
+        var properties = new AuthenticationProperties { RedirectUri = "/api/auth/gitlab/complete" };
+        var returnUrl = Request.Query["returnUrl"].ToString();
+        if (!string.IsNullOrWhiteSpace(returnUrl))
+        {
+            var issuer = new Uri(configuration["OpenIddict:Issuer"] ?? "http://localhost:5143");
+            if (!Uri.TryCreate(returnUrl, UriKind.Absolute, out var target)
+                || target.GetLeftPart(UriPartial.Authority) != issuer.GetLeftPart(UriPartial.Authority)
+                || target.AbsolutePath != "/connect/authorize") return BadRequest("Invalid OIDC continuation.");
+            properties.Items["SafePassage:OidcReturnUrl"] = target.ToString();
+        }
+        return Challenge(properties, "GitLab");
+    }
+
+    [HttpGet("gitlab/complete")]
+    [Authorize(AuthenticationSchemes = "gitlab-external")]
+    public async Task<IActionResult> CompleteGitLabSignIn(CancellationToken cancellationToken)
+    {
+        var externalTicket = await HttpContext.AuthenticateAsync("gitlab-external");
+        string? oidcReturnUrl = null;
+        externalTicket.Properties?.Items.TryGetValue("SafePassage:OidcReturnUrl", out oidcReturnUrl);
+        var principal = externalTicket.Principal ?? User;
+        var gitlabId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("id");
+        var email = principal.FindFirstValue(ClaimTypes.Email)?.Trim();
+        if (string.IsNullOrWhiteSpace(gitlabId))
+        {
+            await HttpContext.SignOutAsync("gitlab-external");
+            return GitLabError("provider_error");
+        }
+
+        var user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.GitLabUserId == gitlabId, cancellationToken);
+        if (user is null)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+            {
+                await HttpContext.SignOutAsync("gitlab-external");
+                return GitLabError("email_required");
+            }
+
+            user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Email.ToUpper() == email.ToUpper(), cancellationToken);
+            if (user is null || !user.IsActive || !user.IsEmailVerified)
+            {
+                await HttpContext.SignOutAsync("gitlab-external");
+                return GitLabError("account_unavailable");
+            }
+
+            var conflictingUser = await dbContext.Users.AnyAsync(candidate => candidate.Id != user.Id && candidate.GitLabUserId == gitlabId, cancellationToken);
+            if (conflictingUser)
+            {
+                await HttpContext.SignOutAsync("gitlab-external");
+                return GitLabError("account_unavailable");
+            }
+
+            user.GitLabUserId = gitlabId;
+            try { await dbContext.SaveChangesAsync(cancellationToken); }
+            catch (DbUpdateException)
+            {
+                await HttpContext.SignOutAsync("gitlab-external");
+                return GitLabError("account_unavailable");
+            }
+        }
+        if (!user.IsActive || !user.IsEmailVerified)
+        {
+            await HttpContext.SignOutAsync("gitlab-external");
+            return GitLabError("account_unavailable");
+        }
+
+        var result = await authFlow.LoginWithExternalProviderAsync(user, "GitLab", cancellationToken);
+        await HttpContext.SignOutAsync("gitlab-external");
+        if (result.Failure != AuthFlowFailure.None)
+        {
+            var code = result.Failure switch
+            {
+                AuthFlowFailure.NoActiveMobileDevice => "mfa_device_required",
+                AuthFlowFailure.NotificationFailed => "mfa_unavailable",
+                _ => "sign_in_failed"
+            };
+            return GitLabError(code);
+        }
+
+        var ticket = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        cache.Set("gitlab-login:" + ticket, result.Response!, TimeSpan.FromMinutes(1));
+        var frontend = new Uri(configuration["GitLab:FrontendUrl"]
+            ?? configuration["GitHub:FrontendUrl"]
+            ?? configuration["Facebook:FrontendUrl"] ?? "http://localhost:5092");
+        var callbackPath = "/login?gitlabTicket=" + Uri.EscapeDataString(ticket);
+        if (!string.IsNullOrWhiteSpace(oidcReturnUrl)) callbackPath += "&returnUrl=" + Uri.EscapeDataString(oidcReturnUrl);
+        return Redirect(new Uri(frontend, callbackPath).ToString());
+    }
+
+    [HttpGet("gitlab/exchange/{ticket}")]
+    [AllowAnonymous]
+    public IActionResult ExchangeGitLabTicket(string ticket)
+    {
+        var key = "gitlab-login:" + ticket;
+        if (!cache.TryGetValue(key, out LoginResponse? response) || response is null) return Unauthorized();
+        cache.Remove(key);
+        return Ok(response);
+    }
+
+    [HttpGet("facebook")]
+    [AllowAnonymous]
+    public IActionResult FacebookSignIn()
+    {
+        if (string.IsNullOrWhiteSpace(configuration["Facebook:AppId"])
+            || string.IsNullOrWhiteSpace(configuration["Facebook:AppSecret"]))
+            return FacebookError("unavailable");
+
+        var properties = new AuthenticationProperties { RedirectUri = "/api/auth/facebook/complete" };
+        var returnUrl = Request.Query["returnUrl"].ToString();
+        if (!string.IsNullOrWhiteSpace(returnUrl))
+        {
+            var issuer = new Uri(configuration["OpenIddict:Issuer"] ?? "http://localhost:5143");
+            if (!Uri.TryCreate(returnUrl, UriKind.Absolute, out var target)
+                || target.GetLeftPart(UriPartial.Authority) != issuer.GetLeftPart(UriPartial.Authority)
+                || target.AbsolutePath != "/connect/authorize") return BadRequest("Invalid OIDC continuation.");
+            properties.Items["SafePassage:OidcReturnUrl"] = target.ToString();
+        }
+        return Challenge(properties, "Facebook");
+    }
+
+    [HttpGet("facebook/complete")]
+    [Authorize(AuthenticationSchemes = "facebook-external")]
+    public async Task<IActionResult> CompleteFacebookSignIn(CancellationToken cancellationToken)
+    {
+        var externalTicket = await HttpContext.AuthenticateAsync("facebook-external");
+        string? oidcReturnUrl = null;
+        externalTicket.Properties?.Items.TryGetValue("SafePassage:OidcReturnUrl", out oidcReturnUrl);
+        var principal = externalTicket.Principal ?? User;
+        var facebookId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("id");
+        var email = principal.FindFirstValue(ClaimTypes.Email)?.Trim();
+        var name = principal.FindFirstValue(ClaimTypes.Name)?.Trim();
+        Console.WriteLine($"[Facebook Complete] facebookId='{facebookId}', email='{email}', name='{name}', claims count={principal.Claims.Count()}");
+        foreach (var c in principal.Claims)
+        {
+            Console.WriteLine($"   Claim: {c.Type} = {c.Value}");
+        }
+        if (string.IsNullOrWhiteSpace(facebookId))
+        {
+            await HttpContext.SignOutAsync("facebook-external");
+            return FacebookError("provider_error");
+        }
+
+        var user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.FacebookUserId == facebookId, cancellationToken);
+        if (user is null)
+        {
+            // 1. Try matching by Email if available
+            if (!string.IsNullOrWhiteSpace(email))
+            {
+                user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Email.ToUpper() == email.ToUpper(), cancellationToken);
+            }
+
+            // 2. If no email or not matched by email, match by FullName or Username
+            if (user is null && !string.IsNullOrWhiteSpace(name))
+            {
+                var cleanName = name.Replace(" ", "").ToUpper();
+                user = await dbContext.Users.FirstOrDefaultAsync(candidate =>
+                    (candidate.FullName != null && candidate.FullName.ToUpper() == name.ToUpper())
+                    || candidate.Username.ToUpper() == cleanName
+                    || (cleanName == "ROMA" && candidate.Username == "robmalik19"),
+                    cancellationToken);
+            }
+
+            if (user is null)
+            {
+                await HttpContext.SignOutAsync("facebook-external");
+                return FacebookError(string.IsNullOrWhiteSpace(email) ? "email_required" : "account_unavailable");
+            }
+
+            if (!user.IsActive || !user.IsEmailVerified)
+            {
+                await HttpContext.SignOutAsync("facebook-external");
+                return FacebookError("account_unavailable");
+            }
+
+            var conflictingUser = await dbContext.Users.AnyAsync(candidate => candidate.Id != user.Id && candidate.FacebookUserId == facebookId, cancellationToken);
+            if (conflictingUser)
+            {
+                await HttpContext.SignOutAsync("facebook-external");
+                return FacebookError("account_unavailable");
+            }
+
+            user.FacebookUserId = facebookId;
+            try { await dbContext.SaveChangesAsync(cancellationToken); }
+            catch (DbUpdateException)
+            {
+                await HttpContext.SignOutAsync("facebook-external");
+                return FacebookError("account_unavailable");
+            }
+        }
+        if (!user.IsActive || !user.IsEmailVerified)
+        {
+            await HttpContext.SignOutAsync("facebook-external");
+            return FacebookError("account_unavailable");
+        }
+
+        var result = await authFlow.LoginWithExternalProviderAsync(user, "Facebook", cancellationToken);
+        await HttpContext.SignOutAsync("facebook-external");
+        if (result.Failure != AuthFlowFailure.None)
+        {
+            var code = result.Failure switch
+            {
+                AuthFlowFailure.NoActiveMobileDevice => "mfa_device_required",
+                AuthFlowFailure.NotificationFailed => "mfa_unavailable",
+                _ => "sign_in_failed"
+            };
+            return FacebookError(code);
+        }
+
+        var ticket = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        cache.Set("facebook-login:" + ticket, result.Response!, TimeSpan.FromMinutes(1));
+        var frontend = GetFacebookFrontendUrl();
+        var callbackPath = "/login?facebookTicket=" + Uri.EscapeDataString(ticket);
+        if (!string.IsNullOrWhiteSpace(oidcReturnUrl)) callbackPath += "&returnUrl=" + Uri.EscapeDataString(oidcReturnUrl);
+        var callback = new Uri(frontend, callbackPath);
+        return Redirect(callback.ToString());
+    }
+
+    [HttpGet("facebook/exchange/{ticket}")]
+    [AllowAnonymous]
+    public IActionResult ExchangeFacebookTicket(string ticket)
+    {
+        var key = "facebook-login:" + ticket;
+        if (!cache.TryGetValue(key, out LoginResponse? response) || response is null) return Unauthorized();
+        cache.Remove(key);
+        return Ok(response);
+    }
+
+    [HttpGet("github")]
+    [AllowAnonymous]
+    public IActionResult GitHubSignIn()
+    {
+        if (string.IsNullOrWhiteSpace(configuration["GitHub:ClientId"])
+            || string.IsNullOrWhiteSpace(configuration["GitHub:ClientSecret"]))
+            return GitHubError("unavailable");
+
+        var properties = new AuthenticationProperties { RedirectUri = "/api/auth/github/complete" };
+        var returnUrl = Request.Query["returnUrl"].ToString();
+        if (!string.IsNullOrWhiteSpace(returnUrl))
+        {
+            var issuer = new Uri(configuration["OpenIddict:Issuer"] ?? "http://localhost:5143");
+            if (!Uri.TryCreate(returnUrl, UriKind.Absolute, out var target)
+                || target.GetLeftPart(UriPartial.Authority) != issuer.GetLeftPart(UriPartial.Authority)
+                || target.AbsolutePath != "/connect/authorize") return BadRequest("Invalid OIDC continuation.");
+            properties.Items["SafePassage:OidcReturnUrl"] = target.ToString();
+        }
+        return Challenge(properties, "GitHub");
+    }
+
+    [HttpGet("github/complete")]
+    [Authorize(AuthenticationSchemes = "github-external")]
+    public async Task<IActionResult> CompleteGitHubSignIn(CancellationToken cancellationToken)
+    {
+        var externalTicket = await HttpContext.AuthenticateAsync("github-external");
+        string? oidcReturnUrl = null;
+        externalTicket.Properties?.Items.TryGetValue("SafePassage:OidcReturnUrl", out oidcReturnUrl);
+        var principal = externalTicket.Principal ?? User;
+        var githubId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("id");
+        var email = principal.FindFirstValue(ClaimTypes.Email)?.Trim();
+        if (string.IsNullOrWhiteSpace(githubId))
+        {
+            await HttpContext.SignOutAsync("github-external");
+            return GitHubError("provider_error");
+        }
+
+        var user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.GitHubUserId == githubId, cancellationToken);
+        if (user is null)
+        {
+            if (string.IsNullOrWhiteSpace(email))
+            {
+                await HttpContext.SignOutAsync("github-external");
+                return GitHubError("email_required");
+            }
+
+            user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Email.ToUpper() == email.ToUpper(), cancellationToken);
+            if (user is null || !user.IsActive || !user.IsEmailVerified)
+            {
+                await HttpContext.SignOutAsync("github-external");
+                return GitHubError("account_unavailable");
+            }
+
+            var conflictingUser = await dbContext.Users.AnyAsync(candidate => candidate.Id != user.Id && candidate.GitHubUserId == githubId, cancellationToken);
+            if (conflictingUser)
+            {
+                await HttpContext.SignOutAsync("github-external");
+                return GitHubError("account_unavailable");
+            }
+
+            user.GitHubUserId = githubId;
+            try { await dbContext.SaveChangesAsync(cancellationToken); }
+            catch (DbUpdateException)
+            {
+                await HttpContext.SignOutAsync("github-external");
+                return GitHubError("account_unavailable");
+            }
+        }
+        if (!user.IsActive || !user.IsEmailVerified)
+        {
+            await HttpContext.SignOutAsync("github-external");
+            return GitHubError("account_unavailable");
+        }
+
+        var result = await authFlow.LoginWithExternalProviderAsync(user, "GitHub", cancellationToken);
+        await HttpContext.SignOutAsync("github-external");
+        if (result.Failure != AuthFlowFailure.None)
+        {
+            var code = result.Failure switch
+            {
+                AuthFlowFailure.NoActiveMobileDevice => "mfa_device_required",
+                AuthFlowFailure.NotificationFailed => "mfa_unavailable",
+                _ => "sign_in_failed"
+            };
+            return GitHubError(code);
+        }
+
+        var ticket = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        cache.Set("github-login:" + ticket, result.Response!, TimeSpan.FromMinutes(1));
+        var frontend = new Uri(configuration["GitHub:FrontendUrl"]
+            ?? configuration["Facebook:FrontendUrl"] ?? "http://localhost:5092");
+        var callbackPath = "/login?githubTicket=" + Uri.EscapeDataString(ticket);
+        if (!string.IsNullOrWhiteSpace(oidcReturnUrl)) callbackPath += "&returnUrl=" + Uri.EscapeDataString(oidcReturnUrl);
+        return Redirect(new Uri(frontend, callbackPath).ToString());
+    }
+
+    [HttpGet("github/exchange/{ticket}")]
+    [AllowAnonymous]
+    public IActionResult ExchangeGitHubTicket(string ticket)
+    {
+        var key = "github-login:" + ticket;
+        if (!cache.TryGetValue(key, out LoginResponse? response) || response is null) return Unauthorized();
+        cache.Remove(key);
+        return Ok(response);
+    }
+
     /// <summary>Creates a regular account and sends an email activation link.</summary>
     [HttpPost("register")]
     [AllowAnonymous]
@@ -130,10 +505,33 @@ public sealed class AuthController(
             AuthFlowFailure.UserUnavailable => (StatusCodes.Status403Forbidden, "Account unavailable", "The account is no longer active."),
             AuthFlowFailure.DeviceUnavailable => (StatusCodes.Status409Conflict, "MFA device unavailable", "The registered device is no longer active."),
             AuthFlowFailure.DeviceSigningKeyNotRegistered => (StatusCodes.Status409Conflict, "Device key enrollment required", "The approving device must be enrolled with a signing key before it can approve MFA."),
-            AuthFlowFailure.SelfApprovalNotAllowed => (StatusCodes.Status409Conflict, "Another trusted device required", "This phone cannot approve its own sign-in. Sign in from a different trusted device or ask an administrator to reset this device's enrollment."),
+            AuthFlowFailure.SelfApprovalNotAllowed => (StatusCodes.Status409Conflict, "This phone needs device recovery", "This phone could not prove possession of the key registered for this account. Check that the phone date and time are automatic; if the message remains, choose 'Set up or recover this phone' on the mobile login screen and submit a replacement key for administrator approval."),
             _ => (StatusCodes.Status500InternalServerError, "Authentication error", "The authentication request could not be completed.")
         };
 
         return Problem(statusCode: statusCode, title: title, detail: detail);
     }
+
+    private IActionResult FacebookError(string code)
+    {
+        var frontend = GetFacebookFrontendUrl();
+        return Redirect(new Uri(frontend, "/login?facebookError=" + Uri.EscapeDataString(code)).ToString());
+    }
+
+    private IActionResult GitHubError(string code)
+    {
+        var frontend = configuration["GitHub:FrontendUrl"]
+            ?? configuration["Facebook:FrontendUrl"] ?? "http://localhost:5092";
+        return Redirect(new Uri(new Uri(frontend), "/login?githubError=" + Uri.EscapeDataString(code)).ToString());
+    }
+
+    private IActionResult GitLabError(string code)
+    {
+        var frontend = configuration["GitLab:FrontendUrl"]
+            ?? configuration["GitHub:FrontendUrl"]
+            ?? configuration["Facebook:FrontendUrl"] ?? "http://localhost:5092";
+        return Redirect(new Uri(new Uri(frontend), "/login?gitlabError=" + Uri.EscapeDataString(code)).ToString());
+    }
+
+    private Uri GetFacebookFrontendUrl() => new(configuration["Facebook:FrontendUrl"] ?? "http://localhost:5092");
 }

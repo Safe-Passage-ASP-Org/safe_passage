@@ -27,6 +27,7 @@ public interface IDeviceManagementService
     Task<DeviceManagementResult<DeviceResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> RegisterAsync(Guid userId, DeviceRegistrationRequest request, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> EnrollSigningKeyAsync(Guid userId, DeviceSigningKeyRequest request, CancellationToken cancellationToken);
+    Task<DeviceManagementResult<DeviceResponse>> RequestSigningKeyRecoveryAsync(Guid userId, DeviceSigningKeyRequest request, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> TrustAsync(Guid id, Guid actorId, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> RevokeAsync(Guid id, Guid actorId, CancellationToken cancellationToken);
 }
@@ -134,6 +135,29 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
         return DeviceManagementResult<DeviceResponse>.Success(ToResponse(device));
     }
 
+    public async Task<DeviceManagementResult<DeviceResponse>> RequestSigningKeyRecoveryAsync(
+        Guid userId,
+        DeviceSigningKeyRequest request,
+        CancellationToken cancellationToken)
+    {
+        var device = await dbContext.Devices.SingleOrDefaultAsync(candidate =>
+            candidate.UserId == userId
+            && candidate.DeviceId == request.DeviceId,
+            cancellationToken);
+        if (device is null)
+            return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.NotFound);
+
+        if (!MfaApprovalSignature.IsValidPublicKey(request.SigningPublicKey))
+            return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.InvalidSigningKey);
+
+        device.PendingSigningPublicKey = request.SigningPublicKey;
+        device.Status = DeviceStatus.PendingApproval;
+        device.TrustStatus = DeviceTrustStatus.Untrusted;
+        AddActivity(userId, "Device Signing Key Recovery Requested", device.DeviceId, ActivityLogStatus.Success);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return DeviceManagementResult<DeviceResponse>.Success(ToResponse(device));
+    }
+
     public async Task<DeviceManagementResult<DeviceResponse>> TrustAsync(
         Guid id,
         Guid actorId,
@@ -145,6 +169,12 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
 
         device.Status = DeviceStatus.Active;
         device.TrustStatus = DeviceTrustStatus.Trusted;
+        if (!string.IsNullOrWhiteSpace(device.PendingSigningPublicKey))
+        {
+            device.SigningPublicKey = device.PendingSigningPublicKey;
+            device.PendingSigningPublicKey = null;
+            AddActivity(device.UserId, "Device Signing Key Recovery Approved", device.DeviceId, ActivityLogStatus.Success);
+        }
         AddActivity(actorId, "Device Trusted", device.DeviceId, ActivityLogStatus.Success);
         await dbContext.SaveChangesAsync(cancellationToken);
         return DeviceManagementResult<DeviceResponse>.Success(ToResponse(device));
@@ -161,6 +191,7 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
 
         device.Status = DeviceStatus.Disabled;
         device.TrustStatus = DeviceTrustStatus.Untrusted;
+        device.PendingSigningPublicKey = null;
         AddActivity(actorId, "Device Revoked", device.DeviceId, ActivityLogStatus.Success);
         await dbContext.SaveChangesAsync(cancellationToken);
         return DeviceManagementResult<DeviceResponse>.Success(ToResponse(device));
@@ -193,5 +224,7 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
             _ => "UNKNOWN"
         },
         device.TrustStatus == DeviceTrustStatus.Trusted ? "TRUSTED" : "UNTRUSTED",
-        device.UserId);
+        device.UserId,
+        !string.IsNullOrWhiteSpace(device.SigningPublicKey),
+        !string.IsNullOrWhiteSpace(device.PendingSigningPublicKey));
 }

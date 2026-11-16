@@ -26,9 +26,9 @@ else if (SupportedRoles.Count == 0)
 }
 else
 {
-    <div class="roles-summary" aria-live="polite">@SupportedRoles.Count built-in roles</div>
+    <div class="roles-summary" aria-live="polite"><span>@SupportedRoles.Count built-in roles</span><label class="roles-sort">Sort by <select aria-label="Sort roles" @bind="SortOrder"><option value="name">Name A–Z</option><option value="id">Role ID A–Z</option></select></label></div>
     <section class="roles-grid" aria-label="Built-in roles">
-        @foreach (var role in SupportedRoles)
+        @foreach (var role in SortedRoles)
         {
             <article class="sp-card role-card">
                 <div class="role-card-heading">
@@ -48,7 +48,7 @@ else
 }
 
 <style>
-    .roles-summary { margin: 0 0 12px; color: #64748b; font-size: 13px; }
+    .roles-summary { display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;color:#64748b;font-size:13px }.roles-sort{display:flex;align-items:center;gap:7px;font-size:12px}.roles-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:7px;background:#fff;color:#334155;font:inherit}
     .roles-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 14px; }
     .role-card { min-width: 0; padding: 18px; }
     .role-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -67,6 +67,10 @@ else
     private List<AdminRole> SupportedRoles = [];
     private bool Loading = true;
     private string Error = "";
+    private string SortOrder = "name";
+    private IEnumerable<AdminRole> SortedRoles => SortOrder == "id"
+        ? SupportedRoles.OrderBy(role => role.Id, StringComparer.OrdinalIgnoreCase)
+        : SupportedRoles.OrderBy(role => role.Name, StringComparer.OrdinalIgnoreCase);
 
     protected override Task OnInitializedAsync() => LoadRolesAsync();
 

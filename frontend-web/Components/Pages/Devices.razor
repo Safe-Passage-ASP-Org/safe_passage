@@ -1,6 +1,7 @@
 @page "/devices"
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
+@inject SecurityAlertCountService AlertCount
 
 <PageTitle>@(Api.IsAdministrator ? "Devices" : "My Devices") – Safe Passage</PageTitle>
 
@@ -13,6 +14,7 @@
 </div>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="device-alert" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Notice)) { <div class="device-notice" role="status">@Notice</div> }
+<div class="device-sort"><label for="device-sort">Sort by</label><select id="device-sort" aria-label="Sort devices" @bind="SortOrder"><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="owner-asc">Owner A–Z</option><option value="registered-newest">Recently registered</option><option value="registered-oldest">Oldest registered</option></select></div>
 
 <section class="sp-card device-card">
     <div class="device-heading"><div><h2>Registered devices</h2><p>@(Api.IsAdministrator ? "Trust posture and assigned owners" : "Your registered devices")</p></div><span>@RegisteredDevices.Count devices</span></div>
@@ -23,14 +25,14 @@
         <div class="device-scroll"><table class="device-table">
             <thead><tr><th>Device name</th>@if (Api.IsAdministrator) { <th>Assigned user</th> }<th>Operating system</th><th>Device status</th><th>Trust</th>@if (Api.IsAdministrator) { <th>Actions</th> }</tr></thead>
             <tbody>
-                @foreach (var device in RegisteredDevices)
+                @foreach (var device in SortedDevices)
                 {
                     <tr>
                         <td><div class="device-name"><span class="device-glyph">▣</span><strong>@device.DeviceName</strong></div><small>@device.DeviceId</small></td>
                         @if (Api.IsAdministrator) { <td>@(UserNames.GetValueOrDefault(device.UserId) ?? "Unknown user")</td> }<td class="device-os">@device.OS</td>
                         <td><span class="device-pill @StatusClass(device.Status)">@FormatStatus(device.Status)</span></td>
                         <td><span class="trust-pill @(device.TrustStatus == "TRUSTED" ? "" : "untrusted")"><i></i>@FormatStatus(device.TrustStatus)</span></td>
-                        @if (Api.IsAdministrator) { <td><div class="device-actions"><button @onclick="() => TrustAsync(device)" disabled="@(Busy || device.Status == "DISABLED" || device.TrustStatus == "TRUSTED")">Trust</button><button class="disable" @onclick="() => RevokeAsync(device)" disabled="@(Busy || device.Status == "DISABLED")">Disable</button><button class="details" @onclick="() => SelectedDevice = device">Details</button></div></td> }
+                        @if (Api.IsAdministrator) { <td><div class="device-actions"><button @onclick="() => TrustAsync(device)" disabled="@(Busy || device.Status == "DISABLED" || device.TrustStatus == "TRUSTED")">@(device.HasPendingSigningKey ? "Approve key" : "Trust")</button><button class="disable" @onclick="() => RevokeAsync(device)" disabled="@(Busy || device.Status == "DISABLED")">Disable</button><button class="details" @onclick="() => SelectedDevice = device">Details</button></div></td> }
                     </tr>
                 }
             </tbody>
@@ -43,13 +45,14 @@
     <div class="device-backdrop" @onclick="() => SelectedDevice = null">
         <section class="device-modal" role="dialog" aria-modal="true" aria-labelledby="device-detail-title" @onclick:stopPropagation="true">
             <div class="device-modal-heading"><div><span>DEVICE RECORD</span><h2 id="device-detail-title">@SelectedDevice.DeviceName</h2></div><button aria-label="Close" @onclick="() => SelectedDevice = null">×</button></div>
-            <dl>@if (Api.IsAdministrator) { <dt>Assigned user</dt><dd>@(UserNames.GetValueOrDefault(SelectedDevice.UserId) ?? "Unknown user")</dd> }<dt>Operating system</dt><dd>@SelectedDevice.OS</dd><dt>Device status</dt><dd>@FormatStatus(SelectedDevice.Status)</dd><dt>Trust status</dt><dd>@FormatStatus(SelectedDevice.TrustStatus)</dd><dt>Registered</dt><dd>@SelectedDevice.RegistrationDate.ToLocalTime().ToString("g")</dd><dt>Last active</dt><dd>@(SelectedDevice.LastActiveDate?.ToLocalTime().ToString("g") ?? "Never")</dd><dt>Device ID</dt><dd>@SelectedDevice.DeviceId</dd></dl>
+            <dl>@if (Api.IsAdministrator) { <dt>Assigned user</dt><dd>@(UserNames.GetValueOrDefault(SelectedDevice.UserId) ?? "Unknown user")</dd> }<dt>Operating system</dt><dd>@SelectedDevice.OS</dd><dt>Device status</dt><dd>@FormatStatus(SelectedDevice.Status)</dd><dt>Trust status</dt><dd>@FormatStatus(SelectedDevice.TrustStatus)</dd>@if (Api.IsAdministrator) { <dt>Signing key</dt><dd>@(SelectedDevice.HasPendingSigningKey ? "Replacement awaiting approval" : SelectedDevice.HasSigningKey ? "Enrolled" : "Not enrolled")</dd> }<dt>Registered</dt><dd>@SelectedDevice.RegistrationDate.ToLocalTime().ToString("g")</dd><dt>Last active</dt><dd>@(SelectedDevice.LastActiveDate?.ToLocalTime().ToString("g") ?? "Never")</dd><dt>Device ID</dt><dd>@SelectedDevice.DeviceId</dd></dl>
             <button class="device-done" @onclick="() => SelectedDevice = null">Done</button>
         </section>
     </div>
 }
 
 <style>
+    .device-sort{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 12px;color:#64748b;font-size:12px}.device-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}
     .device-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}.device-stats div{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;background:#fff;border:1px solid #e2e8f0;border-radius:7px}.device-stats span{color:#64748b;font-size:12px}.device-stats strong{font-size:20px;color:#087f5b}.device-stats .pending{color:#b7791f}.device-stats .disabled{color:#b5473c}.device-alert,.device-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.device-alert{background:#fcecea;color:#9d332b}.device-notice{background:#edf7f2;color:#087f5b}
     .device-card{overflow:hidden}.device-heading{display:flex;justify-content:space-between;align-items:center;padding:18px 21px;border-bottom:1px solid #e8edf1}.device-heading h2{font-size:16px;margin:0 0 4px}.device-heading p,.device-heading>span{font-size:12px;color:#64748b;margin:0}.device-scroll{overflow:auto}.device-table{width:100%;min-width:920px;border-collapse:collapse}.device-table th{padding:12px 15px;text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px}.device-table td{padding:14px 15px;border-top:1px solid #edf0f2;font-size:12px;white-space:nowrap}.device-table td small{display:block;color:#64748b;margin:4px 0 0 37px}.device-name{display:flex;align-items:center;gap:9px}.device-name strong{font-size:13px}.device-glyph{width:28px;height:28px;display:grid;place-items:center;border-radius:5px;background:#e9f3f1;color:#087f75;font-size:15px}.device-os{color:#52616b}.device-pill,.trust-pill{display:inline-flex;align-items:center;gap:6px;border-radius:12px;padding:4px 8px;font-size:10px;font-weight:650;background:#edf7f2;color:#087f5b}.device-pill.pending{background:#fff5df;color:#936115}.device-pill.disabled{background:#fcecea;color:#a53e34}.trust-pill.untrusted{background:#f2f4f6;color:#64748b}.trust-pill i{width:6px;height:6px;border-radius:50%;background:currentColor}.device-actions{display:flex;gap:8px}.device-actions button{border:0;background:none;padding:4px 0;color:#087f75;font-size:11px;font-weight:650;cursor:pointer}.device-actions button.disable{color:#b5473c}.device-actions button.details{color:#53636d}.device-actions button:disabled{color:#aab3ba;cursor:not-allowed}.device-state{padding:24px;color:#64748b;font-size:13px}
     .device-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.48)}.device-modal{width:min(100%,440px);max-height:90vh;overflow:auto;padding:23px;background:#fff;border-radius:8px;box-shadow:0 24px 70px rgba(15,23,42,.24)}.device-modal-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}.device-modal-heading span{font-size:10px;color:#087f75;font-weight:700}.device-modal-heading h2{font-size:20px;margin:5px 0}.device-modal-heading button{border:0;background:none;color:#64748b;font-size:25px;cursor:pointer}.device-modal dl{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:0}.device-modal dt,.device-modal dd{padding:10px 0;border-top:1px solid #edf0f2;font-size:12px;overflow-wrap:anywhere}.device-modal dt{color:#64748b}.device-modal dd{margin:0;text-align:right;font-weight:600}.device-done{display:block;margin:20px 0 0 auto;border:0;border-radius:5px;background:#087f75;color:#fff;padding:9px 16px;font-weight:650;cursor:pointer}
@@ -64,6 +67,15 @@
     private bool Busy;
     private string Error = "";
     private string Notice = "";
+    private string SortOrder = "name-asc";
+    private IEnumerable<AdminDevice> SortedDevices => SortOrder switch
+    {
+        "name-desc" => RegisteredDevices.OrderByDescending(device => device.DeviceName, StringComparer.OrdinalIgnoreCase),
+        "owner-asc" => RegisteredDevices.OrderBy(device => UserNames.GetValueOrDefault(device.UserId) ?? "", StringComparer.OrdinalIgnoreCase).ThenBy(device => device.DeviceName, StringComparer.OrdinalIgnoreCase),
+        "registered-newest" => RegisteredDevices.OrderByDescending(device => device.RegistrationDate),
+        "registered-oldest" => RegisteredDevices.OrderBy(device => device.RegistrationDate),
+        _ => RegisteredDevices.OrderBy(device => device.DeviceName, StringComparer.OrdinalIgnoreCase)
+    };
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 
@@ -80,12 +92,12 @@
         finally { Loading = false; }
     }
 
-    private async Task TrustAsync(AdminDevice device) => await RunActionAsync(() => Api.SetDeviceTrustedAsync(device.Id), "Device is now trusted.");
+    private async Task TrustAsync(AdminDevice device) => await RunActionAsync(() => Api.SetDeviceTrustedAsync(device.Id), device.HasPendingSigningKey ? "Replacement signing key approved; device is trusted." : "Device is now trusted.");
     private async Task RevokeAsync(AdminDevice device) => await RunActionAsync(() => Api.RevokeDeviceAsync(device.Id), "Device was disabled and untrusted.");
     private async Task RunActionAsync(Func<Task> operation, string success)
     {
         Busy = true; Error = ""; Notice = "";
-        try { await operation(); Notice = success; await LoadAsync(); }
+        try { await operation(); Notice = success; await LoadAsync(); await AlertCount.RefreshAsync(); }
         catch (Exception exception) { Error = exception.Message; }
         finally { Busy = false; }
     }

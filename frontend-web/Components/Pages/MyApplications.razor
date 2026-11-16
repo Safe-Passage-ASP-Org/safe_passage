@@ -12,6 +12,11 @@
 {
     <div class="my-apps-error" role="alert">@Error</div>
 }
+@if (!string.IsNullOrWhiteSpace(Notice))
+{
+    <div class="my-apps-notice" role="status">@Notice</div>
+}
+<div class="my-apps-sort"><label for="my-apps-sort">Sort by</label><select id="my-apps-sort" aria-label="Sort my applications" @bind="SortOrder"><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option></select></div>
 
 <section class="sp-card my-apps-card">
     @if (Loading)
@@ -28,33 +33,144 @@
     }
     else
     {
-        @foreach (var application in Applications)
+        @foreach (var application in SortedApplications)
         {
             <article class="my-apps-row">
                 <span class="my-apps-mark">@Mark(application.Name)</span>
                 <div><h2>@application.Name</h2><p>@(string.IsNullOrWhiteSpace(application.Description) ? "No description provided." : application.Description)</p></div>
-                <span class="my-apps-badge">Assigned</span>
+                @if (!string.IsNullOrWhiteSpace(application.LaunchUrl))
+                {
+                    <a class="my-apps-launch" href="@application.LaunchUrl" target="_blank" rel="noopener noreferrer" aria-label="Launch @application.Name">Launch <span aria-hidden="true">↗</span></a>
+                }
+                else
+                {
+                    <span class="my-apps-badge" title="Ask your administrator to configure a launch URL">Launch unavailable</span>
+                }
             </article>
         }
         <p class="my-apps-note">Application assignments do not bypass Safe Passage security policies, MFA, or trusted-device requirements.</p>
     }
 </section>
 
+<div class="sp-page-header catalog-header"><h2 class="sp-page-title">Browse applications</h2><p class="sp-page-subtitle">Discover apps your administrator has made available and request access when needed.</p></div>
+@if (LoadingCatalog)
+{
+    <section class="sp-card"><p class="my-apps-state" role="status">Loading app catalog…</p></section>
+}
+else if (Catalog.Count == 0)
+{
+    <section class="sp-card"><p class="my-apps-state">No additional applications are currently published in the catalog.</p></section>
+}
+else
+{
+    <section class="sp-card my-apps-card">
+        @foreach (var application in Catalog)
+        {
+            <article class="catalog-row">
+                <span class="my-apps-mark">@Mark(application.Name)</span>
+                <div class="catalog-copy"><h2>@application.Name</h2><p>@(string.IsNullOrWhiteSpace(application.Description) ? "No description provided." : application.Description)</p></div>
+                @if (application.IsAssigned)
+                {
+                    <span class="catalog-status available">Available in My Apps</span>
+                }
+                else if (application.RequestStatus == "Pending")
+                {
+                    <span class="catalog-status pending">Request pending</span>
+                }
+                else if (application.AllowAccessRequests)
+                {
+                    <div class="catalog-request">
+                        <textarea maxlength="1000" rows="2" placeholder="Reason for access (optional)" aria-label="Reason for requesting @application.Name access" @bind="RequestReasons[application.Id]"></textarea>
+                        <button class="catalog-request-button" disabled="@Submitting.Contains(application.Id)" @onclick="() => RequestAccessAsync(application)">@(Submitting.Contains(application.Id) ? "Sending…" : application.RequestStatus == "Denied" ? "Request again" : "Request access")</button>
+                    </div>
+                }
+                else
+                {
+                    <span class="catalog-status">Contact your administrator</span>
+                }
+            </article>
+        }
+    </section>
+}
+
+<div class="sp-page-header catalog-header"><h2 class="sp-page-title">My access requests</h2><p class="sp-page-subtitle">Track decisions on applications you’ve requested.</p></div>
+<section class="sp-card my-apps-card">
+    @if (LoadingCatalog)
+    {
+        <p class="my-apps-state" role="status">Loading request history…</p>
+    }
+    else if (Requests.Count == 0)
+    {
+        <p class="my-apps-state">You haven’t requested access to an application.</p>
+    }
+    else
+    {
+        @foreach (var request in Requests)
+        {
+            <article class="history-row"><div><h3>@request.ApplicationName</h3><p>Requested @request.RequestedAt.ToLocalTime().ToString("g")</p>@if (!string.IsNullOrWhiteSpace(request.DecisionNote)) { <small>Admin note: @request.DecisionNote</small> }</div><span class="catalog-status @request.Status.ToLowerInvariant()">@request.Status</span></article>
+        }
+    }
+</section>
+
 <style>
-    .my-apps-card{padding:4px 20px}.my-apps-row{display:flex;align-items:center;gap:14px;padding:17px 0;border-bottom:1px solid #edf0f2}.my-apps-row:last-of-type{border-bottom:0}.my-apps-mark{width:40px;height:40px;flex:0 0 auto;display:grid;place-items:center;border-radius:7px;background:#e5f2ed;color:#087f75;font-weight:800}.my-apps-row div{min-width:0;flex:1}.my-apps-row h2{margin:0 0 4px;font-size:15px}.my-apps-row p{margin:0;color:#64748b;font-size:12px}.my-apps-badge{padding:5px 8px;border-radius:12px;background:#edf7f2;color:#087f5b;font-size:10px;font-weight:650;white-space:nowrap}.my-apps-state,.my-apps-note{padding:20px 0;color:#64748b;font-size:13px}.my-apps-note{border-top:1px solid #edf0f2;margin:0;font-size:11px}.my-apps-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}
+    .my-apps-sort{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:0 0 12px;color:#64748b;font-size:12px}.my-apps-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}.my-apps-card{padding:4px 20px}.my-apps-row,.catalog-row,.history-row{display:flex;align-items:center;gap:14px;padding:17px 0;border-bottom:1px solid #edf0f2}.my-apps-row:last-of-type,.catalog-row:last-child,.history-row:last-child{border-bottom:0}.my-apps-mark{width:40px;height:40px;flex:0 0 auto;display:grid;place-items:center;border-radius:7px;background:#e5f2ed;color:#087f75;font-weight:800}.my-apps-row div,.catalog-copy,.history-row>div{min-width:0;flex:1}.my-apps-row h2,.catalog-row h2,.history-row h3{margin:0 0 4px;font-size:15px}.my-apps-row p,.catalog-row p,.history-row p{margin:0;color:#64748b;font-size:12px}.catalog-header{margin-top:27px}.catalog-request{display:flex;align-items:center;gap:8px;flex:0 0 min(45%,360px)}.catalog-request textarea{min-width:0;flex:1;border:1px solid #cbd5dc;border-radius:5px;padding:7px;font:inherit;font-size:11px}.catalog-request-button{border:0;border-radius:5px;background:#087f75;color:#fff;padding:9px 11px;font-size:10px;font-weight:700;white-space:nowrap}.catalog-request-button:disabled{opacity:.6}.catalog-status{padding:6px 9px;border-radius:12px;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:700;white-space:nowrap}.catalog-status.available,.catalog-status.approved{background:#e5f5ed;color:#087f5b}.catalog-status.pending{background:#fff5df;color:#946200}.catalog-status.denied{background:#fcecea;color:#9d332b}.history-row small{display:block;margin-top:6px;color:#64748b;font-size:11px}.my-apps-badge{padding:5px 8px;border-radius:12px;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:650;white-space:nowrap}.my-apps-launch{flex:0 0 auto;padding:8px 12px;border-radius:5px;background:#087f75;color:#fff;text-decoration:none;font-size:11px;font-weight:700;white-space:nowrap}.my-apps-launch:hover{background:#066d65}.my-apps-launch:focus-visible{outline:3px solid #9de2d1;outline-offset:2px}.my-apps-state,.my-apps-note{padding:20px 0;color:#64748b;font-size:13px}.my-apps-note{border-top:1px solid #edf0f2;margin:0;font-size:11px}.my-apps-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.my-apps-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#e5f5ed;color:#087f5b;font-size:13px}
+    @@media(max-width:700px){.catalog-row{align-items:flex-start;flex-wrap:wrap}.catalog-copy{flex-basis:calc(100% - 60px)}.catalog-request{flex-basis:100%;margin-left:54px}.history-row{align-items:flex-start}}
     @@media(max-width:520px){.my-apps-card{padding:4px 14px}.my-apps-row{gap:10px}.my-apps-row h2{font-size:13px}.my-apps-row p{font-size:11px}}
 </style>
 
 @code {
     private List<AccessibleApplication> Applications = [];
+    private List<CatalogApplication> Catalog = [];
+    private List<MyApplicationAccessRequest> Requests = [];
+    private readonly Dictionary<Guid, string> RequestReasons = [];
+    private readonly HashSet<Guid> Submitting = [];
     private bool Loading = true;
+    private bool LoadingCatalog = true;
     private string Error = "";
+    private string Notice = "";
+    private string SortOrder = "name-asc";
+    private IEnumerable<AccessibleApplication> SortedApplications => SortOrder == "name-desc"
+        ? Applications.OrderByDescending(application => application.Name, StringComparer.OrdinalIgnoreCase)
+        : Applications.OrderBy(application => application.Name, StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
         try { Applications = await Api.GetMyApplicationsAsync(); }
         catch (Exception exception) { Error = exception.Message; }
         finally { Loading = false; }
+        await ReloadCatalogAsync();
+    }
+
+    private async Task ReloadCatalogAsync()
+    {
+        LoadingCatalog = true;
+        try
+        {
+            var catalogTask = Api.GetApplicationCatalogAsync();
+            var requestsTask = Api.GetMyApplicationRequestsAsync();
+            await Task.WhenAll(catalogTask, requestsTask);
+            Catalog = await catalogTask;
+            Requests = await requestsTask;
+            foreach (var application in Catalog) RequestReasons.TryAdd(application.Id, "");
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { LoadingCatalog = false; }
+    }
+
+    private async Task RequestAccessAsync(CatalogApplication application)
+    {
+        if (!Submitting.Add(application.Id)) return;
+        Error = "";
+        Notice = "";
+        try
+        {
+            await Api.RequestApplicationAccessAsync(application.Id, RequestReasons.GetValueOrDefault(application.Id, ""));
+            RequestReasons[application.Id] = "";
+            Notice = $"Your access request for \"{application.Name}\" has been submitted for administrator review.";
+            await ReloadCatalogAsync();
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Submitting.Remove(application.Id); }
     }
 
     private static string Mark(string name) =>

@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using SafePassage.Api.Data;
@@ -7,7 +6,8 @@ using SafePassage.Api.Models;
 
 namespace SafePassage.Api.Hubs;
 
-[Authorize]
+// Authorization is enforced at the route level in Program.cs using JWT scheme explicitly.
+// This avoids OpenIddict validation intercepting the [Authorize] attribute and returning 500.
 public sealed class MfaHub(ApplicationDbContext dbContext) : Hub
 {
     public async Task JoinDeviceGroup(string deviceId)

@@ -16,6 +16,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<UserGroup> UserGroups => Set<UserGroup>();
     public DbSet<ApplicationUserAccess> ApplicationUserAccesses => Set<ApplicationUserAccess>();
     public DbSet<ApplicationGroupAccess> ApplicationGroupAccesses => Set<ApplicationGroupAccess>();
+    public DbSet<ApplicationAccessRequest> ApplicationAccessRequests => Set<ApplicationAccessRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -26,12 +27,21 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasKey(user => user.Id);
             entity.HasIndex(user => user.Username).IsUnique();
             entity.HasIndex(user => user.Email).IsUnique();
+            entity.HasIndex(user => user.FacebookUserId).IsUnique()
+                .HasFilter("\"FacebookUserId\" IS NOT NULL");
+            entity.HasIndex(user => user.GitHubUserId).IsUnique()
+                .HasFilter("\"GitHubUserId\" IS NOT NULL");
+            entity.HasIndex(user => user.GitLabUserId).IsUnique()
+                .HasFilter("\"GitLabUserId\" IS NOT NULL");
             entity.Property(user => user.Username).HasMaxLength(100).IsRequired();
             entity.Property(user => user.PasswordHash).HasMaxLength(512).IsRequired();
             entity.Property(user => user.Email).HasMaxLength(320).IsRequired();
             entity.Property(user => user.FullName).HasMaxLength(200);
             entity.Property(user => user.PhoneNumber).HasMaxLength(32);
             entity.Property(user => user.Role).HasMaxLength(64).IsRequired();
+            entity.Property(user => user.FacebookUserId).HasMaxLength(128);
+            entity.Property(user => user.GitHubUserId).HasMaxLength(128);
+            entity.Property(user => user.GitLabUserId).HasMaxLength(128);
         });
 
         modelBuilder.Entity<AccountActivationToken>(entity =>
@@ -72,6 +82,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(device => device.Status).HasConversion<string>().HasMaxLength(32);
             entity.Property(device => device.TrustStatus).HasConversion<string>().HasMaxLength(32);
             entity.Property(device => device.SigningPublicKey).HasMaxLength(128);
+            entity.Property(device => device.PendingSigningPublicKey).HasMaxLength(128);
             entity.HasOne(device => device.User).WithMany(user => user.Devices)
                 .HasForeignKey(device => device.UserId).OnDelete(DeleteBehavior.Restrict);
         });
@@ -82,6 +93,13 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasIndex(application => application.Name).IsUnique();
             entity.Property(application => application.Name).HasMaxLength(200).IsRequired();
             entity.Property(application => application.Description).HasMaxLength(2000);
+            entity.Property(application => application.LaunchUrl).HasMaxLength(2048);
+            entity.HasIndex(application => application.ClientId).IsUnique();
+            entity.Property(application => application.ClientId).HasMaxLength(200);
+            entity.Property(application => application.ClientType).HasMaxLength(50).IsRequired();
+            entity.Property(application => application.RedirectUris).HasMaxLength(2000);
+            entity.Property(application => application.PostLogoutRedirectUris).HasMaxLength(2000);
+            entity.Property(application => application.AllowedScopes).HasMaxLength(500).IsRequired();
         });
 
         modelBuilder.Entity<ApplicationUserAccess>(entity =>
@@ -100,6 +118,22 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .HasForeignKey(link => link.ApplicationId).OnDelete(DeleteBehavior.Cascade);
             entity.HasOne(link => link.Group).WithMany(group => group.ApplicationAccess)
                 .HasForeignKey(link => link.GroupId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ApplicationAccessRequest>(entity =>
+        {
+            entity.HasKey(request => request.Id);
+            entity.HasIndex(request => new { request.ApplicationId, request.UserId })
+                .IsUnique()
+                .HasFilter("\"Status\" = 'Pending'");
+            entity.HasIndex(request => new { request.UserId, request.RequestedAt });
+            entity.Property(request => request.Status).HasMaxLength(32).IsRequired().IsConcurrencyToken();
+            entity.Property(request => request.Reason).HasMaxLength(1000).IsRequired();
+            entity.Property(request => request.DecisionNote).HasMaxLength(1000);
+            entity.HasOne(request => request.Application).WithMany(application => application.AccessRequests)
+                .HasForeignKey(request => request.ApplicationId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(request => request.User).WithMany(user => user.ApplicationAccessRequests)
+                .HasForeignKey(request => request.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<SecurityPolicy>(entity =>

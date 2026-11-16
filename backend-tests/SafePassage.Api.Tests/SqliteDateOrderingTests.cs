@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using OpenIddict.Abstractions;
 using SafePassage.Api.Controllers;
 using SafePassage.Api.Data;
 using SafePassage.Api.Models;
@@ -21,6 +22,7 @@ public sealed class SqliteDateOrderingTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlite(connection)
+            .UseOpenIddict()
             .Options;
         await using var dbContext = new ApplicationDbContext(options);
         await dbContext.Database.MigrateAsync();

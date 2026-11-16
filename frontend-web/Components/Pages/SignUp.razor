@@ -78,10 +78,34 @@
                 <EditForm Model="PasswordForm" OnValidSubmit="RegisterAsync">
                     <DataAnnotationsValidator />
                     <label for="signup-password">Password</label>
-                    <InputText id="signup-password" type="password" @bind-Value="PasswordForm.Password" autocomplete="new-password" disabled="@Saving" placeholder="At least 12 characters" />
+                    <div class="password-input-wrapper">
+                        <InputText id="signup-password" type="@(ShowPassword ? "text" : "password")" @bind-Value="PasswordForm.Password" autocomplete="new-password" disabled="@Saving" placeholder="At least 12 characters" />
+                        <button type="button" class="password-toggle-btn" @onclick="() => ShowPassword = !ShowPassword" aria-label="@(ShowPassword ? "Hide password" : "Show password")" tabindex="-1">
+                            @if (ShowPassword)
+                            {
+                                <svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                            }
+                            else
+                            {
+                                <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            }
+                        </button>
+                    </div>
                     <ValidationMessage For="() => PasswordForm.Password" />
                     <label for="signup-confirm-password">Confirm password</label>
-                    <InputText id="signup-confirm-password" type="password" @bind-Value="PasswordForm.ConfirmPassword" autocomplete="new-password" disabled="@Saving" placeholder="Enter your password again" />
+                    <div class="password-input-wrapper">
+                        <InputText id="signup-confirm-password" type="@(ShowConfirmPassword ? "text" : "password")" @bind-Value="PasswordForm.ConfirmPassword" autocomplete="new-password" disabled="@Saving" placeholder="Enter your password again" />
+                        <button type="button" class="password-toggle-btn" @onclick="() => ShowConfirmPassword = !ShowConfirmPassword" aria-label="@(ShowConfirmPassword ? "Hide password" : "Show password")" tabindex="-1">
+                            @if (ShowConfirmPassword)
+                            {
+                                <svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                            }
+                            else
+                            {
+                                <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            }
+                        </button>
+                    </div>
                     <ValidationMessage For="() => PasswordForm.ConfirmPassword" />
                     <div class="signup-actions">
                         <button class="signup-secondary" type="button" @onclick="GoToPreviousStep" disabled="@Saving">Back</button>
@@ -100,6 +124,8 @@
     private readonly IdentityFormModel IdentityForm = new();
     private readonly ContactFormModel ContactForm = new();
     private readonly PasswordFormModel PasswordForm = new();
+    private bool ShowPassword;
+    private bool ShowConfirmPassword;
     private int CurrentStep = 1;
     private bool Saving;
     private bool Submitted;

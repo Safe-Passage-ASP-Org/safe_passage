@@ -3,26 +3,192 @@
 @inject AdminApiClient Api
 
 <PageTitle>Insights &amp; Reports – Safe Passage</PageTitle>
-<div class="sp-page-header"><h1 class="sp-page-title">Insights &amp; Reports</h1><p class="sp-page-subtitle">A live summary derived from the latest records stored in the platform.</p></div>
+<div class="sp-page-header report-page-header">
+    <div><h1 class="sp-page-title">Insights &amp; Reports</h1><p class="sp-page-subtitle">Explore sign-in activity, MFA outcomes, device trust, and application coverage.</p></div>
+    <div class="report-controls">
+        <label for="report-window">Reporting window</label>
+        <select id="report-window" aria-label="Reporting window" @bind="SelectedWindow">
+            <option value="24h">Last 24 hours</option>
+            <option value="7d">Last 7 days</option>
+            <option value="30d">Last 30 days</option>
+        </select>
+        <button type="button" @onclick="LoadAsync" disabled="@Loading">@(Loading ? "Refreshing…" : "Refresh")</button>
+    </div>
+</div>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="report-error" role="alert">@Error</div> }
-<div class="sp-stat-grid"><div class="sp-stat-card"><span class="sp-stat-label">Recent login success rate</span><span class="sp-stat-value">@(Loading ? "—" : (LoginAttempts == 0 ? "N/A" : $"{LoginSuccessRate:F1}%"))</span><span class="sp-stat-change">@(Loading ? "Loading" : $"{LoginAttempts} login events in the latest 250 audit records")</span></div><div class="sp-stat-card"><span class="sp-stat-label">Denied events</span><span class="sp-stat-value">@(Loading ? "—" : DeniedCount.ToString())</span><span class="sp-stat-change">Latest audit records</span></div><div class="sp-stat-card"><span class="sp-stat-label">Trusted devices</span><span class="sp-stat-value">@(Loading ? "—" : TrustedCount.ToString())</span><span class="sp-stat-change">Active and trusted</span></div><div class="sp-stat-card"><span class="sp-stat-label">Registered applications</span><span class="sp-stat-value">@(Loading ? "—" : ApplicationCount.ToString())</span><span class="sp-stat-change">Application registry</span></div></div>
-<section class="sp-card report-card"><h2>Report coverage</h2><p>These figures use the latest 250 audit records because the current API does not yet provide date-range queries or historical aggregates. IP addresses, MFA latency, and compliance scoring are not collected, so this page does not estimate them.</p><a href="/activity-logs">Review audit records →</a></section>
-<style>.report-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.report-card{margin-top:16px;padding:20px}.report-card h2{font-size:15px;margin:0 0 8px}.report-card p{font-size:12px;color:#64748b;line-height:1.6;max-width:800px}.report-card a{font-size:12px;color:#087f75;font-weight:650;text-decoration:none}</style>
+@if (Loading)
+{
+    <div class="sp-card report-state" role="status">Loading report data…</div>
+}
+else if (!string.IsNullOrWhiteSpace(Error))
+{
+    <div class="sp-card report-state">Report data is unavailable. Check the connection and try refreshing.</div>
+}
+else
+{
+    <div class="report-coverage-note">Showing @WindowActivity.Count events from the selected window. The activity API returns at most 250 recent events.</div>
+    <section class="report-metrics" aria-label="Report summary">
+        <article class="sp-stat-card"><span class="sp-stat-label">Login success rate</span><strong class="sp-stat-value">@(LoginSuccessRate is decimal rate ? $"{rate:F1}%" : "N/A")</strong><span class="sp-stat-change">@LoginSuccessCount successful of @LoginEvents.Count total login events</span></article>
+        <article class="sp-stat-card"><span class="sp-stat-label">Denied events</span><strong class="sp-stat-value">@DeniedCount</strong><span class="sp-stat-change">All event types in this window</span></article>
+        <article class="sp-stat-card"><span class="sp-stat-label">MFA denials</span><strong class="sp-stat-value">@MfaDenialCount</strong><span class="sp-stat-change">Denied MFA-related events</span></article>
+        <article class="sp-stat-card"><span class="sp-stat-label">Trusted devices</span><strong class="sp-stat-value">@TrustedCount / @Devices.Count</strong><span class="sp-stat-change">Active and trusted of registered devices</span></article>
+        <article class="sp-stat-card"><span class="sp-stat-label">Pending device approvals</span><strong class="sp-stat-value">@PendingDeviceCount</strong><span class="sp-stat-change"><a href="/alerts">Review security alerts</a></span></article>
+        <article class="sp-stat-card"><span class="sp-stat-label">Registered applications</span><strong class="sp-stat-value">@Applications.Count</strong><span class="sp-stat-change"><a href="/applications">Manage OIDC applications</a></span></article>
+    </section>
+
+    <div class="report-grid">
+        <section class="sp-card report-panel">
+            <div class="report-panel-heading"><div><h2>Login outcomes</h2><p>Successful and denied login events over time</p></div><a href="/activity-logs">View activity logs</a></div>
+            @if (LoginEvents.Count == 0)
+            {
+                <p class="report-empty">No login events were recorded in this reporting window.</p>
+            }
+            else
+            {
+                <div class="report-legend"><span><i class="success"></i>Successful</span><span><i class="denied"></i>Denied</span></div>
+                <div class="report-timeline" role="img" aria-label="Login outcome chart for the selected reporting window">
+                    @foreach (var bucket in LoginTimeline)
+                    {
+                        <div class="report-timeline-row" title="@bucket.Label: @bucket.SuccessCount successful, @bucket.DeniedCount denied">
+                            <span class="report-bucket-label">@bucket.Label</span>
+                            <div class="report-track"><div class="report-bar" style="width:@($"{bucket.ScalePercent:F1}%")"><span class="success" style="width:@($"{bucket.SuccessPercent:F1}%")"></span><span class="denied" style="width:@($"{bucket.DeniedPercent:F1}%")"></span></div></div>
+                            <span class="report-bucket-total">@bucket.Total</span>
+                        </div>
+                    }
+                </div>
+            }
+        </section>
+
+        <section class="sp-card report-panel">
+            <div class="report-panel-heading"><div><h2>Most common events</h2><p>Top event types in the selected window</p></div><a href="/activity-logs">Review events</a></div>
+            @if (WindowActivity.Count == 0)
+            {
+                <p class="report-empty">No activity was recorded in this reporting window.</p>
+            }
+            else
+            {
+                <div class="report-event-list">
+                    @foreach (var item in EventBreakdown)
+                    {
+                        <div class="report-event-row"><span title="@item.Action">@item.Action</span><div class="report-event-track"><i style="width:@($"{item.Percent:F1}%")"></i></div><strong>@item.Count</strong></div>
+                    }
+                </div>
+            }
+        </section>
+    </div>
+
+    <section class="sp-card report-panel report-denied-panel">
+        <div class="report-panel-heading"><div><h2>Recent denied events</h2><p>Latest denied activity in the selected window</p></div><a href="/activity-logs">Open full activity log</a></div>
+        @if (RecentDeniedEvents.Count == 0)
+        {
+            <p class="report-empty">There are no denied events in this reporting window.</p>
+        }
+        else
+        {
+            <div class="report-table-scroll"><table class="report-table"><thead><tr><th>Time</th><th>User</th><th>Event</th><th>Resource</th></tr></thead><tbody>
+                @foreach (var item in RecentDeniedEvents)
+                {
+                    <tr><td>@item.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm")</td><td>@item.Username</td><td>@item.Action</td><td>@item.Resource</td></tr>
+                }
+            </tbody></table></div>
+        }
+    </section>
+    <p class="report-footnote">Activity metrics use the latest 250 events returned by Safe Passage. Device and application figures show their current registry state. Historical retention and date-range queries are not yet available.</p>
+}
+
+<style>
+    .report-page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}.report-controls{display:flex;align-items:center;gap:8px;flex:0 0 auto}.report-controls label{color:#64748b;font-size:11px}.report-controls select,.report-controls button{border:1px solid #cbd5dc;border-radius:5px;padding:8px 10px;background:#fff;color:#334155;font:inherit;font-size:12px}.report-controls button{background:#087f75;border-color:#087f75;color:#fff;font-weight:650;cursor:pointer}.report-controls button:disabled{opacity:.6;cursor:wait}.report-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.report-state{padding:22px;color:#64748b;font-size:13px}.report-coverage-note,.report-footnote{margin:0 0 12px;color:#64748b;font-size:11px;line-height:1.5}.report-footnote{margin:14px 0}.report-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px}.report-metrics .sp-stat-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0;padding:16px}.report-metrics .sp-stat-value{font-size:24px}.report-metrics .sp-stat-change a{color:#087f75;text-decoration:none}.report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:14px;margin-top:14px}.report-panel{min-width:0;padding:18px}.report-panel-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}.report-panel-heading h2{margin:0 0 4px;font-size:15px}.report-panel-heading p{margin:0;color:#64748b;font-size:11px}.report-panel-heading>a{color:#087f75;font-size:11px;font-weight:650;text-decoration:none;white-space:nowrap}.report-legend{display:flex;gap:14px;margin:0 0 12px;color:#64748b;font-size:10px}.report-legend span{display:flex;align-items:center;gap:5px}.report-legend i{width:8px;height:8px;border-radius:2px}.report-legend i.success,.report-bar .success{background:#12977a}.report-legend i.denied,.report-bar .denied{background:#c25349}.report-timeline{display:grid;gap:8px}.report-timeline-row{display:grid;grid-template-columns:58px minmax(0,1fr) 22px;align-items:center;gap:8px}.report-bucket-label,.report-bucket-total{color:#64748b;font-size:10px}.report-bucket-total{text-align:right}.report-track{height:12px;border-radius:3px;background:#f1f5f4;overflow:hidden}.report-bar{display:flex;height:100%;min-width:0;border-radius:3px;overflow:hidden}.report-bar .success,.report-bar .denied{height:100%}.report-event-list{display:grid;gap:13px}.report-event-row{display:grid;grid-template-columns:minmax(100px,1fr) minmax(60px,1.4fr) 26px;gap:10px;align-items:center}.report-event-row>span{overflow:hidden;color:#334155;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.report-event-row>strong{color:#52616b;font-size:11px;text-align:right}.report-event-track{height:8px;border-radius:8px;background:#f1f5f4;overflow:hidden}.report-event-track i{display:block;height:100%;border-radius:8px;background:#087f75}.report-empty{padding:12px 0;color:#64748b;font-size:12px}.report-denied-panel{margin-top:14px;padding-bottom:0}.report-table-scroll{overflow:auto}.report-table{width:100%;border-collapse:collapse;min-width:580px}.report-table th{padding:10px;text-align:left;background:#f8fafb;color:#64748b;font-size:9px;letter-spacing:.5px;text-transform:uppercase}.report-table td{padding:11px 10px;border-top:1px solid #edf0f2;color:#334155;font-size:11px}.report-table td:first-child{white-space:nowrap;color:#64748b}.report-footnote{margin-top:12px}
+    @@media(max-width:700px){.report-page-header{align-items:flex-start;flex-direction:column}.report-controls{flex-wrap:wrap}.report-grid{grid-template-columns:1fr}}
+</style>
+
 @code {
     private bool Loading = true;
     private string Error = "";
-    private int LoginAttempts, DeniedCount, TrustedCount, ApplicationCount, LoginSuccessRate;
-    protected override async Task OnInitializedAsync()
+    private string SelectedWindow = "7d";
+    private List<AdminActivity> Activity = [];
+    private List<AdminDevice> Devices = [];
+    private List<AdminApplication> Applications = [];
+
+    private DateTimeOffset WindowStart => SelectedWindow switch
     {
+        "24h" => DateTimeOffset.UtcNow.AddHours(-24),
+        "30d" => DateTimeOffset.UtcNow.AddDays(-30),
+        _ => DateTimeOffset.UtcNow.AddDays(-7)
+    };
+    private List<AdminActivity> WindowActivity => Activity.Where(item => item.Timestamp >= WindowStart).ToList();
+    private List<AdminActivity> LoginEvents => WindowActivity.Where(item => item.Action.Contains("login", StringComparison.OrdinalIgnoreCase)).ToList();
+    private int LoginSuccessCount => LoginEvents.Count(item => item.Status.Equals("Success", StringComparison.OrdinalIgnoreCase));
+    private decimal? LoginSuccessRate => LoginEvents.Count == 0 ? null : (decimal)LoginSuccessCount * 100 / LoginEvents.Count;
+    private int DeniedCount => WindowActivity.Count(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase));
+    private int MfaDenialCount => WindowActivity.Count(item => item.Action.Contains("MFA", StringComparison.OrdinalIgnoreCase) && item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase));
+    private int TrustedCount => Devices.Count(device => device.Status == "ACTIVE" && device.TrustStatus == "TRUSTED");
+    private int PendingDeviceCount => Devices.Count(device => device.Status == "PENDING_APPROVAL");
+    private List<AdminActivity> RecentDeniedEvents => WindowActivity.Where(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase)).OrderByDescending(item => item.Timestamp).Take(10).ToList();
+    private List<EventSummary> EventBreakdown
+    {
+        get
+        {
+            var groups = WindowActivity.GroupBy(item => item.Action, StringComparer.OrdinalIgnoreCase)
+                .Select(group => new EventSummary(group.Key, group.Count()))
+                .OrderByDescending(item => item.Count).ThenBy(item => item.Action, StringComparer.OrdinalIgnoreCase).Take(8).ToList();
+            var maximum = groups.Count == 0 ? 0 : groups.Max(item => item.Count);
+            return groups.Select(item => item with { Percent = maximum == 0 ? 0 : item.Count * 100d / maximum }).ToList();
+        }
+    }
+    private List<LoginBucket> LoginTimeline
+    {
+        get
+        {
+            var now = DateTimeOffset.UtcNow;
+            var hourly = SelectedWindow == "24h";
+            var count = hourly ? 24 : SelectedWindow == "30d" ? 30 : 7;
+            var start = hourly ? now.AddHours(-24) : now.AddDays(-count);
+            var buckets = new List<LoginBucket>(count);
+            for (var index = 0; index < count; index++)
+            {
+                var bucketStart = hourly ? start.AddHours(index) : start.AddDays(index);
+                var bucketEnd = hourly ? bucketStart.AddHours(1) : bucketStart.AddDays(1);
+                var items = LoginEvents.Where(item => item.Timestamp >= bucketStart && item.Timestamp < bucketEnd).ToList();
+                var successful = items.Count(item => item.Status.Equals("Success", StringComparison.OrdinalIgnoreCase));
+                var denied = items.Count(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase));
+                buckets.Add(new(hourly ? bucketStart.ToLocalTime().ToString("HH:mm") : bucketStart.ToLocalTime().ToString("MMM d"), successful + denied, successful, denied));
+            }
+            var max = buckets.Count == 0 ? 0 : buckets.Max(bucket => bucket.Total);
+            return buckets.Select(bucket => bucket with
+            {
+                ScalePercent = max == 0 ? 0 : bucket.Total * 100d / max,
+                SuccessPercent = bucket.Total == 0 ? 0 : bucket.SuccessCount * 100d / bucket.Total,
+                DeniedPercent = bucket.Total == 0 ? 0 : bucket.DeniedCount * 100d / bucket.Total
+            }).ToList();
+        }
+    }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        Loading = true;
+        Error = "";
         try
         {
-            var activity = await Api.GetAdminActivityAsync(); var devices = await Api.GetDevicesAsync(); var applications = await Api.GetApplicationsAsync();
-            var logins = activity.Where(item => item.Action.Contains("login", StringComparison.OrdinalIgnoreCase)).ToList();
-            LoginAttempts = logins.Count; LoginSuccessRate = LoginAttempts == 0 ? 0 : (int)Math.Round(logins.Count(item => item.Status.Equals("Success", StringComparison.OrdinalIgnoreCase)) * 100d / LoginAttempts, MidpointRounding.AwayFromZero);
-            DeniedCount = activity.Count(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase));
-            TrustedCount = devices.Count(device => device.Status == "ACTIVE" && device.TrustStatus == "TRUSTED"); ApplicationCount = applications.Count;
+            var activityTask = Api.GetAdminActivityAsync();
+            var devicesTask = Api.GetDevicesAsync();
+            var applicationsTask = Api.GetApplicationsAsync();
+            await Task.WhenAll(activityTask, devicesTask, applicationsTask);
+            Activity = await activityTask;
+            Devices = await devicesTask;
+            Applications = await applicationsTask;
         }
-        catch (Exception ex) { Error = ex.Message; }
-        finally { Loading = false; }
+        catch (Exception exception)
+        {
+            Error = exception.Message;
+        }
+        finally
+        {
+            Loading = false;
+        }
     }
+
+    private sealed record EventSummary(string Action, int Count, double Percent = 0);
+    private sealed record LoginBucket(string Label, int Total, int SuccessCount, int DeniedCount, double ScalePercent = 0, double SuccessPercent = 0, double DeniedPercent = 0);
 }

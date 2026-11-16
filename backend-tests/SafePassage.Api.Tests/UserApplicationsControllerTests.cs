@@ -65,6 +65,20 @@ public sealed class UserApplicationsControllerTests
         Assert.IsType<UnauthorizedResult>(response.Result);
     }
 
+    [Fact]
+    public async Task GetMine_ReturnsUnauthorizedForInactiveUser()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = new User { Id = Guid.NewGuid(), Username = "disabled", Email = "disabled@example.com", IsActive = false };
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+
+        var controller = CreateController(dbContext, user.Id);
+        var response = await controller.GetMine(CancellationToken.None);
+
+        Assert.IsType<UnauthorizedResult>(response.Result);
+    }
+
     private static UserApplicationsController CreateController(ApplicationDbContext dbContext, Guid userId) =>
         new(dbContext)
         {

@@ -8,8 +8,12 @@ namespace SafePassage.Web.Services;
 
 public sealed class AdminApiClient(HttpClient http)
 {
+    public string FacebookSignInUrl => new Uri(http.BaseAddress!, "api/auth/facebook").ToString();
+    public string GitHubSignInUrl => new Uri(http.BaseAddress!, "api/auth/github").ToString();
+    public string GitLabSignInUrl => new Uri(http.BaseAddress!, "api/auth/gitlab").ToString();
     public string? AccessToken { get; private set; }
     public string? CurrentUsername { get; private set; }
+    public string? CurrentEmail { get; private set; }
     public string? CurrentRole { get; private set; }
     public bool IsAdministrator =>
         string.Equals(CurrentRole, "Admin", StringComparison.OrdinalIgnoreCase)
@@ -35,6 +39,78 @@ public sealed class AdminApiClient(HttpClient http)
             SetToken(body.AccessToken);
 
         return new(body.MfaRequired, body.SessionToken, body.Message ?? "Sign-in request submitted.");
+    }
+
+    public async Task<bool> IsFacebookSignInEnabledAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var settings = await http.GetFromJsonAsync<FacebookSignInSettings>("api/auth/facebook/enabled", cancellationToken);
+            return settings?.Enabled == true;
+        }
+        catch (HttpRequestException) { return false; }
+    }
+
+    public async Task<bool> IsGitHubSignInEnabledAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var settings = await http.GetFromJsonAsync<FacebookSignInSettings>("api/auth/github/enabled", cancellationToken);
+            return settings?.Enabled == true;
+        }
+        catch (HttpRequestException) { return false; }
+    }
+
+    public async Task<bool> IsGitLabSignInEnabledAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var settings = await http.GetFromJsonAsync<FacebookSignInSettings>("api/auth/gitlab/enabled", cancellationToken);
+            return settings?.Enabled == true;
+        }
+        catch (HttpRequestException) { return false; }
+    }
+
+    public async Task<LoginResult> ExchangeFacebookLoginAsync(string ticket, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.GetAsync($"api/auth/facebook/exchange/{Uri.EscapeDataString(ticket)}", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? "The Facebook sign-in expired. Please try again.");
+        }
+        var body = await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty Facebook sign-in response.");
+        if (!body.MfaRequired && !string.IsNullOrWhiteSpace(body.AccessToken)) SetToken(body.AccessToken);
+        return new(body.MfaRequired, body.SessionToken, body.Message ?? "Signed in with Facebook.");
+    }
+
+    public async Task<LoginResult> ExchangeGitHubLoginAsync(string ticket, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.GetAsync($"api/auth/github/exchange/{Uri.EscapeDataString(ticket)}", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? "The GitHub sign-in expired. Please try again.");
+        }
+        var body = await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty GitHub sign-in response.");
+        if (!body.MfaRequired && !string.IsNullOrWhiteSpace(body.AccessToken)) SetToken(body.AccessToken);
+        return new(body.MfaRequired, body.SessionToken, body.Message ?? "Signed in with GitHub.");
+    }
+
+    public async Task<LoginResult> ExchangeGitLabLoginAsync(string ticket, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.GetAsync($"api/auth/gitlab/exchange/{Uri.EscapeDataString(ticket)}", cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? "The GitLab sign-in expired. Please try again.");
+        }
+        var body = await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty GitLab sign-in response.");
+        if (!body.MfaRequired && !string.IsNullOrWhiteSpace(body.AccessToken)) SetToken(body.AccessToken);
+        return new(body.MfaRequired, body.SessionToken, body.Message ?? "Signed in with GitLab.");
     }
 
     public async Task<bool> CompleteMfaAsync(string sessionToken, CancellationToken cancellationToken = default)
@@ -80,7 +156,7 @@ public sealed class AdminApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
-    public void SignOut() { SetToken(null); CurrentUsername = null; }
+    public void SignOut() { SetToken(null); CurrentUsername = null; CurrentEmail = null; }
 
     public async Task<List<AdminUser>> GetUsersAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminUser>>("api/admin/users", cancellationToken) ?? [];
@@ -142,6 +218,27 @@ public sealed class AdminApiClient(HttpClient http)
     public async Task<List<AccessibleApplication>> GetMyApplicationsAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AccessibleApplication>>("api/applications/mine", cancellationToken) ?? [];
 
+    public async Task<List<CatalogApplication>> GetApplicationCatalogAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<CatalogApplication>>("api/applications/catalog", cancellationToken) ?? [];
+
+    public async Task<List<MyApplicationAccessRequest>> GetMyApplicationRequestsAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<MyApplicationAccessRequest>>("api/applications/requests/mine", cancellationToken) ?? [];
+
+    public async Task RequestApplicationAccessAsync(Guid applicationId, string reason, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync($"api/applications/{applicationId}/requests", new { reason }, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task<List<AdminAccessRequest>> GetAdminAccessRequestsAsync(string status = "Pending", CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<AdminAccessRequest>>($"api/admin/access-requests?status={Uri.EscapeDataString(status)}", cancellationToken) ?? [];
+
+    public async Task DecideApplicationAccessRequestAsync(Guid requestId, bool approve, string? note, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync($"api/admin/access-requests/{requestId}/decision", new { approve, note }, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
     public async Task<List<AdminActivity>> GetAdminActivityAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminActivity>>("api/admin/activity", cancellationToken) ?? [];
 
@@ -157,14 +254,32 @@ public sealed class AdminApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
-    public async Task SaveApplicationAsync(AdminApplicationForm application, Guid? id, CancellationToken cancellationToken = default)
+    public async Task<string?> SaveApplicationAsync(AdminApplicationForm application, Guid? id, CancellationToken cancellationToken = default)
     {
-        var payload = new { application.Name, application.Description };
+        var payload = new { application.Name, application.Description, application.LaunchUrl, application.ClientType, application.RedirectUris, application.PostLogoutRedirectUris, application.AllowedScopes, application.IsPublished, application.AllowAccessRequests };
         using var response = id is null
             ? await http.PostAsJsonAsync("api/admin/applications", payload, cancellationToken)
             : await http.PutAsJsonAsync($"api/admin/applications/{id}", payload, cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        var saved = await response.Content.ReadFromJsonAsync<AdminApplication>(cancellationToken: cancellationToken);
+        return saved?.ClientSecret;
+    }
+
+    public async Task DeleteApplicationAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.DeleteAsync($"api/admin/applications/{id}", cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
     }
+
+    public async Task<string> CreateOidcSessionAsync(string returnUrl, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("connect/session", new { returnUrl }, cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<OidcSessionResult>(cancellationToken: cancellationToken);
+        return result?.CompletionUrl ?? throw new InvalidOperationException("The API did not return an OIDC sign-in continuation.");
+    }
+
+    public void ClearToken() { SetToken(null); CurrentUsername = null; CurrentEmail = null; }
 
     public async Task<AdminApplicationAccess> GetApplicationAccessAsync(Guid id, CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<AdminApplicationAccess>($"api/admin/applications/{id}/access", cancellationToken)
@@ -202,13 +317,15 @@ public sealed class AdminApiClient(HttpClient http)
     private void SetToken(string? token)
     {
         AccessToken = token;
-        CurrentRole = ReadRole(token);
+        CurrentRole = ReadClaim(token, "role", "roles", ClaimTypes.Role);
+        CurrentUsername = ReadClaim(token, "name", "unique_name", ClaimTypes.Name, "sub") ?? CurrentUsername;
+        CurrentEmail = ReadClaim(token, "email", ClaimTypes.Email);
         http.DefaultRequestHeaders.Authorization = string.IsNullOrWhiteSpace(token)
             ? null
             : new AuthenticationHeaderValue("Bearer", token);
     }
 
-    private static string? ReadRole(string? token)
+    private static string? ReadClaim(string? token, params string[] claimTypes)
     {
         if (string.IsNullOrWhiteSpace(token))
             return null;
@@ -223,19 +340,25 @@ public sealed class AdminApiClient(HttpClient http)
         try
         {
             using var document = JsonDocument.Parse(Convert.FromBase64String(payload));
-            foreach (var claimType in new[] { "role", "roles", ClaimTypes.Role })
+            foreach (var claimType in claimTypes)
             {
-                if (!document.RootElement.TryGetProperty(claimType, out var role))
+                if (!document.RootElement.TryGetProperty(claimType, out var element))
                     continue;
 
-                if (role.ValueKind == JsonValueKind.String)
-                    return role.GetString();
-                if (role.ValueKind == JsonValueKind.Array)
+                if (element.ValueKind == JsonValueKind.String)
                 {
-                    foreach (var value in role.EnumerateArray())
+                    var val = element.GetString();
+                    if (!string.IsNullOrWhiteSpace(val)) return val;
+                }
+                if (element.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var item in element.EnumerateArray())
                     {
-                        if (value.ValueKind == JsonValueKind.String)
-                            return value.GetString();
+                        if (item.ValueKind == JsonValueKind.String)
+                        {
+                            var val = item.GetString();
+                            if (!string.IsNullOrWhiteSpace(val)) return val;
+                        }
                     }
                 }
             }
@@ -249,6 +372,8 @@ public sealed class AdminApiClient(HttpClient http)
     private sealed record LoginResponse(bool MfaRequired, string? SessionToken, string? AccessToken, string? Message);
     private sealed record MfaStatusResponse(string? Status, string? AccessToken);
     private sealed record ApiProblem(string? Detail, string? Message, string? Title);
+    private sealed record OidcSessionResult(string CompletionUrl);
+    private sealed record FacebookSignInSettings(bool Enabled);
 }
 
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
@@ -257,10 +382,15 @@ public sealed record AdminUser(Guid Id, string Username, string Email, bool IsAc
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
 public sealed class AdminGroupForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
 public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, string DeviceType, string OS,
-    DateTimeOffset RegistrationDate, DateTimeOffset? LastActiveDate, string Status, string TrustStatus, Guid UserId);
-public sealed record AdminApplication(Guid Id, string Name, string Description, int UserAccessCount, int GroupAccessCount);
-public sealed record AccessibleApplication(Guid Id, string Name, string Description);
-public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
+    DateTimeOffset RegistrationDate, DateTimeOffset? LastActiveDate, string Status, string TrustStatus, Guid UserId,
+    bool HasSigningKey = false, bool HasPendingSigningKey = false);
+public sealed record AdminApplication(Guid Id, string Name, string Description, int UserAccessCount, int GroupAccessCount,
+    string LaunchUrl = "", string? ClientId = null, string ClientType = "confidential", string RedirectUris = "", string PostLogoutRedirectUris = "", string AllowedScopes = "openid profile email", bool IsPublished = false, bool AllowAccessRequests = false, string? ClientSecret = null);
+public sealed record AccessibleApplication(Guid Id, string Name, string Description, string LaunchUrl);
+public sealed record CatalogApplication(Guid Id, string Name, string Description, string LaunchUrl, bool IsAssigned, bool AllowAccessRequests, string? RequestStatus);
+public sealed record MyApplicationAccessRequest(Guid Id, Guid ApplicationId, string ApplicationName, string Status, string Reason, DateTimeOffset RequestedAt, DateTimeOffset? ReviewedAt, string? DecisionNote);
+public sealed record AdminAccessRequest(Guid Id, Guid ApplicationId, string ApplicationName, Guid UserId, string Username, string Email, string Status, string Reason, DateTimeOffset RequestedAt, DateTimeOffset? ReviewedAt, string? DecisionNote);
+public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; public string LaunchUrl { get; set; } = ""; public string ClientType { get; set; } = "confidential"; public string RedirectUris { get; set; } = ""; public string PostLogoutRedirectUris { get; set; } = ""; public string AllowedScopes { get; set; } = "openid profile email"; public bool IsPublished { get; set; } public bool AllowAccessRequests { get; set; } }
 public sealed record AdminApplicationAccess(List<Guid> UserIds, List<Guid> GroupIds);
 public sealed record AdminActivity(Guid Id, DateTimeOffset Timestamp, string Username, string Action, string Resource, string Status);
 public sealed record AdminPolicy(Guid Id, string PolicyName, string PolicyType, bool IsEnforced, string RulesJson);

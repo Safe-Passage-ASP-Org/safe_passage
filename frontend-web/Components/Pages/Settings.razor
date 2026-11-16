@@ -1,6 +1,87 @@
 @page "/settings"
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
+@inject NavigationManager Navigation
 
-<PageTitle>Settings – Safe Passage</PageTitle>
-<div class="sp-page-header"><h1 class="sp-page-title">Settings</h1><p class="sp-page-subtitle">System configuration and account controls.</p></div>
-<section class="sp-card settings-card"><span class="settings-icon">⚙</span><h2>Configuration is environment-managed</h2><p>The current backend does not expose an organization settings API. The disabled form values that were previously shown here were examples only and did not save anywhere.</p><p>Authentication and device trust requirements can be changed in Security Policies. Server URLs, database settings, and signing keys are configured by the backend environment.</p><a href="/policies">Open Security Policies →</a></section>
-<style>.settings-card{max-width:720px;padding:22px}.settings-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:7px;background:#e5f2ed;color:#087f75;font-size:18px}.settings-card h2{font-size:16px;margin:16px 0 8px}.settings-card p{font-size:12px;color:#64748b;line-height:1.65}.settings-card a{font-size:12px;color:#087f75;font-weight:650;text-decoration:none}</style>
+<PageTitle>Account Settings – Safe Passage</PageTitle>
+<div class="sp-page-header"><h1 class="sp-page-title">Account Settings</h1><p class="sp-page-subtitle">Your profile details and account controls.</p></div>
+
+<div class="settings-grid">
+
+    <section class="sp-card settings-section">
+        <div class="settings-section-title">Profile</div>
+        <div class="settings-profile-row">
+            <div class="settings-avatar">@AvatarInitials</div>
+            <div class="settings-profile-info">
+                <strong>@(Api.CurrentUsername ?? "—")</strong>
+                @if (!string.IsNullOrWhiteSpace(Api.CurrentEmail))
+                {
+                    <span>@Api.CurrentEmail</span>
+                }
+                <span class="settings-role-badge">@(Api.CurrentRole ?? "User")</span>
+            </div>
+        </div>
+    </section>
+
+    <section class="sp-card settings-section">
+        <div class="settings-section-title">System</div>
+        <p class="settings-note">Authentication and device trust requirements can be changed in Security Policies. Server URLs, database settings, and signing keys are configured by the backend environment.</p>
+        @if (Api.IsAdministrator)
+        {
+            <a class="settings-link" href="/policies">Open Security Policies →</a>
+        }
+    </section>
+
+    <section class="sp-card settings-section settings-signout-section">
+        <div class="settings-section-title">Session</div>
+        <p class="settings-note">Signing out will clear your local session token. You will be redirected to the sign-in page.</p>
+        <button class="settings-signout-btn" type="button" @onclick="SignOut">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16">
+                <path fill-rule="evenodd" d="M6 12.5a.5.5 0 0 0 .5.5h8a.5.5 0 0 0 .5-.5v-9a.5.5 0 0 0-.5-.5h-8a.5.5 0 0 0-.5.5v2a.5.5 0 0 1-1 0v-2A1.5 1.5 0 0 1 6.5 2h8A1.5 1.5 0 0 1 16 3.5v9a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 5 12.5v-2a.5.5 0 0 1 1 0v2z"/>
+                <path fill-rule="evenodd" d="M.146 8.354a.5.5 0 0 1 0-.708l3-3a.5.5 0 1 1 .708.708L1.707 7.5H10.5a.5.5 0 0 1 0 1H1.707l2.147 2.146a.5.5 0 0 1-.708.708l-3-3z"/>
+            </svg>
+            Sign Out
+        </button>
+    </section>
+
+</div>
+
+<style>
+    .settings-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr));gap:16px;align-items:start}
+    .settings-section{padding:20px 22px}
+    .settings-section-title{font-size:10px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#64748b;margin-bottom:16px}
+    .settings-profile-row{display:flex;align-items:center;gap:14px}
+    .settings-avatar{width:48px;height:48px;flex:0 0 auto;border-radius:50%;background:var(--sp-accent,#087f75);color:#fff;font-size:15px;font-weight:700;display:grid;place-items:center}
+    .settings-profile-info{display:flex;flex-direction:column;gap:4px;min-width:0}
+    .settings-profile-info strong{font-size:14px;color:#1e293b}
+    .settings-profile-info span{font-size:12px;color:#64748b}
+    .settings-role-badge{display:inline-block;padding:3px 8px;border-radius:10px;background:#e5f2ed;color:#087f75;font-size:10px;font-weight:700;width:fit-content}
+    .settings-note{font-size:12px;color:#64748b;line-height:1.65;margin:0 0 12px}
+    .settings-link{font-size:12px;color:#087f75;font-weight:650;text-decoration:none}
+    .settings-signout-section .settings-note{margin-bottom:14px}
+    .settings-signout-btn{display:inline-flex;align-items:center;gap:8px;padding:9px 14px;border:1px solid #fca5a5;border-radius:6px;background:#fef2f2;color:#dc2626;font-size:13px;font-weight:650;cursor:pointer}
+    .settings-signout-btn:hover{background:#fee2e2;border-color:#f87171}
+    .settings-signout-btn:focus-visible{outline:3px solid #fca5a5;outline-offset:2px}
+</style>
+
+@code {
+    private string AvatarInitials
+    {
+        get
+        {
+            var name = Api.CurrentUsername;
+            if (string.IsNullOrWhiteSpace(name))
+                return Api.IsAdministrator ? "AD" : "SP";
+            var parts = name.Split(new[] { ' ', '.', '_', '-', '@' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 2)
+                return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[1][0])}";
+            return name.Length >= 2 ? name[..2].ToUpperInvariant() : name.ToUpperInvariant();
+        }
+    }
+
+    private void SignOut()
+    {
+        Api.SignOut();
+        Navigation.NavigateTo("/login", forceLoad: true);
+    }
+}

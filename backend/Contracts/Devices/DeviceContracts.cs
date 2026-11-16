@@ -26,6 +26,18 @@ public sealed record DeviceRegistrationRequest
     public required string SigningPublicKey { get; init; }
 }
 
+/// <summary>Credentials plus device data used to submit a device while the user has not completed MFA.</summary>
+public sealed record PendingDeviceRegistrationRequest
+{
+    [Required, StringLength(320, MinimumLength = 1)] public required string Username { get; init; }
+    [Required, StringLength(1024, MinimumLength = 1)] public required string Password { get; init; }
+    [Required, StringLength(256, MinimumLength = 1)] public required string DeviceId { get; init; }
+    [Required, StringLength(200, MinimumLength = 1)] public required string DeviceName { get; init; }
+    [Required, StringLength(100, MinimumLength = 1)] public required string DeviceType { get; init; }
+    [Required, StringLength(100, MinimumLength = 1)] public required string OS { get; init; }
+    [Required, StringLength(128, MinimumLength = 88)] public required string SigningPublicKey { get; init; }
+}
+
 public sealed record DeviceSigningKeyRequest
 {
     [Required, StringLength(256, MinimumLength = 1)]
@@ -46,4 +58,6 @@ public sealed record DeviceResponse(
     DateTimeOffset? LastActiveDate,
     string Status,
     string TrustStatus,
-    Guid UserId);
+    Guid UserId,
+    bool HasSigningKey = false,
+    bool HasPendingSigningKey = false);

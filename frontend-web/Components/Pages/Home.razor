@@ -13,48 +13,84 @@
 <div class="sp-stat-grid">
     <div class="sp-stat-card"><span class="sp-stat-label">Total Users</span><span class="sp-stat-value">@FormatMetric(TotalUsers)</span><span class="sp-stat-change">Directory accounts</span></div>
     <div class="sp-stat-card"><span class="sp-stat-label">Trusted Devices</span><span class="sp-stat-value">@FormatMetric(TrustedDevices)</span><span class="sp-stat-change">Active and trusted</span></div>
+    <div class="sp-stat-card"><span class="sp-stat-label">Applications</span><span class="sp-stat-value">@FormatMetric(TotalApplications)</span><span class="sp-stat-change"><a href="/applications" style="color:inherit;text-decoration:none;">Registered apps →</a></span></div>
+    <div class="sp-stat-card"><span class="sp-stat-label">Pending Requests</span><span class="sp-stat-value" style="@(PendingAccessRequests > 0 ? "color:var(--sp-danger);" : "")">@FormatMetric(PendingAccessRequests)</span><span class="sp-stat-change"><a href="/access-requests" style="color:inherit;text-decoration:none;">Awaiting review →</a></span></div>
     <div class="sp-stat-card"><span class="sp-stat-label">MFA Events (24h)</span><span class="sp-stat-value">@FormatMetric(MfaEvents)</span><span class="sp-stat-change">Within latest 250 activity records</span></div>
     <div class="sp-stat-card"><span class="sp-stat-label">Denied Events</span><span class="sp-stat-value" style="color:var(--sp-danger)">@FormatMetric(DeniedEvents)</span><span class="sp-stat-change">Within latest 250 activity records</span></div>
 </div>
-<section class="sp-card home-events"><div class="home-heading"><h2>Recent Security Events</h2><a href="/activity-logs">View activity logs →</a></div>
+<section class="sp-card home-events">
+    <div class="home-heading">
+        <h2>Recent Security Events</h2>
+        <div class="home-heading-actions">
+            <div class="home-list-sort"><label for="home-event-sort">Sort</label><select id="home-event-sort" @bind="EventSort"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="user">User A–Z</option></select></div>
+            <a href="/activity-logs">View activity logs →</a>
+        </div>
+    </div>
     @if (Loading) { <p class="home-state" role="status">Loading dashboard…</p> }
     else if (!string.IsNullOrWhiteSpace(Error)) { <p class="home-state">Recent activity could not be loaded.</p> }
     else if (RecentEvents.Count == 0) { <p class="home-state">No activity has been recorded yet.</p> }
-    else { <div class="home-event-list">@foreach (var item in RecentEvents) { <div class="home-event"><span class="home-dot @(item.Status.Equals("Success", StringComparison.OrdinalIgnoreCase) ? "ok" : "bad")"></span><div><strong>@item.Action</strong><small>@item.Username · @item.Resource</small></div><time>@item.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</time></div> }</div> }
+    else { <div class="home-event-list">@foreach (var item in SortedRecentEvents) { <div class="home-event"><span class="home-dot @(item.Status.Equals("Success", StringComparison.OrdinalIgnoreCase) ? "ok" : "bad")"></span><div><strong>@item.Action</strong><small>@item.Username · @item.Resource</small></div><time>@item.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</time></div> }</div> }
 </section>
 }
 else
 {
     <div class="sp-stat-grid">
-        <div class="sp-stat-card"><span class="sp-stat-label">Assigned applications</span><span class="sp-stat-value">@FormatMetric(MyApplications.Count)</span><span class="sp-stat-change">Applications assigned to your account or groups</span></div>
+        <div class="sp-stat-card"><span class="sp-stat-label">Assigned applications</span><span class="sp-stat-value">@FormatMetric(MyApplications.Count)</span><span class="sp-stat-change">Active access granted</span></div>
+        <div class="sp-stat-card"><span class="sp-stat-label">Pending requests</span><span class="sp-stat-value">@FormatMetric(PendingRequests)</span><span class="sp-stat-change"><a href="/my-applications" style="color:inherit;text-decoration:none;">Track requests →</a></span></div>
     </div>
     <section class="sp-card home-events">
-        <div class="home-heading"><h2>Your Applications</h2><a href="/my-applications">View all →</a></div>
+        <div class="home-heading">
+            <h2>Your Applications</h2>
+            <div class="home-heading-actions">
+                <div class="home-list-sort"><label for="home-app-sort">Sort</label><select id="home-app-sort" @bind="ApplicationSort"><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option></select></div>
+                <a href="/my-applications">View all →</a>
+            </div>
+        </div>
         @if (Loading) { <p class="home-state" role="status">Loading your applications…</p> }
         else if (!string.IsNullOrWhiteSpace(Error)) { <p class="home-state">Your assigned applications could not be loaded.</p> }
         else if (MyApplications.Count == 0) { <p class="home-state">No applications are assigned to your account yet. Contact your administrator if you expected access.</p> }
         else
         {
             <div class="home-event-list">
-                @foreach (var application in MyApplications.Take(5))
+                @foreach (var application in SortedMyApplications.Take(5))
                 {
-                    <div class="home-event"><span class="home-dot ok"></span><div><strong>@application.Name</strong><small>@application.Description</small></div></div>
+                    <div class="home-event">
+                        <span class="home-dot ok"></span>
+                        <div><strong>@application.Name</strong><small>@application.Description</small></div>
+                        @if (!string.IsNullOrWhiteSpace(application.LaunchUrl))
+                        {
+                            <a class="home-launch" href="@application.LaunchUrl" target="_blank" rel="noopener noreferrer" aria-label="Launch @application.Name">Launch ↗</a>
+                        }
+                    </div>
                 }
             </div>
         }
     </section>
 }
 <style>
+    .home-list-sort{display:flex;justify-content:flex-end;align-items:center;gap:8px;color:#64748b;font-size:12px}.home-list-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:6px 8px;background:#fff;color:#334155;font:inherit;font-size:12px}
+    .home-heading-actions{display:flex;align-items:center;gap:12px}
     .home-page-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.home-refresh{padding:8px 12px;border:1px solid #cbd5dc;border-radius:5px;background:#fff;color:#334155;font-size:12px;font-weight:650;cursor:pointer}.home-refresh:hover:not(:disabled){border-color:#087f75;color:#087f75}.home-refresh:disabled{opacity:.6;cursor:wait}
     .home-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.home-events{overflow:hidden}.home-heading{display:flex;justify-content:space-between;align-items:center;padding:17px 20px;border-bottom:1px solid #edf0f2}.home-heading h2{font-size:15px;margin:0}.home-heading a{font-size:11px;color:#087f75;text-decoration:none;font-weight:650}.home-state{padding:20px;color:#64748b;font-size:13px}.home-event-list{padding:0 18px}.home-event{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid #edf0f2}.home-event:last-child{border-bottom:0}.home-dot{width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:#b5473c}.home-dot.ok{background:#099268}.home-event div{display:grid;gap:3px;flex:1;min-width:0}.home-event strong{font-size:12px;color:#26353c}.home-event small,.home-event time{font-size:10px;color:#64748b}.home-event time{white-space:nowrap}
-    @@media(max-width:520px){.home-page-header{align-items:flex-start}.home-refresh{flex:0 0 auto}}
+    .home-launch{flex:0 0 auto;padding:6px 10px;border-radius:4px;background:#087f75;color:#fff;text-decoration:none;font-size:11px;font-weight:700;white-space:nowrap}.home-launch:hover{background:#066d65}.home-launch:focus-visible{outline:3px solid #9de2d1;outline-offset:2px}
+    @@media(max-width:520px){.home-page-header{align-items:flex-start}.home-refresh{flex:0 0 auto}.home-heading{flex-direction:column;align-items:flex-start;gap:8px}.home-heading-actions{width:100%;justify-content:space-between}}
 </style>
 @code {
-    private int? TotalUsers, TrustedDevices, MfaEvents, DeniedEvents;
+    private int? TotalUsers, TrustedDevices, MfaEvents, DeniedEvents, TotalApplications, PendingAccessRequests, PendingRequests;
     private bool Loading = true;
     private string Error = "";
+    private string EventSort = "newest", ApplicationSort = "name-asc";
     private List<AdminActivity> RecentEvents = [];
     private List<AccessibleApplication> MyApplications = [];
+    private IEnumerable<AdminActivity> SortedRecentEvents => EventSort switch
+    {
+        "oldest" => RecentEvents.OrderBy(item => item.Timestamp),
+        "user" => RecentEvents.OrderBy(item => item.Username, StringComparer.OrdinalIgnoreCase).ThenByDescending(item => item.Timestamp),
+        _ => RecentEvents.OrderByDescending(item => item.Timestamp)
+    };
+    private IEnumerable<AccessibleApplication> SortedMyApplications => ApplicationSort == "name-desc"
+        ? MyApplications.OrderByDescending(application => application.Name, StringComparer.OrdinalIgnoreCase)
+        : MyApplications.OrderBy(application => application.Name, StringComparer.OrdinalIgnoreCase);
 
     protected override Task OnInitializedAsync() => LoadDashboardAsync();
 
@@ -65,28 +101,40 @@ else
     {
         Loading = true;
         Error = "";
-        TotalUsers = TrustedDevices = MfaEvents = DeniedEvents = null;
+        TotalUsers = TrustedDevices = MfaEvents = DeniedEvents = TotalApplications = PendingAccessRequests = PendingRequests = null;
         RecentEvents = [];
 
         try
         {
             if (!Api.IsAdministrator)
             {
-                MyApplications = await Api.GetMyApplicationsAsync();
+                var myAppsTask = Api.GetMyApplicationsAsync();
+                var myRequestsTask = Api.GetMyApplicationRequestsAsync();
+                await Task.WhenAll(myAppsTask, myRequestsTask);
+                MyApplications = await myAppsTask;
+                var requests = await myRequestsTask;
+                PendingRequests = requests.Count(r => r.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase));
                 return;
             }
 
             var usersTask = Api.GetUsersAsync();
             var devicesTask = Api.GetDevicesAsync();
             var activityTask = Api.GetAdminActivityAsync();
-            await Task.WhenAll(usersTask, devicesTask, activityTask);
+            var applicationsTask = Api.GetApplicationsAsync();
+            var accessRequestsTask = Api.GetAdminAccessRequestsAsync("Pending");
+            await Task.WhenAll(usersTask, devicesTask, activityTask, applicationsTask, accessRequestsTask);
 
             var users = await usersTask;
             var devices = await devicesTask;
             var activity = await activityTask;
+            var applications = await applicationsTask;
+            var accessRequests = await accessRequestsTask;
+
             var since = DateTimeOffset.UtcNow.AddHours(-24);
             TotalUsers = users.Count;
             TrustedDevices = devices.Count(device => device.Status == "ACTIVE" && device.TrustStatus == "TRUSTED");
+            TotalApplications = applications.Count;
+            PendingAccessRequests = accessRequests.Count;
             MfaEvents = activity.Count(item => item.Timestamp >= since && item.Action.Contains("MFA", StringComparison.OrdinalIgnoreCase));
             DeniedEvents = activity.Count(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase));
             RecentEvents = activity.Take(8).ToList();

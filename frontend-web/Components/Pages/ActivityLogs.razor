@@ -4,7 +4,7 @@
 
 <PageTitle>Activity Logs – Safe Passage</PageTitle>
 <div class="sp-page-header"><h1 class="sp-page-title">Activity Logs</h1><p class="sp-page-subtitle">Recent authentication and administrative events recorded by the system.</p></div>
-<div class="audit-toolbar"><input aria-label="Search activity" placeholder="Search user, action, or resource" @bind="Search" @bind:event="oninput" /><select aria-label="Filter by result" @bind="StatusFilter"><option value="">All results</option><option value="Success">Success</option><option value="Denied">Denied</option></select><button @onclick="LoadAsync" disabled="@Loading">Refresh</button></div>
+<div class="audit-toolbar"><input aria-label="Search activity" placeholder="Search user, action, or resource" @bind="Search" @bind:event="oninput" /><select aria-label="Filter by result" @bind="StatusFilter"><option value="">All results</option><option value="Success">Success</option><option value="Denied">Denied</option></select><label class="audit-sort">Sort by <select aria-label="Sort activity" @bind="SortOrder"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="user">User A–Z</option><option value="event">Event A–Z</option></select></label><button @onclick="LoadAsync" disabled="@Loading">Refresh</button></div>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="audit-error" role="alert">@Error</div> }
 <section class="sp-card audit-card">
     @if (Loading) { <p class="audit-state" role="status">Loading activity…</p> }
@@ -21,16 +21,29 @@
     }
 </section>
 <style>
-    .audit-toolbar{display:flex;gap:8px;margin-bottom:14px}.audit-toolbar input{flex:1;min-width:140px}.audit-toolbar input,.audit-toolbar select{border:1px solid #cbd5dc;border-radius:5px;padding:9px 11px;background:#fff;font:inherit;font-size:12px}.audit-toolbar button{border:0;border-radius:5px;padding:9px 14px;background:#087f75;color:#fff;font-size:12px;font-weight:650}.audit-toolbar button:disabled{opacity:.6}.audit-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.audit-card{overflow:hidden}.audit-scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:700px}th{text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px;padding:12px 15px}td{padding:12px 15px;border-top:1px solid #edf0f2;font-size:12px}td:first-child{white-space:nowrap;color:#64748b}.audit-status{display:inline-block;border-radius:12px;padding:4px 8px;font-size:10px;font-weight:700}.audit-status.success{background:#edf7f2;color:#087f5b}.audit-status.denied{background:#fcecea;color:#a53e34}.audit-state,.audit-foot{padding:20px;color:#64748b;font-size:12px}.audit-foot{border-top:1px solid #edf0f2;margin:0;text-align:right}
+    .audit-toolbar{display:flex;gap:8px;margin-bottom:14px;align-items:center}.audit-toolbar input{flex:1;min-width:140px}.audit-toolbar input,.audit-toolbar select{border:1px solid #cbd5dc;border-radius:5px;padding:9px 11px;background:#fff;font:inherit;font-size:12px}.audit-sort{display:flex;align-items:center;gap:6px;color:#64748b;font-size:11px;white-space:nowrap}.audit-toolbar button{border:0;border-radius:5px;padding:9px 14px;background:#087f75;color:#fff;font-size:12px;font-weight:650}.audit-toolbar button:disabled{opacity:.6}.audit-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.audit-card{overflow:hidden}.audit-scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:700px}th{text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px;padding:12px 15px}td{padding:12px 15px;border-top:1px solid #edf0f2;font-size:12px}td:first-child{white-space:nowrap;color:#64748b}.audit-status{display:inline-block;border-radius:12px;padding:4px 8px;font-size:10px;font-weight:700}.audit-status.success{background:#edf7f2;color:#087f5b}.audit-status.denied{background:#fcecea;color:#a53e34}.audit-state,.audit-foot{padding:20px;color:#64748b;font-size:12px}.audit-foot{border-top:1px solid #edf0f2;margin:0;text-align:right}
     @@media(max-width:560px){.audit-toolbar{flex-wrap:wrap}.audit-toolbar input{flex-basis:100%}.audit-toolbar select{flex:1}}
 </style>
 @code {
     private List<AdminActivity> Rows = [];
-    private string Search = "", StatusFilter = "", Error = "";
+    private string Search = "", StatusFilter = "", Error = "", SortOrder = "newest";
     private bool Loading = true;
-    private List<AdminActivity> FilteredRows => Rows.Where(row =>
+    private List<AdminActivity> FilteredRows
+    {
+        get
+        {
+            var filtered = Rows.Where(row =>
         (string.IsNullOrWhiteSpace(StatusFilter) || row.Status.Equals(StatusFilter, StringComparison.OrdinalIgnoreCase))
-        && (string.IsNullOrWhiteSpace(Search) || $"{row.Username} {row.Action} {row.Resource}".Contains(Search, StringComparison.OrdinalIgnoreCase))).ToList();
+        && (string.IsNullOrWhiteSpace(Search) || $"{row.Username} {row.Action} {row.Resource}".Contains(Search, StringComparison.OrdinalIgnoreCase)));
+            return (SortOrder switch
+            {
+                "oldest" => filtered.OrderBy(row => row.Timestamp),
+                "user" => filtered.OrderBy(row => row.Username, StringComparer.OrdinalIgnoreCase).ThenByDescending(row => row.Timestamp),
+                "event" => filtered.OrderBy(row => row.Action, StringComparer.OrdinalIgnoreCase).ThenByDescending(row => row.Timestamp),
+                _ => filtered.OrderByDescending(row => row.Timestamp)
+            }).ToList();
+        }
+    }
     protected override async Task OnInitializedAsync() => await LoadAsync();
     private async Task LoadAsync() { Loading = true; Error = ""; try { Rows = await Api.GetAdminActivityAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
 }

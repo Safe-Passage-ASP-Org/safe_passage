@@ -1,5 +1,5 @@
 import * as Crypto from 'expo-crypto';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from './DeviceStorage';
 import { p256 } from '@noble/curves/p256';
 
 const PRIVATE_KEY_STORAGE_KEY = 'mfa_p256_private_key';

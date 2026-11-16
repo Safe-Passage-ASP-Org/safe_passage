@@ -1,13 +1,19 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
+using Microsoft.AspNetCore.Authentication.OAuth;
+using Microsoft.AspNetCore.Authentication.OAuth.Claims;
+using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddict.Abstractions;
 using OpenIddict.Server.AspNetCore;
+using OpenIddict.Validation.AspNetCore;
 using SafePassage.Api.Data;
 using SafePassage.Api.Hubs;
 using SafePassage.Api.Middleware;
@@ -55,6 +61,7 @@ builder.Services.AddScoped<ISecurityPolicyEvaluator, SecurityPolicyEvaluator>();
 builder.Services.AddScoped<IApplicationAccessVerificationService, ApplicationAccessVerificationService>();
 builder.Services.AddScoped<INotificationService, MockNotificationService>();
 builder.Services.AddScoped<IDeviceManagementService, DeviceManagementService>();
+builder.Services.AddScoped<PendingDeviceRegistrationService>();
 builder.Services.AddScoped<IActivationEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<IAccountActivationService, AccountActivationService>();
 builder.Services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
@@ -73,23 +80,41 @@ builder.Services.AddOpenIddict()
         options.SetIssuer(new Uri(oidcIssuer))
             .SetAuthorizationEndpointUris("/connect/authorize")
             .SetTokenEndpointUris("/connect/token")
-            .SetUserInfoEndpointUris("/connect/userinfo")
             .AllowAuthorizationCodeFlow()
             .RequireProofKeyForCodeExchange()
             .RegisterScopes(
                 OpenIddictConstants.Scopes.Email,
                 OpenIddictConstants.Scopes.Profile,
                 OpenIddictConstants.Scopes.Roles)
-            .AddDevelopmentEncryptionCertificate()
-            .AddDevelopmentSigningCertificate()
+            .SetUserInfoEndpointUris("/connect/userinfo")
             .UseAspNetCore(aspNetCoreOptions =>
             {
                 aspNetCoreOptions.EnableAuthorizationEndpointPassthrough();
-                aspNetCoreOptions.EnableTokenEndpointPassthrough();
                 aspNetCoreOptions.EnableUserInfoEndpointPassthrough();
+                aspNetCoreOptions.EnableStatusCodePagesIntegration();
                 if (builder.Environment.IsDevelopment())
                     aspNetCoreOptions.DisableTransportSecurityRequirement();
             });
+        if (builder.Environment.IsDevelopment())
+        {
+            options.AddDevelopmentEncryptionCertificate()
+                .AddDevelopmentSigningCertificate();
+        }
+        else
+        {
+            var signingPath = builder.Configuration["OpenIddict:SigningCertificatePath"];
+            var signingPassword = builder.Configuration["OpenIddict:SigningCertificatePassword"];
+            var encryptionPath = builder.Configuration["OpenIddict:EncryptionCertificatePath"];
+            var encryptionPassword = builder.Configuration["OpenIddict:EncryptionCertificatePassword"];
+            if (string.IsNullOrWhiteSpace(signingPath) || string.IsNullOrWhiteSpace(encryptionPath))
+                throw new InvalidOperationException("Configure OpenIddict signing and encryption PFX certificates for production.");
+            var signingCertificate = X509CertificateLoader.LoadPkcs12FromFile(signingPath, signingPassword);
+            var encryptionCertificate = X509CertificateLoader.LoadPkcs12FromFile(encryptionPath, encryptionPassword);
+            if (!signingCertificate.HasPrivateKey || !encryptionCertificate.HasPrivateKey)
+                throw new InvalidOperationException("OpenIddict certificates must include their private keys.");
+            options.AddSigningCertificate(signingCertificate)
+                .AddEncryptionCertificate(encryptionCertificate);
+        }
     });
 
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
@@ -156,7 +181,256 @@ builder.Services.AddAuthentication(options =>
             : CookieSecurePolicy.Always;
         options.SlidingExpiration = false;
         options.ExpireTimeSpan = TimeSpan.FromMinutes(10);
+    })
+    .AddCookie("facebook-external", options =>
+    {
+        options.Cookie.Name = "SafePassage.Facebook.External";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+        options.SlidingExpiration = false;
+    })
+    .AddCookie("github-external", options =>
+    {
+        options.Cookie.Name = "SafePassage.GitHub.External";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+        options.SlidingExpiration = false;
+    })
+    .AddCookie("gitlab-external", options =>
+    {
+        options.Cookie.Name = "SafePassage.GitLab.External";
+        options.Cookie.HttpOnly = true;
+        options.Cookie.SameSite = SameSiteMode.Lax;
+        options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+        options.ExpireTimeSpan = TimeSpan.FromMinutes(5);
+        options.SlidingExpiration = false;
     });
+
+// Only register each OAuth provider when both ClientId and ClientSecret are configured.
+// Registering with an empty ClientId causes ArgumentException on startup.
+var facebookAppId = builder.Configuration["Facebook:AppId"];
+var facebookAppSecret = builder.Configuration["Facebook:AppSecret"];
+if (!string.IsNullOrWhiteSpace(facebookAppId) && !string.IsNullOrWhiteSpace(facebookAppSecret))
+{
+    builder.Services.AddAuthentication().AddOAuth("Facebook", options =>
+    {
+        var graphVersion = builder.Configuration["Facebook:GraphApiVersion"] ?? "v21.0";
+        options.ClientId = facebookAppId;
+        options.ClientSecret = facebookAppSecret;
+        options.SignInScheme = "facebook-external";
+        options.CallbackPath = "/signin-facebook";
+        options.CorrelationCookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+        // Facebook returns to this callback as a top-level GET. Lax works for that flow,
+        // including local HTTP where browsers reject SameSite=None cookies without Secure.
+        options.CorrelationCookie.SameSite = SameSiteMode.Lax;
+        options.AuthorizationEndpoint = $"https://www.facebook.com/{graphVersion}/dialog/oauth?auth_type=rerequest";
+        options.TokenEndpoint = $"https://graph.facebook.com/{graphVersion}/oauth/access_token";
+        options.UserInformationEndpoint = $"https://graph.facebook.com/{graphVersion}/me?fields=id,name,email";
+        options.SaveTokens = false;
+        options.Scope.Add("public_profile");
+        options.Scope.Add("email");
+        options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
+        options.ClaimActions.MapJsonKey(ClaimTypes.Name, "name");
+        options.ClaimActions.MapJsonKey(ClaimTypes.Email, "email");
+        options.Events.OnCreatingTicket = async context =>
+        {
+            var endpoint = $"{context.Options.UserInformationEndpoint}&access_token={Uri.EscapeDataString(context.AccessToken ?? string.Empty)}";
+            using var request = new HttpRequestMessage(HttpMethod.Get, endpoint);
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", context.AccessToken);
+            request.Headers.UserAgent.ParseAdd("SafePassage");
+            using var response = await context.Backchannel.SendAsync(request, context.HttpContext.RequestAborted);
+            response.EnsureSuccessStatusCode();
+            var rawJson = await response.Content.ReadAsStringAsync(context.HttpContext.RequestAborted);
+            Console.WriteLine($"[Facebook OAuth] Response from /me: {rawJson}");
+            using var payload = System.Text.Json.JsonDocument.Parse(rawJson);
+            context.RunClaimActions(payload.RootElement);
+
+            if (payload.RootElement.TryGetProperty("email", out var emailProp) && !string.IsNullOrWhiteSpace(emailProp.GetString()))
+            {
+                var emailVal = emailProp.GetString()!;
+                if (!context.Identity!.HasClaim(c => c.Type == ClaimTypes.Email))
+                {
+                    context.Identity.AddClaim(new Claim(ClaimTypes.Email, emailVal));
+                }
+            }
+        };
+        options.Events.OnRemoteFailure = context =>
+        {
+            context.HandleResponse();
+            context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("FacebookLogin")
+                .LogWarning(context.Failure, "Facebook OAuth callback failed.");
+            var frontend = builder.Configuration["Facebook:FrontendUrl"] ?? "http://localhost:5092";
+            var wasCancelled = string.Equals(context.Request.Query["error"], "access_denied", StringComparison.OrdinalIgnoreCase);
+            var path = "/login?facebookError=" + (wasCancelled ? "cancelled" : "provider_error");
+            if (context.Properties?.Items.TryGetValue("SafePassage:OidcReturnUrl", out var returnUrl) == true
+                && !string.IsNullOrWhiteSpace(returnUrl))
+                path += "&returnUrl=" + Uri.EscapeDataString(returnUrl);
+            context.Response.Redirect(new Uri(new Uri(frontend), path).ToString());
+            return Task.CompletedTask;
+        };
+    });
+}
+
+var githubClientId = builder.Configuration["GitHub:ClientId"];
+var githubClientSecret = builder.Configuration["GitHub:ClientSecret"];
+if (!string.IsNullOrWhiteSpace(githubClientId) && !string.IsNullOrWhiteSpace(githubClientSecret))
+{
+    builder.Services.AddAuthentication().AddOAuth("GitHub", options =>
+    {
+        options.ClientId = githubClientId;
+        options.ClientSecret = githubClientSecret;
+        options.SignInScheme = "github-external";
+        options.CallbackPath = "/signin-github";
+        options.CorrelationCookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+        options.CorrelationCookie.SameSite = SameSiteMode.Lax;
+        options.AuthorizationEndpoint = "https://github.com/login/oauth/authorize";
+        options.TokenEndpoint = "https://github.com/login/oauth/access_token";
+        options.UserInformationEndpoint = "https://api.github.com/user";
+        options.SaveTokens = false;
+        options.Scope.Add("read:user");
+        options.Scope.Add("user:email");
+        options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
+        options.ClaimActions.MapJsonKey(ClaimTypes.Name, "name");
+        options.Events.OnCreatingTicket = async context =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", context.AccessToken);
+            request.Headers.Accept.ParseAdd("application/vnd.github+json");
+            request.Headers.UserAgent.ParseAdd("SafePassage");
+            using var response = await context.Backchannel.SendAsync(request, context.HttpContext.RequestAborted);
+            response.EnsureSuccessStatusCode();
+            using var payload = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(context.HttpContext.RequestAborted));
+            context.RunClaimActions(payload.RootElement);
+
+            using var emailRequest = new HttpRequestMessage(HttpMethod.Get, "https://api.github.com/user/emails");
+            emailRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", context.AccessToken);
+            emailRequest.Headers.Accept.ParseAdd("application/vnd.github+json");
+            emailRequest.Headers.UserAgent.ParseAdd("SafePassage");
+            using var emailResponse = await context.Backchannel.SendAsync(emailRequest, context.HttpContext.RequestAborted);
+            emailResponse.EnsureSuccessStatusCode();
+            using var emailPayload = System.Text.Json.JsonDocument.Parse(await emailResponse.Content.ReadAsStringAsync(context.HttpContext.RequestAborted));
+            var verifiedPrimaryEmail = emailPayload.RootElement.EnumerateArray()
+                .Where(item => item.TryGetProperty("primary", out var primary) && primary.GetBoolean()
+                    && item.TryGetProperty("verified", out var verified) && verified.GetBoolean())
+                .Select(item => item.TryGetProperty("email", out var value) ? value.GetString() : null)
+                .FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+            if (string.IsNullOrWhiteSpace(verifiedPrimaryEmail))
+                throw new InvalidOperationException("GitHub did not return a verified primary email address.");
+            context.Identity!.AddClaim(new Claim(ClaimTypes.Email, verifiedPrimaryEmail));
+        };
+        options.Events.OnRemoteFailure = context =>
+        {
+            context.HandleResponse();
+            context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("GitHubLogin")
+                .LogWarning(context.Failure, "GitHub OAuth callback failed.");
+            var frontend = builder.Configuration["GitHub:FrontendUrl"]
+                ?? builder.Configuration["Facebook:FrontendUrl"] ?? "http://localhost:5092";
+            var wasCancelled = string.Equals(context.Request.Query["error"], "access_denied", StringComparison.OrdinalIgnoreCase);
+            var missingVerifiedEmail = context.Failure?.Message.Contains("verified primary email", StringComparison.OrdinalIgnoreCase) == true;
+            var errorCode = wasCancelled ? "cancelled" : missingVerifiedEmail ? "email_required" : "provider_error";
+            var path = "/login?githubError=" + errorCode;
+            if (context.Properties?.Items.TryGetValue("SafePassage:OidcReturnUrl", out var returnUrl) == true
+                && !string.IsNullOrWhiteSpace(returnUrl))
+                path += "&returnUrl=" + Uri.EscapeDataString(returnUrl);
+            context.Response.Redirect(new Uri(new Uri(frontend), path).ToString());
+            return Task.CompletedTask;
+        };
+    });
+}
+
+var gitlabClientId = builder.Configuration["GitLab:ClientId"];
+var gitlabClientSecret = builder.Configuration["GitLab:ClientSecret"];
+if (!string.IsNullOrWhiteSpace(gitlabClientId) && !string.IsNullOrWhiteSpace(gitlabClientSecret))
+{
+    builder.Services.AddAuthentication().AddOAuth("GitLab", options =>
+    {
+        var gitLabInstance = builder.Configuration["GitLab:InstanceUrl"]?.TrimEnd('/') ?? "https://gitlab.com";
+        options.ClientId = gitlabClientId;
+        options.ClientSecret = gitlabClientSecret;
+        options.SignInScheme = "gitlab-external";
+        options.CallbackPath = "/signin-gitlab";
+        options.CorrelationCookie.SecurePolicy = builder.Environment.IsDevelopment()
+            ? CookieSecurePolicy.SameAsRequest : CookieSecurePolicy.Always;
+        options.CorrelationCookie.SameSite = SameSiteMode.Lax;
+        options.AuthorizationEndpoint = $"{gitLabInstance}/oauth/authorize";
+        options.TokenEndpoint = $"{gitLabInstance}/oauth/token";
+        options.UserInformationEndpoint = $"{gitLabInstance}/api/v4/user";
+        options.SaveTokens = false;
+        options.Scope.Add("read_user");
+        options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
+        options.ClaimActions.MapJsonKey(ClaimTypes.Name, "name");
+        options.ClaimActions.MapJsonKey(ClaimTypes.Email, "email");
+        options.Events.OnCreatingTicket = async context =>
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", context.AccessToken);
+            request.Headers.Accept.ParseAdd("application/json");
+            request.Headers.UserAgent.ParseAdd("SafePassage");
+            using var response = await context.Backchannel.SendAsync(request, context.HttpContext.RequestAborted);
+            response.EnsureSuccessStatusCode();
+            using var payload = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(context.HttpContext.RequestAborted));
+            context.RunClaimActions(payload.RootElement);
+
+            if (!payload.RootElement.TryGetProperty("email", out var emailProp) || string.IsNullOrWhiteSpace(emailProp.GetString()))
+            {
+                // Try fetching from /api/v4/user/emails if primary email isn't directly exposed
+                using var emailRequest = new HttpRequestMessage(HttpMethod.Get, $"{gitLabInstance}/api/v4/user/emails");
+                emailRequest.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", context.AccessToken);
+                emailRequest.Headers.Accept.ParseAdd("application/json");
+                emailRequest.Headers.UserAgent.ParseAdd("SafePassage");
+                using var emailResponse = await context.Backchannel.SendAsync(emailRequest, context.HttpContext.RequestAborted);
+                if (emailResponse.IsSuccessStatusCode)
+                {
+                    using var emailPayload = System.Text.Json.JsonDocument.Parse(await emailResponse.Content.ReadAsStringAsync(context.HttpContext.RequestAborted));
+                    var firstEmail = emailPayload.RootElement.EnumerateArray()
+                        .Select(item => item.TryGetProperty("email", out var val) ? val.GetString() : null)
+                        .FirstOrDefault(val => !string.IsNullOrWhiteSpace(val));
+                    if (!string.IsNullOrWhiteSpace(firstEmail))
+                    {
+                        context.Identity!.AddClaim(new Claim(ClaimTypes.Email, firstEmail));
+                    }
+                }
+            }
+        };
+        options.Events.OnRemoteFailure = context =>
+        {
+            context.HandleResponse();
+            context.HttpContext.RequestServices.GetRequiredService<ILoggerFactory>()
+                .CreateLogger("GitLabLogin")
+                .LogWarning(context.Failure, "GitLab OAuth callback failed.");
+            var frontend = builder.Configuration["GitLab:FrontendUrl"]
+                ?? builder.Configuration["GitHub:FrontendUrl"]
+                ?? builder.Configuration["Facebook:FrontendUrl"] ?? "http://localhost:5092";
+            var wasCancelled = string.Equals(context.Request.Query["error"], "access_denied", StringComparison.OrdinalIgnoreCase);
+            var missingEmail = context.Failure?.Message.Contains("email", StringComparison.OrdinalIgnoreCase) == true;
+            var errorCode = wasCancelled ? "cancelled" : missingEmail ? "email_required" : "provider_error";
+            var path = "/login?gitlabError=" + errorCode;
+            if (context.Properties?.Items.TryGetValue("SafePassage:OidcReturnUrl", out var returnUrl) == true
+                && !string.IsNullOrWhiteSpace(returnUrl))
+                path += "&returnUrl=" + Uri.EscapeDataString(returnUrl);
+            context.Response.Redirect(new Uri(new Uri(frontend), path).ToString());
+            return Task.CompletedTask;
+        };
+    });
+}
+
+// UserInfo and authorization accept the OpenIddict access token scheme alongside the app's JWT scheme.
+builder.Services.AddOpenIddict().AddValidation(options =>
+{
+    options.UseLocalServer();
+    options.UseAspNetCore();
+});
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
@@ -193,7 +467,8 @@ using (var scope = app.Services.CreateScope())
     }
 }
 
-// 4. Enable CORS Middleware (Must be before Authentication/Authorization)
+// 4. Enable WebSockets + CORS Middleware (WebSockets must be before CORS/Auth for SignalR negotiate)
+app.UseWebSockets();
 app.UseCors("KnownOrigins");
 
 app.UseAuthentication();
@@ -201,7 +476,9 @@ app.UseMiddleware<SecurityMiddleware>();
 app.UseAuthorization();
 
 // 5. Map real-time MFA notifications and controller routes
-app.MapHub<MfaHub>("/mfaHub");
+app.MapHub<MfaHub>("/mfaHub").RequireAuthorization(policy =>
+    policy.AddAuthenticationSchemes(JwtBearerDefaults.AuthenticationScheme)
+          .RequireAuthenticatedUser());
 app.MapControllers();
 
 // 6. Test Endpoint (to quickly check if API is running)

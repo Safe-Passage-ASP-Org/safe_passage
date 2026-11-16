@@ -1,26 +1,50 @@
 @page "/alerts"
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
+@inject SecurityAlertCountService AlertCount
 
 <PageTitle>Security Alerts – Safe Passage</PageTitle>
 <div class="sp-page-header"><h1 class="sp-page-title">Security Alerts</h1><p class="sp-page-subtitle">Review denied sign-ins and newly registered devices that need administrator attention.</p></div>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="alerts-error" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Notice)) { <div class="alerts-notice" role="status">@Notice</div> }
+<div class="alerts-toolbar">
+    <label class="alerts-search" for="alert-search">
+        <span aria-hidden="true">⌕</span>
+        <input id="alert-search" type="search" @bind="SearchTerm" @bind:event="oninput" placeholder="Search alerts by user, device, or event…" autocomplete="off" />
+    </label>
+    <label class="alerts-sort" for="alert-sort">Sort by
+        <select id="alert-sort" @bind="SortOrder">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="subject-asc">User or device A–Z</option>
+            <option value="subject-desc">User or device Z–A</option>
+        </select>
+    </label>
+    @if (!Loading)
+    {
+        <span class="alerts-result-count">@VisibleAlertCount @(VisibleAlertCount == 1 ? "alert" : "alerts")</span>
+    }
+</div>
 @if (Loading) { <div class="sp-card alerts-state" role="status">Loading security events…</div> }
 else if (PendingDevices.Count == 0 && DeniedEvents.Count == 0) { <div class="sp-card alerts-state">No pending device approvals or denied events were found.</div> }
+else if (FilteredAlerts.Count == 0) { <div class="sp-card alerts-state">No alerts match “@SearchTerm”. Try another search.</div> }
 else
 {
-    @foreach (var device in PendingDevices)
+    @foreach (var alert in FilteredAlerts)
     {
-        <article class="sp-card alert-card pending"><div class="alert-icon">⌁</div><div class="alert-copy"><div class="alert-title">New device awaiting trust <span>Review</span></div><p><strong>@device.DeviceName</strong> (@device.OS) requested enrollment for @(UserNames.GetValueOrDefault(device.UserId) ?? "unknown user").</p><small>Registered @device.RegistrationDate.ToLocalTime().ToString("g")</small></div><div class="alert-actions"><button @onclick="() => TrustAsync(device)" disabled="@Busy">Trust device</button><button class="deny" @onclick="() => RevokeAsync(device)" disabled="@Busy">Reject</button></div></article>
-    }
-    @foreach (var activity in DeniedEvents)
-    {
-        <article class="sp-card alert-card denied"><div class="alert-icon">!</div><div class="alert-copy"><div class="alert-title">Denied security event <span>Denied</span></div><p><strong>@activity.Username</strong> — @activity.Action: @activity.Resource</p><small>@activity.Timestamp.ToLocalTime().ToString("g")</small></div></article>
+        @if (alert.Device is { } device)
+        {
+            <article class="sp-card alert-card pending"><div class="alert-icon">⌁</div><div class="alert-copy"><div class="alert-title">@(device.HasPendingSigningKey ? "Signing key recovery awaiting approval" : "New device awaiting trust") <span>Review</span></div><p><strong>@device.DeviceName</strong> (@device.OS) requested @(device.HasPendingSigningKey ? "a replacement signing key for" : "enrollment for") @(UserNames.GetValueOrDefault(device.UserId) ?? "unknown user").</p><small>Registered @device.RegistrationDate.ToLocalTime().ToString("g")</small></div><div class="alert-actions"><button @onclick="() => TrustAsync(device)" disabled="@Busy">@(device.HasPendingSigningKey ? "Approve key" : "Trust device")</button><button class="deny" @onclick="() => RevokeAsync(device)" disabled="@Busy">Reject</button></div></article>
+        }
+        else if (alert.Activity is { } activity)
+        {
+            <article class="sp-card alert-card denied"><div class="alert-icon">!</div><div class="alert-copy"><div class="alert-title">Denied security event <span>Denied</span></div><p><strong>@activity.Username</strong> — @activity.Action: @activity.Resource</p><small>@activity.Timestamp.ToLocalTime().ToString("g")</small></div></article>
+        }
     }
 }
 <style>
-    .alerts-error,.alerts-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.alerts-error{background:#fcecea;color:#9d332b}.alerts-notice{background:#edf7f2;color:#087f5b}.alerts-state{padding:24px;color:#64748b;font-size:13px}.alert-card{display:flex;align-items:flex-start;gap:14px;padding:17px;margin-bottom:12px;border-left:3px solid #d49421}.alert-card.denied{border-left-color:#b5473c}.alert-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 auto;border-radius:50%;background:#fff5df;color:#936115;font-weight:800}.denied .alert-icon{background:#fcecea;color:#a53e34}.alert-copy{flex:1;min-width:0}.alert-title{font-size:13px;font-weight:700;color:#26353c}.alert-title span{margin-left:7px;padding:3px 7px;border-radius:12px;background:#fff5df;color:#936115;font-size:9px;text-transform:uppercase}.denied .alert-title span{background:#fcecea;color:#a53e34}.alert-copy p{margin:7px 0;color:#52616b;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.alert-copy small{color:#64748b;font-size:10px}.alert-actions{display:flex;gap:8px}.alert-actions button{border:0;border-radius:4px;padding:7px 10px;background:#087f75;color:white;font-size:11px;font-weight:650;white-space:nowrap}.alert-actions button.deny{background:#fcecea;color:#a53e34}.alert-actions button:disabled{opacity:.6}
+    .alerts-error,.alerts-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.alerts-error{background:#fcecea;color:#9d332b}.alerts-notice{background:#edf7f2;color:#087f5b}.alerts-state{padding:24px;color:#64748b;font-size:13px}.alerts-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px}.alerts-search{display:flex;align-items:center;gap:10px;flex:1;width:min(100%,520px);min-height:42px;padding:0 12px;border:1px solid #d7e0e4;border-radius:6px;background:#fff;color:#718087}.alerts-search:focus-within{border-color:#087f75;box-shadow:0 0 0 3px #087f751a}.alerts-search span{font-size:22px;line-height:1}.alerts-search input{width:100%;border:0;outline:0;background:transparent;color:#26353c;font:inherit;font-size:13px}.alerts-search input::placeholder{color:#89969c}.alerts-sort{display:flex;align-items:center;gap:8px;color:#64748b;font-size:12px;white-space:nowrap}.alerts-sort select{border:1px solid #d7e0e4;border-radius:5px;padding:9px;background:#fff;color:#26353c;font:inherit;font-size:12px}.alerts-result-count{color:#64748b;font-size:12px;white-space:nowrap}.alert-card{display:flex;align-items:flex-start;gap:14px;padding:17px;margin-bottom:12px;border-left:3px solid #d49421}.alert-card.denied{border-left-color:#b5473c}.alert-icon{display:grid;place-items:center;width:30px;height:30px;flex:0 0 auto;border-radius:50%;background:#fff5df;color:#936115;font-weight:800}.denied .alert-icon{background:#fcecea;color:#a53e34}.alert-copy{flex:1;min-width:0}.alert-title{font-size:13px;font-weight:700;color:#26353c}.alert-title span{margin-left:7px;padding:3px 7px;border-radius:12px;background:#fff5df;color:#936115;font-size:9px;text-transform:uppercase}.denied .alert-title span{background:#fcecea;color:#a53e34}.alert-copy p{margin:7px 0;color:#52616b;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.alert-copy small{color:#64748b;font-size:10px}.alert-actions{display:flex;gap:8px}.alert-actions button{border:0;border-radius:4px;padding:7px 10px;background:#087f75;color:white;font-size:11px;font-weight:650;white-space:nowrap}.alert-actions button.deny{background:#fcecea;color:#a53e34}.alert-actions button:disabled{opacity:.6}
+    @@media(max-width:800px){.alerts-toolbar{flex-wrap:wrap}.alerts-search{flex-basis:100%}}
     @@media(max-width:640px){.alert-card{flex-wrap:wrap}.alert-actions{width:100%;margin-left:44px}}
 </style>
 @code {
@@ -28,10 +52,29 @@ else
     private List<AdminActivity> DeniedEvents = [];
     private Dictionary<Guid, string> UserNames = [];
     private bool Loading = true, Busy;
-    private string Error = "", Notice = "";
+    private string Error = "", Notice = "", SearchTerm = "", SortOrder = "newest";
+    private List<AdminDevice> FilteredPendingDevices => string.IsNullOrWhiteSpace(SearchTerm) ? PendingDevices : PendingDevices.Where(device => string.Join(" ", device.DeviceName, device.OS, UserNames.GetValueOrDefault(device.UserId), device.Status, device.RegistrationDate.ToString("g")).Contains(SearchTerm.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+    private List<AdminActivity> FilteredDeniedEvents => string.IsNullOrWhiteSpace(SearchTerm) ? DeniedEvents : DeniedEvents.Where(activity => string.Join(" ", activity.Username, activity.Action, activity.Resource, activity.Status, activity.Timestamp.ToString("g")).Contains(SearchTerm.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+    private List<AlertItem> FilteredAlerts
+    {
+        get
+        {
+            var alerts = FilteredPendingDevices.Select(device => new AlertItem(device, null, device.DeviceName, device.RegistrationDate))
+                .Concat(FilteredDeniedEvents.Select(activity => new AlertItem(null, activity, activity.Username, activity.Timestamp)));
+            return (SortOrder switch
+            {
+                "oldest" => alerts.OrderBy(alert => alert.Timestamp),
+                "subject-asc" => alerts.OrderBy(alert => alert.Subject, StringComparer.OrdinalIgnoreCase).ThenByDescending(alert => alert.Timestamp),
+                "subject-desc" => alerts.OrderByDescending(alert => alert.Subject, StringComparer.OrdinalIgnoreCase).ThenByDescending(alert => alert.Timestamp),
+                _ => alerts.OrderByDescending(alert => alert.Timestamp)
+            }).ToList();
+        }
+    }
+    private int VisibleAlertCount => FilteredAlerts.Count;
+    private sealed record AlertItem(AdminDevice? Device, AdminActivity? Activity, string Subject, DateTimeOffset Timestamp);
     protected override async Task OnInitializedAsync() => await LoadAsync();
-    private async Task LoadAsync() { Loading = true; Error = ""; try { var devices = await Api.GetDevicesAsync(); var activity = await Api.GetAdminActivityAsync(); var users = await Api.GetUsersAsync(); UserNames = users.ToDictionary(user => user.Id, user => user.Username); PendingDevices = devices.Where(device => device.Status == "PENDING_APPROVAL").ToList(); DeniedEvents = activity.Where(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase)).Take(30).ToList(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
-    private async Task TrustAsync(AdminDevice device) => await RunActionAsync(() => Api.SetDeviceTrustedAsync(device.Id), "Device trusted.");
+    private async Task LoadAsync() { Loading = true; Error = ""; try { var devices = await Api.GetDevicesAsync(); var activity = await Api.GetAdminActivityAsync(); var users = await Api.GetUsersAsync(); UserNames = users.ToDictionary(user => user.Id, user => user.Username); PendingDevices = devices.Where(device => device.Status == "PENDING_APPROVAL").ToList(); DeniedEvents = activity.Where(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase)).Take(30).ToList(); AlertCount.SetCount(PendingDevices.Count); } catch (Exception ex) { Error = ex.Message; AlertCount.SetCount(null); } finally { Loading = false; } }
+    private async Task TrustAsync(AdminDevice device) => await RunActionAsync(() => Api.SetDeviceTrustedAsync(device.Id), device.HasPendingSigningKey ? "Replacement signing key approved; device trusted." : "Device trusted.");
     private async Task RevokeAsync(AdminDevice device) => await RunActionAsync(() => Api.RevokeDeviceAsync(device.Id), "Device rejected and disabled.");
     private async Task RunActionAsync(Func<Task> action, string success) { Busy = true; Error = ""; try { await action(); Notice = success; await LoadAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Busy = false; } }
 }

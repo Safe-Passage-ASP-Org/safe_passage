@@ -10,17 +10,27 @@ import { BASE_URL, getApplicationHeaders } from '../config';
  * Uses expo-device and expo-application for cross-platform compatibility.
  */
 export async function collectDeviceTelemetry() {
-  // Unique device ID — on Android uses androidId, on iOS uses identifierForVendor
-  const deviceId =
-    Platform.OS === 'android'
-      ? Application.getAndroidId()
-      : await Application.getIosIdForVendorAsync();
+  // Expo Application's platform IDs are native-only. Use a persistent browser
+  // ID for the local web demo and keep native Android/iOS IDs unchanged.
+  const deviceId = Platform.OS === 'android'
+    ? Application.getAndroidId()
+    : Platform.OS === 'ios'
+      ? await Application.getIosIdForVendorAsync()
+      : getBrowserDeviceId();
 
   // Build a mock hardware fingerprint from stable hardware properties
   const hardwareFingerprint = buildHardwareFingerprint();
 
-  const os = `${Device.osName || (Platform.OS === 'android' ? 'Android' : 'iOS')} ${Device.osVersion || ''}`.trim();
-  const deviceName = Device.deviceName ?? (`${Device.manufacturer || ''} ${Device.modelName || 'Device'}`.trim() || 'Android Device');
+  const isWeb = Platform.OS === 'web';
+  const browserPlatform = isWeb
+    ? (globalThis.navigator?.userAgentData?.platform || globalThis.navigator?.platform || 'Browser')
+    : '';
+  const os = isWeb
+    ? `Web browser (${browserPlatform})`
+    : `${Device.osName || (Platform.OS === 'android' ? 'Android' : 'iOS')} ${Device.osVersion || ''}`.trim();
+  const deviceName = isWeb
+    ? `${globalThis.navigator?.userAgentData?.brands?.[0]?.brand || 'Web'} browser`
+    : Device.deviceName ?? (`${Device.manufacturer || ''} ${Device.modelName || 'Device'}`.trim() || 'Android Device');
 
   return {
     deviceId: deviceId || 'DEVICE-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
@@ -36,6 +46,16 @@ export async function collectDeviceTelemetry() {
     buildVersion: Application.nativeBuildVersion ?? '1',
     registeredAt: new Date().toISOString(),
   };
+}
+
+function getBrowserDeviceId() {
+  const storageKey = 'safe-passage.mobile.browser-device-id';
+  const existing = globalThis.localStorage.getItem(storageKey);
+  if (existing) return existing;
+
+  const deviceId = `WEB-${globalThis.crypto.randomUUID()}`;
+  globalThis.localStorage.setItem(storageKey, deviceId);
+  return deviceId;
 }
 
 /**
@@ -65,28 +85,31 @@ function buildHardwareFingerprint() {
  * @param {object} telemetry - The collected device telemetry object.
  * @returns {Promise<{success: boolean, status: string, deviceId: string, message: string}>}
  */
-export async function registerDeviceWithBackend(telemetry) {
+export async function registerDeviceWithBackend(telemetry, credentials = null) {
   console.log('[DeviceService] Registering device with telemetry:', telemetry);
 
   const token = await getToken();
   const approvalDeviceId = await getApprovalDeviceId();
+  if (!token && (!credentials?.username?.trim() || !credentials?.password))
+    throw new Error('Sign-in is still waiting for approval. Enter your account credentials to submit this device for administrator approval.');
 
   const payload = {
     deviceId: telemetry.deviceId,
     deviceName: telemetry.deviceName,
     deviceType: telemetry.deviceType || 'Phone',
     os: telemetry.os || `${telemetry.osName} ${telemetry.osVersion}`.trim(),
-    signingPublicKey: await getDeviceSigningPublicKey(getUserIdFromToken(token)),
+    signingPublicKey: await getDeviceSigningPublicKey(getUserIdFromToken(token) ?? credentials?.username?.trim()),
   };
 
-  const response = await fetch(`${BASE_URL}/api/devices/register`, {
+  const isPendingEnrollment = !token;
+  const response = await fetch(`${BASE_URL}/api/devices/${isPendingEnrollment ? 'register-pending' : 'register'}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       ...getApplicationHeaders(approvalDeviceId ?? telemetry.deviceId),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(isPendingEnrollment ? { ...payload, ...credentials } : payload),
   });
 
   if (!response.ok) {

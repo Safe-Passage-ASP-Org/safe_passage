@@ -11,10 +11,14 @@ public sealed class User
     public bool IsActive { get; set; } = true;
     public bool IsEmailVerified { get; set; } = true;
     public string Role { get; set; } = "User";
+    public string? FacebookUserId { get; set; }
+    public string? GitHubUserId { get; set; }
+    public string? GitLabUserId { get; set; }
 
     public ICollection<UserGroup> UserGroups { get; set; } = new List<UserGroup>();
     public ICollection<Device> Devices { get; set; } = new List<Device>();
     public ICollection<ApplicationUserAccess> ApplicationAccess { get; set; } = new List<ApplicationUserAccess>();
     public ICollection<ActivityLog> ActivityLogs { get; set; } = new List<ActivityLog>();
     public ICollection<MfaSession> MfaSessions { get; set; } = new List<MfaSession>();
+    public ICollection<ApplicationAccessRequest> ApplicationAccessRequests { get; set; } = new List<ApplicationAccessRequest>();
 }

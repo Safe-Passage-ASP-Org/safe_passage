@@ -14,6 +14,7 @@ namespace SafePassage.Api.Controllers;
 public sealed class DeviceController(
     IDeviceManagementService deviceManagement,
     DeviceBootstrapService bootstrapService,
+    PendingDeviceRegistrationService pendingDeviceRegistration,
     IWebHostEnvironment environment) : ControllerBase
 {
     /// <summary>Development-only first-device setup for accounts without an enrolled MFA device.</summary>
@@ -57,6 +58,51 @@ public sealed class DeviceController(
         var result = await deviceManagement.RegisterAsync(userId, request, cancellationToken);
         if (result.Failure == DeviceManagementFailure.None)
             return CreatedAtAction(nameof(GetById), new { id = result.Response!.Id }, result.Response);
+
+        return ToProblem(result.Failure);
+    }
+
+    /// <summary>Submits a device for admin approval after password verification when MFA has not completed.</summary>
+    [AllowAnonymous]
+    [HttpPost("register-pending")]
+    [ProducesResponseType<DeviceResponse>(StatusCodes.Status201Created)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    public async Task<ActionResult<DeviceResponse>> RegisterPending(
+        [FromBody] PendingDeviceRegistrationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await pendingDeviceRegistration.RegisterAsync(request, cancellationToken);
+        if (result is null)
+            return Problem(statusCode: StatusCodes.Status401Unauthorized,
+                title: "Sign-in verification failed",
+                detail: "The account credentials are invalid or the account is inactive.");
+
+        if (result.Failure == DeviceManagementFailure.None)
+            return CreatedAtAction(nameof(GetById), new { id = result.Response!.Id }, result.Response);
+
+        return ToProblem(result.Failure);
+    }
+
+    /// <summary>Requests administrator approval to replace a lost or mismatched key on an existing device.</summary>
+    [AllowAnonymous]
+    [HttpPost("recover-signing-key")]
+    [ProducesResponseType<DeviceResponse>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<DeviceResponse>> RecoverSigningKey(
+        [FromBody] PendingDeviceRegistrationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await pendingDeviceRegistration.RecoverSigningKeyAsync(request, cancellationToken);
+        if (result is null)
+            return Problem(statusCode: StatusCodes.Status401Unauthorized,
+                title: "Sign-in verification failed",
+                detail: "The account credentials are invalid or the account is inactive.");
+
+        if (result.Failure == DeviceManagementFailure.None)
+            return Accepted(result.Response);
 
         return ToProblem(result.Failure);
     }
@@ -155,6 +201,7 @@ public sealed class DeviceController(
             ? Ok(result.Response)
             : ToProblem(result.Failure);
     }
+
 
     private bool TryGetUserId(out Guid userId)
     {

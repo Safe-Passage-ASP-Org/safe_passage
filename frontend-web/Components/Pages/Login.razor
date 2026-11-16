@@ -1,9 +1,12 @@
 @page "/login"
 @layout AuthLayout
 @using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.JSInterop
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 @implements IDisposable
 
 <PageTitle>Sign in – Safe Passage</PageTitle>
@@ -36,6 +39,16 @@
             <button class="signup-button" @onclick="CheckOnce" disabled="@Busy">@(Busy ? "Checking…" : "Check approval")</button>
             <button class="login-link" @onclick="CancelMfa">Cancel sign-in</button>
         }
+        else if (ExternalCompleting)
+        {
+            <p class="signup-eyebrow">@ExternalProviderName SIGN-IN</p>
+            <h1 id="login-title">Completing sign-in…</h1>
+            <p class="signup-subtitle">Your @ExternalProviderName account was verified. We are preparing your Safe Passage sign-in.</p>
+            <div class="login-pending" role="status" aria-live="polite">
+                <span class="pending-indicator"></span>
+                <strong>Connecting to Safe Passage</strong>
+            </div>
+        }
         else
         {
             <p class="signup-eyebrow">WELCOME BACK</p>
@@ -51,23 +64,203 @@
                 <InputText id="username" @bind-Value="Credentials.Username" autocomplete="username" disabled="@Busy" placeholder="you@example.com" />
                 <ValidationMessage For="() => Credentials.Username" />
                 <label for="password">Password</label>
-                <InputText id="password" type="password" @bind-Value="Credentials.Password" autocomplete="current-password" disabled="@Busy" placeholder="Enter your password" />
+                <div class="password-input-wrapper">
+                    <InputText id="password" type="@(ShowPassword ? "text" : "password")" @bind-Value="Credentials.Password" autocomplete="current-password" disabled="@Busy" placeholder="Enter your password" />
+                    <button type="button" class="password-toggle-btn" @onclick="() => ShowPassword = !ShowPassword" aria-label="@(ShowPassword ? "Hide password" : "Show password")" tabindex="-1">
+                        @if (ShowPassword)
+                        {
+                            <svg viewBox="0 0 24 24"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                        }
+                        else
+                        {
+                            <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        }
+                    </button>
+                </div>
                 <ValidationMessage For="() => Credentials.Password" />
                 <button class="signup-button" type="submit" disabled="@Busy">@(Busy ? "Signing in…" : "Sign in") <span aria-hidden="true">→</span></button>
             </EditForm>
+            @if (FacebookEnabled || GitHubEnabled || GitLabEnabled)
+            {
+                <div class="social-divider"><span>or</span></div>
+                @if (FacebookEnabled)
+                {
+                    <a class="facebook-signin" href="@FacebookSignInUrl"><span aria-hidden="true">f</span> Continue with Facebook</a>
+                }
+                @if (GitHubEnabled)
+                {
+                    <a class="social-signin github-signin" href="@GitHubSignInUrl"><span aria-hidden="true">GH</span> Continue with GitHub</a>
+                }
+                @if (GitLabEnabled)
+                {
+                    <a class="social-signin gitlab-signin" href="@GitLabSignInUrl"><span aria-hidden="true" style="color:#fc6d26">🦊</span> Continue with GitLab</a>
+                }
+            }
             <p class="signup-switch">New to Safe Passage? <a href="/signup">Create an account</a></p>
         }
     </section>
     <a class="signup-back" href="/">← Back to Safe Passage</a>
 </main>
 
+<style>
+    .social-divider{display:flex;align-items:center;gap:12px;margin:18px 0;color:#64748b;font-size:12px}.social-divider:before,.social-divider:after{content:"";height:1px;background:#e2e8f0;flex:1}.facebook-signin{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:11px 14px;color:#1e293b;text-decoration:none;font-size:13px;font-weight:650}.facebook-signin span{font-family:Arial,sans-serif;font-weight:800;color:#1877f2;font-size:19px}
+    .social-signin{display:flex;align-items:center;justify-content:center;gap:10px;width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:6px;padding:11px 14px;color:#1e293b;text-decoration:none;font-size:13px;font-weight:650;margin-top:9px}.social-signin span{font-family:Arial,sans-serif;font-size:14px;font-weight:800;color:#24292f}
+</style>
+
 @code {
     private readonly LoginForm Credentials = new();
+    private bool ShowPassword;
     private CancellationTokenSource? PollCancellation;
     private string? SessionToken;
     private string Error = "";
     private bool Busy;
     private bool MfaPending;
+    private bool ExternalCompleting;
+    private string ExternalProviderName = "External";
+    private string? OidcReturnUrl;
+    private string? ExternalTicket;
+    private bool ExternalTicketExchangeStarted;
+    private bool FacebookEnabled;
+    private string FacebookSignInUrl = "";
+    private bool GitHubEnabled;
+    private string GitHubSignInUrl = "";
+    private bool GitLabEnabled;
+    private string GitLabSignInUrl = "";
+
+    protected override void OnInitialized()
+    {
+        var query = QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
+        if (query.TryGetValue("returnUrl", out var value)) OidcReturnUrl = value.ToString();
+
+        if (query.TryGetValue("facebookError", out var error))
+            Error = error.ToString() switch
+            {
+                "email_required" => "Facebook did not provide an email address. Allow email access and try again.",
+                "account_unavailable" => "No active Safe Passage account matched this Facebook account. Sign in with your account first or contact an administrator.",
+                "mfa_device_required" => "Enroll a trusted mobile device before using Facebook sign-in.",
+                "mfa_unavailable" => "We could not send the MFA request. Please try again.",
+                "cancelled" => "Facebook reports that sign-in was cancelled. If you did not cancel, check the Meta app role invitation and try again.",
+                "provider_error" => "Facebook could not complete sign-in. Confirm the tester invitation is accepted and the redirect URI matches exactly. The API log has more detail.",
+                _ => "Facebook sign-in could not be completed. Please try again."
+            };
+        else if (query.TryGetValue("githubError", out var githubError))
+            Error = githubError.ToString() switch
+            {
+                "email_required" => "GitHub did not return a verified primary email. Verify an email address in GitHub settings, then try again.",
+                "account_unavailable" => "No active Safe Passage account matched this GitHub email. Sign in with your account first or contact an administrator.",
+                "mfa_device_required" => "Enroll a trusted mobile device before using GitHub sign-in.",
+                "mfa_unavailable" => "We could not send the MFA request. Please try again later.",
+                "cancelled" => "GitHub sign-in was cancelled.",
+                "unavailable" => "GitHub sign-in has not been configured by an administrator.",
+                "provider_error" => "GitHub could not complete sign-in. Check the OAuth callback URL and app configuration.",
+                _ => "GitHub sign-in could not be completed. Please try again."
+            };
+        else if (query.TryGetValue("gitlabError", out var gitlabError))
+            Error = gitlabError.ToString() switch
+            {
+                "email_required" => "GitLab did not provide an email address. Check your GitLab profile email visibility and try again.",
+                "account_unavailable" => "No active Safe Passage account matched this GitLab account. Sign in with your account first or contact an administrator.",
+                "mfa_device_required" => "Enroll a trusted mobile device before using GitLab sign-in.",
+                "mfa_unavailable" => "We could not send the MFA request. Please try again later.",
+                "cancelled" => "GitLab sign-in was cancelled.",
+                "unavailable" => "GitLab sign-in has not been configured by an administrator.",
+                "provider_error" => "GitLab could not complete sign-in. Check the OAuth callback URL and app configuration.",
+                _ => "GitLab sign-in could not be completed. Please try again."
+            };
+
+        if (query.TryGetValue("facebookTicket", out var facebookTicket) && !string.IsNullOrWhiteSpace(facebookTicket))
+        {
+            ExternalTicket = facebookTicket.ToString();
+            ExternalProviderName = "Facebook";
+            ExternalCompleting = true;
+        }
+        else if (query.TryGetValue("githubTicket", out var githubTicket) && !string.IsNullOrWhiteSpace(githubTicket))
+        {
+            ExternalTicket = githubTicket.ToString();
+            ExternalProviderName = "GitHub";
+            ExternalCompleting = true;
+        }
+        else if (query.TryGetValue("gitlabTicket", out var gitlabTicket) && !string.IsNullOrWhiteSpace(gitlabTicket))
+        {
+            ExternalTicket = gitlabTicket.ToString();
+            ExternalProviderName = "GitLab";
+            ExternalCompleting = true;
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        FacebookEnabled = await Api.IsFacebookSignInEnabledAsync();
+        var facebookUrl = Api.FacebookSignInUrl;
+        FacebookSignInUrl = string.IsNullOrWhiteSpace(OidcReturnUrl)
+            ? facebookUrl
+            : facebookUrl + "?returnUrl=" + Uri.EscapeDataString(OidcReturnUrl);
+        GitHubEnabled = await Api.IsGitHubSignInEnabledAsync();
+        var githubUrl = Api.GitHubSignInUrl;
+        GitHubSignInUrl = string.IsNullOrWhiteSpace(OidcReturnUrl)
+            ? githubUrl
+            : githubUrl + "?returnUrl=" + Uri.EscapeDataString(OidcReturnUrl);
+        GitLabEnabled = await Api.IsGitLabSignInEnabledAsync();
+        var gitlabUrl = Api.GitLabSignInUrl;
+        GitLabSignInUrl = string.IsNullOrWhiteSpace(OidcReturnUrl)
+            ? gitlabUrl
+            : gitlabUrl + "?returnUrl=" + Uri.EscapeDataString(OidcReturnUrl);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (ExternalTicketExchangeStarted)
+            return;
+
+        if (!string.IsNullOrWhiteSpace(ExternalTicket))
+        {
+            ExternalTicketExchangeStarted = true;
+            await ClearPendingMfaAsync();
+
+            ExternalCompleting = true;
+            await InvokeAsync(StateHasChanged);
+            await ClearExternalTicketFromUrlAsync();
+
+            var ticket = ExternalTicket;
+            ExternalTicket = null;
+            Busy = true;
+            Error = "";
+            try
+            {
+                var result = ExternalProviderName switch
+                {
+                    "GitLab" => await Api.ExchangeGitLabLoginAsync(ticket),
+                    "GitHub" => await Api.ExchangeGitHubLoginAsync(ticket),
+                    _ => await Api.ExchangeFacebookLoginAsync(ticket)
+                };
+                if (result.MfaRequired && !string.IsNullOrWhiteSpace(result.SessionToken))
+                    await SavePendingMfaAsync(result.SessionToken);
+                await ContinueLoginAsync(result);
+            }
+            catch (Exception exception) { Error = exception.Message; }
+            finally
+            {
+                Busy = false;
+                ExternalCompleting = false;
+                await InvokeAsync(StateHasChanged);
+            }
+            return;
+        }
+
+        if (firstRender)
+        {
+            // Resume an in-flight approval if the browser refreshed or the Blazor
+            // circuit reconnected while the user was approving on their phone.
+            var pendingSession = await GetPendingMfaAsync();
+            if (!string.IsNullOrWhiteSpace(pendingSession))
+            {
+                SessionToken = pendingSession;
+                MfaPending = true;
+                StartMfaPolling();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+    }
 
     private async Task SignInAsync()
     {
@@ -76,20 +269,28 @@
         try
         {
             var result = await Api.LoginAsync(Credentials.Username.Trim(), Credentials.Password);
-            if (result.MfaRequired)
-            {
-                if (string.IsNullOrWhiteSpace(result.SessionToken))
-                    throw new InvalidOperationException("The API did not return an MFA session.");
-                SessionToken = result.SessionToken;
-                MfaPending = true;
-                PollCancellation = new CancellationTokenSource();
-                _ = PollForApprovalAsync(PollCancellation.Token);
-                return;
-            }
-            Navigation.NavigateTo("/users");
+            if (result.MfaRequired && !string.IsNullOrWhiteSpace(result.SessionToken))
+                await SavePendingMfaAsync(result.SessionToken);
+            await ContinueLoginAsync(result);
         }
         catch (Exception exception) { Error = exception.Message; }
         finally { Busy = false; }
+    }
+
+    private async Task ContinueLoginAsync(LoginResult result)
+    {
+        if (result.MfaRequired)
+        {
+            if (string.IsNullOrWhiteSpace(result.SessionToken))
+                throw new InvalidOperationException("The API did not return an MFA session.");
+            SessionToken = result.SessionToken;
+            MfaPending = true;
+            StartMfaPolling();
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(Api.AccessToken))
+            throw new InvalidOperationException("Safe Passage did not return an access token or an MFA challenge. Please try again; if this continues, share this message with your administrator.");
+        await ContinueAfterAuthenticationAsync();
     }
 
     private async Task PollForApprovalAsync(CancellationToken cancellationToken)
@@ -100,8 +301,9 @@
             {
                 if (await Api.CompleteMfaAsync(SessionToken!, cancellationToken))
                 {
+                    await ClearPendingMfaAsync();
                     MfaPending = false;
-                    await InvokeAsync(() => Navigation.NavigateTo("/users"));
+                    await InvokeAsync(ContinueAfterAuthenticationAsync);
                     return;
                 }
                 await InvokeAsync(StateHasChanged);
@@ -109,11 +311,16 @@
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
             catch (Exception exception)
             {
+                await ClearPendingMfaAsync();
                 Error = exception.Message;
                 MfaPending = false;
                 await InvokeAsync(StateHasChanged);
                 return;
             }
+
+            // Rate-limit polling to avoid hammering the server between long-poll responses.
+            try { await Task.Delay(1500, cancellationToken); }
+            catch (OperationCanceledException) { return; }
         }
     }
 
@@ -126,21 +333,79 @@
         {
             if (await Api.CompleteMfaAsync(SessionToken))
             {
+                await ClearPendingMfaAsync();
                 MfaPending = false;
                 PollCancellation?.Cancel();
-                Navigation.NavigateTo("/users");
+                await ContinueAfterAuthenticationAsync();
             }
         }
-        catch (Exception exception) { Error = exception.Message; MfaPending = false; PollCancellation?.Cancel(); }
+        catch (Exception exception) { await ClearPendingMfaAsync(); Error = exception.Message; MfaPending = false; PollCancellation?.Cancel(); }
         finally { Busy = false; }
     }
 
-    private void CancelMfa()
+    private async Task ContinueAfterAuthenticationAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(OidcReturnUrl))
+        {
+            var completionUrl = await Api.CreateOidcSessionAsync(OidcReturnUrl);
+            Navigation.NavigateTo(completionUrl, forceLoad: true);
+            return;
+        }
+        // Route based on role: non-admins land on /dashboard, admins on /users.
+        Navigation.NavigateTo(Api.IsAdministrator ? "/users" : "/dashboard");
+    }
+
+    private async Task CancelMfa()
     {
         PollCancellation?.Cancel();
+        await ClearPendingMfaAsync();
         SessionToken = null;
         MfaPending = false;
         Error = "";
+    }
+
+    private void StartMfaPolling()
+    {
+        PollCancellation?.Cancel();
+        PollCancellation?.Dispose();
+        PollCancellation = new CancellationTokenSource();
+        _ = PollForApprovalAsync(PollCancellation.Token);
+    }
+
+    private async Task ClearExternalTicketFromUrlAsync()
+    {
+        // The callback ticket is single-use. Remove it before exchanging so a
+        // reload cannot replay it and replace the real MFA challenge with an
+        // "expired" login page.
+        var cleanUrl = "/login";
+        if (!string.IsNullOrWhiteSpace(OidcReturnUrl))
+            cleanUrl += "?returnUrl=" + Uri.EscapeDataString(OidcReturnUrl);
+        try { await JS.InvokeVoidAsync("safePassageAuthSession.replaceUrl", cleanUrl); }
+        catch (JSException)
+        {
+            // JS interop is unavailable (e.g. pre-render). Do NOT call Navigation.NavigateTo
+            // here — it would tear down the Blazor circuit and discard the ticket. The
+            // visible URL retaining the ticket query string is acceptable; the exchange
+            // will still proceed and the ticket is single-use on the server.
+        }
+    }
+
+    private async Task<string?> GetPendingMfaAsync()
+    {
+        try { return await JS.InvokeAsync<string?>("safePassageAuthSession.getPendingMfa"); }
+        catch (JSException) { return null; }
+    }
+
+    private async Task SavePendingMfaAsync(string token)
+    {
+        try { await JS.InvokeVoidAsync("safePassageAuthSession.savePendingMfa", token); }
+        catch (JSException) { }
+    }
+
+    private async Task ClearPendingMfaAsync()
+    {
+        try { await JS.InvokeVoidAsync("safePassageAuthSession.clearPendingMfa"); }
+        catch (JSException) { }
     }
 
     public void Dispose()

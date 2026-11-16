@@ -1,4 +1,4 @@
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from './DeviceStorage';
 import { BASE_URL, getApplicationHeaders } from '../config';
 import { bindSigningKeyToAccount, getUserIdFromToken, signDeviceLogin, storeApprovalDeviceId } from './DeviceSigningService';
 

@@ -225,6 +225,53 @@ public sealed class AuthFlowServiceTests
         Assert.Contains(accessToken.Claims, claim => claim.Type == "device_id" && claim.Value == device.DeviceId);
     }
 
+    [Fact]
+    public async Task LoginWithExternalProvider_GitLab_IssuesTokenWhenStepUpNotRequired()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "gitlabber",
+            Email = "gitlabber@example.com",
+            GitLabUserId = "123456",
+            Role = "User",
+            IsActive = true,
+            IsEmailVerified = true
+        };
+        dbContext.Users.Add(user);
+        dbContext.SecurityPolicies.Add(new SecurityPolicy
+        {
+            Id = Guid.NewGuid(),
+            PolicyName = "Allow direct sign-in",
+            PolicyType = "Authentication",
+            IsEnforced = true,
+            RulesJson = "{\"requireStepUp\":false}"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var service = new AuthFlowService(
+            dbContext,
+            new PasswordHasher<User>(),
+            new TestNotificationService(),
+            new JwtTokenService(new JwtSettings
+            {
+                Issuer = "SafePassage.Api",
+                Audience = "SafePassage.Clients",
+                SigningKey = new string('x', 64)
+            }),
+            new SecurityPolicyEvaluator(dbContext),
+            NullLogger<AuthFlowService>.Instance);
+
+        var result = await service.LoginWithExternalProviderAsync(user, "GitLab", CancellationToken.None);
+
+        Assert.Equal(AuthFlowFailure.None, result.Failure);
+        Assert.NotNull(result.Response);
+        Assert.False(result.Response.MfaRequired);
+        Assert.False(string.IsNullOrWhiteSpace(result.Response.AccessToken));
+        Assert.Contains("GitLab", result.Response.Message);
+    }
+
     private static ApplicationDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()

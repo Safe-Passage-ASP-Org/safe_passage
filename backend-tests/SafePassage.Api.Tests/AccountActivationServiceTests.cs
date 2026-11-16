@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using OpenIddict.Abstractions;
 using Microsoft.Extensions.Options;
 using SafePassage.Api.Data;
 using SafePassage.Api.Models;
@@ -109,6 +110,7 @@ public sealed class AccountActivationServiceTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlite(connection)
+            .UseOpenIddict()
             .Options;
         await using var dbContext = new ApplicationDbContext(options);
         await dbContext.Database.MigrateAsync();

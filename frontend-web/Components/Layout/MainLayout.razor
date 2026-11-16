@@ -1,6 +1,8 @@
 @inherits LayoutComponentBase
 @inject SafePassage.Web.Services.AdminApiClient Api
+@inject SafePassage.Web.Services.SecurityAlertCountService AlertCount
 @inject NavigationManager Navigation
+@implements IDisposable
 
 <div class="sp-shell">
 
@@ -23,33 +25,40 @@
             <div class="sp-topbar-right">
 
                 <!-- Notification Bell -->
-                <div class="sp-bell-wrapper" title="Security Alerts">
-                    <a class="sp-icon-btn" aria-label="Security Alerts" href="/alerts">
+                <div class="sp-bell-wrapper" title="@AlertTitle">
+                    <a class="sp-icon-btn" aria-label="@AlertTitle" href="/alerts">
                         <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                             <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 1 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z"/>
                         </svg>
-                        <span class="sp-badge">3</span>
+                        @if (AlertCount.Count is > 0)
+                        {
+                            <span class="sp-badge">@(AlertCount.Count > 99 ? "99+" : AlertCount.Count.ToString())</span>
+                        }
                     </a>
                 </div>
 
                 <!-- Profile Dropdown -->
-                <div class="sp-profile-wrapper dropdown">
-                    <button class="sp-profile-btn dropdown-toggle" type="button"
-                            data-bs-toggle="dropdown" aria-expanded="false">
-                        <div class="sp-avatar">AD</div>
+                <div class="sp-profile-wrapper">
+                    <button class="sp-profile-btn" type="button"
+                            @onclick="ToggleProfileDropdown" aria-expanded="@(IsProfileMenuOpen ? "true" : "false")" aria-haspopup="true">
+                        <div class="sp-avatar">@AvatarInitials</div>
                         <div class="sp-profile-info">
-                            <span class="sp-profile-name">@(Api.CurrentUsername ?? "Administrator")</span>
+                            <span class="sp-profile-name">@(Api.CurrentUsername ?? (Api.IsAdministrator ? "Administrator" : "User"))</span>
                             <span class="sp-profile-role">@(Api.CurrentRole ?? "Signed in")</span>
                         </div>
                         <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" class="ms-2 text-muted">
                             <path d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"/>
                         </svg>
                     </button>
-                    <ul class="dropdown-menu dropdown-menu-end sp-dropdown">
-                        <li><a class="dropdown-item" href="/settings">Account Settings</a></li>
-                        <li><hr class="dropdown-divider" /></li>
-                        <li><button class="dropdown-item text-danger" @onclick="SignOut">Sign Out</button></li>
-                    </ul>
+                    @if (IsProfileMenuOpen)
+                    {
+                        <div class="sp-dropdown-backdrop" @onclick="CloseProfileDropdown"></div>
+                        <ul class="dropdown-menu dropdown-menu-end sp-dropdown show" role="menu">
+                            <li><a class="dropdown-item" href="/settings" @onclick="CloseProfileDropdown">Account Settings</a></li>
+                            <li><hr class="dropdown-divider" /></li>
+                            <li><button class="dropdown-item text-danger" type="button" @onclick="SignOut">Sign Out</button></li>
+                        </ul>
+                    }
                 </div>
             </div>
         </header>
@@ -62,16 +71,70 @@
 </div>
 
 @code {
+    private bool IsProfileMenuOpen;
+
+    private string AvatarInitials
+    {
+        get
+        {
+            var name = Api.CurrentUsername;
+            if (string.IsNullOrWhiteSpace(name))
+                return Api.IsAdministrator ? "AD" : "SP";
+
+            var parts = name.Split(new[] { ' ', '.', '_', '-', '@' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 2)
+                return $"{char.ToUpperInvariant(parts[0][0])}{char.ToUpperInvariant(parts[1][0])}";
+
+            return name.Length >= 2
+                ? name[..2].ToUpperInvariant()
+                : name.ToUpperInvariant();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Navigation.LocationChanged += HandleLocationChanged;
+        AlertCount.Changed += HandleAlertCountChanged;
+        await RefreshAlertCountAsync();
+    }
+
     protected override void OnInitialized()
     {
         if (string.IsNullOrWhiteSpace(Api.AccessToken))
             Navigation.NavigateTo("/login");
     }
 
+    private string AlertTitle => AlertCount.Count is int count
+        ? $"Security Alerts ({count} pending device approval{(count == 1 ? "" : "s")})"
+        : "Security Alerts";
+
+    private Task RefreshAlertCountAsync() => Api.IsAdministrator || Api.CurrentRole == "Auditor"
+        ? AlertCount.RefreshAsync()
+        : Task.CompletedTask;
+
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
+    {
+        IsProfileMenuOpen = false;
+        _ = InvokeAsync(RefreshAlertCountAsync);
+    }
+
+    private void HandleAlertCountChanged() => _ = InvokeAsync(StateHasChanged);
+
+    private void ToggleProfileDropdown() => IsProfileMenuOpen = !IsProfileMenuOpen;
+
+    private void CloseProfileDropdown() => IsProfileMenuOpen = false;
+
     private void SignOut()
     {
+        IsProfileMenuOpen = false;
         Api.SignOut();
         Navigation.NavigateTo("/login", forceLoad: true);
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= HandleLocationChanged;
+        AlertCount.Changed -= HandleAlertCountChanged;
     }
 }
 

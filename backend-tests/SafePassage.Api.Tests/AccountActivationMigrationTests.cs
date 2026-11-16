@@ -1,5 +1,6 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using OpenIddict.Abstractions;
 using SafePassage.Api.Data;
 using Xunit;
 
@@ -14,6 +15,7 @@ public sealed class AccountActivationMigrationTests
         await connection.OpenAsync();
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseSqlite(connection)
+            .UseOpenIddict()
             .Options;
 
         await using var dbContext = new ApplicationDbContext(options);

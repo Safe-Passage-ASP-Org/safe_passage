@@ -123,7 +123,7 @@ export default function LoginScreen({ navigation }) {
           disabled={loading}
           accessibilityRole="button"
         >
-          <Text style={styles.enrollLinkText}>Set up this phone for another account</Text>
+          <Text style={styles.enrollLinkText}>Set up or recover this phone</Text>
         </TouchableOpacity>
       </View>
     </KeyboardAvoidingView>

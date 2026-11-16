@@ -48,6 +48,180 @@ public static class DbInitializer
             dbContext.SaveChanges();
         }
 
+        // 1b. Ensure user for yanyangodornes@gmail.com exists
+        var devUser = dbContext.Users.FirstOrDefault(u => u.Email.ToLower() == "yanyangodornes@gmail.com");
+        if (devUser is null)
+        {
+            devUser = new User
+            {
+                Id = Guid.NewGuid(),
+                Username = "yanyangodornes",
+                Email = "yanyangodornes@gmail.com",
+                FullName = "Yanyan Godornes",
+                Role = "Admin",
+                IsActive = true,
+                IsEmailVerified = true
+            };
+            devUser.PasswordHash = passwordHasher.HashPassword(devUser, "haihelmet12343");
+            dbContext.Users.Add(devUser);
+            dbContext.SaveChanges();
+        }
+        else
+        {
+            devUser.IsActive = true;
+            devUser.IsEmailVerified = true;
+            devUser.PasswordHash = passwordHasher.HashPassword(devUser, "haihelmet12343");
+            dbContext.SaveChanges();
+        }
+
+        // Ensure devUser has a trusted device
+        var devUserDevice = dbContext.Devices.FirstOrDefault(d => d.UserId == devUser.Id && d.DeviceId == "DEV-USER-DEVICE-001");
+        if (devUserDevice is null)
+        {
+            dbContext.Devices.Add(new Device
+            {
+                Id = Guid.NewGuid(),
+                UserId = devUser.Id,
+                DeviceId = "DEV-USER-DEVICE-001",
+                DeviceName = "Primary Phone",
+                DeviceType = "Phone",
+                OS = "Android 14",
+                RegistrationDate = DateTimeOffset.UtcNow,
+                LastActiveDate = DateTimeOffset.UtcNow,
+                Status = DeviceStatus.Active,
+                TrustStatus = DeviceTrustStatus.Trusted
+            });
+            dbContext.SaveChanges();
+        }
+
+        // 1c. Ensure user for robmalik19@gmail.com exists (for Facebook login and admin access)
+        var robUser = dbContext.Users.FirstOrDefault(u => u.Email.ToLower() == "robmalik19@gmail.com");
+        if (robUser is null)
+        {
+            robUser = new User
+            {
+                Id = Guid.NewGuid(),
+                Username = "robmalik19",
+                Email = "robmalik19@gmail.com",
+                FullName = "Rob Malik",
+                Role = "Admin",
+                IsActive = true,
+                IsEmailVerified = true
+            };
+            robUser.PasswordHash = passwordHasher.HashPassword(robUser, "Password123!");
+            dbContext.Users.Add(robUser);
+            dbContext.SaveChanges();
+        }
+        else
+        {
+            robUser.IsActive = true;
+            robUser.IsEmailVerified = true;
+            dbContext.SaveChanges();
+        }
+
+        var robUserDevice = dbContext.Devices.FirstOrDefault(d => d.UserId == robUser.Id && d.DeviceId == "ROB-DEVICE-001");
+        if (robUserDevice is null)
+        {
+            dbContext.Devices.Add(new Device
+            {
+                Id = Guid.NewGuid(),
+                UserId = robUser.Id,
+                DeviceId = "ROB-DEVICE-001",
+                DeviceName = "Rob's Phone",
+                DeviceType = "Phone",
+                OS = "Android 14",
+                RegistrationDate = DateTimeOffset.UtcNow,
+                LastActiveDate = DateTimeOffset.UtcNow,
+                Status = DeviceStatus.Active,
+                TrustStatus = DeviceTrustStatus.Trusted
+            });
+            dbContext.SaveChanges();
+        }
+
+        // 1d. Ensure user for testestacacc@gmail.com exists (Testacc Facebook test account)
+        var testAccUser = dbContext.Users.FirstOrDefault(u => u.Email.ToLower() == "testestacacc@gmail.com");
+        if (testAccUser is null)
+        {
+            testAccUser = new User
+            {
+                Id = Guid.NewGuid(),
+                Username = "testacc",
+                Email = "testestacacc@gmail.com",
+                FullName = "Testacc Testacc",
+                Role = "Admin",
+                IsActive = true,
+                IsEmailVerified = true,
+                FacebookUserId = null
+            };
+            testAccUser.PasswordHash = passwordHasher.HashPassword(testAccUser, "romamapapa1");
+            dbContext.Users.Add(testAccUser);
+            dbContext.SaveChanges();
+        }
+        else
+        {
+            testAccUser.IsActive = true;
+            testAccUser.IsEmailVerified = true;
+            testAccUser.FacebookUserId = null;
+            dbContext.SaveChanges();
+        }
+
+        var testAccDevice = dbContext.Devices.FirstOrDefault(d => d.UserId == testAccUser.Id && d.DeviceId == "TESTACC-DEVICE-001");
+        if (testAccDevice is null)
+        {
+            dbContext.Devices.Add(new Device
+            {
+                Id = Guid.NewGuid(),
+                UserId = testAccUser.Id,
+                DeviceId = "TESTACC-DEVICE-001",
+                DeviceName = "Testacc Phone",
+                DeviceType = "Phone",
+                OS = "Android 14",
+                RegistrationDate = DateTimeOffset.UtcNow,
+                LastActiveDate = DateTimeOffset.UtcNow,
+                Status = DeviceStatus.Active,
+                TrustStatus = DeviceTrustStatus.Trusted
+            });
+            dbContext.SaveChanges();
+        }
+
+        // 1e. Ensure user for Lylle Leonel Viray exists (Tester)
+        var lylleUser = dbContext.Users.FirstOrDefault(u => u.FullName == "Lylle Leonel Viray" || u.Username == "lylle");
+        if (lylleUser is null)
+        {
+            lylleUser = new User
+            {
+                Id = Guid.NewGuid(),
+                Username = "lylle",
+                Email = "lylle@example.com",
+                FullName = "Lylle Leonel Viray",
+                Role = "User",
+                IsActive = true,
+                IsEmailVerified = true
+            };
+            lylleUser.PasswordHash = passwordHasher.HashPassword(lylleUser, "Password123!");
+            dbContext.Users.Add(lylleUser);
+            dbContext.SaveChanges();
+        }
+
+        var lylleDevice = dbContext.Devices.FirstOrDefault(d => d.UserId == lylleUser.Id && d.DeviceId == "LYLLE-DEVICE-001");
+        if (lylleDevice is null)
+        {
+            dbContext.Devices.Add(new Device
+            {
+                Id = Guid.NewGuid(),
+                UserId = lylleUser.Id,
+                DeviceId = "LYLLE-DEVICE-001",
+                DeviceName = "Lylle's Phone",
+                DeviceType = "Phone",
+                OS = "Android 14",
+                RegistrationDate = DateTimeOffset.UtcNow,
+                LastActiveDate = DateTimeOffset.UtcNow,
+                Status = DeviceStatus.Active,
+                TrustStatus = DeviceTrustStatus.Trusted
+            });
+            dbContext.SaveChanges();
+        }
+
         // 2. Ensure test primary device exists for this user
         var device = dbContext.Devices.FirstOrDefault(d => d.DeviceId == "PRIMARY-ANDROID-001");
         if (device is null)
