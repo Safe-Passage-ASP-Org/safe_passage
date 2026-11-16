@@ -54,7 +54,7 @@
                     <InputText id="signup-username" @bind-Value="IdentityForm.Username" autocomplete="username" autocapitalize="none" disabled="@Saving" placeholder="Choose a username" />
                     <small class="signup-field-hint">3–32 characters: letters, numbers, periods, underscores, or hyphens.</small>
                     <ValidationMessage For="() => IdentityForm.Username" />
-                    <button class="signup-button" type="submit" disabled="@Saving">Continue <span aria-hidden="true">→</span></button>
+                    <button class="signup-button" type="submit" disabled="@(!RendererInfo.IsInteractive || Saving)">@(!RendererInfo.IsInteractive ? "Connecting…" : "Continue") <span aria-hidden="true">→</span></button>
                 </EditForm>
             }
             else if (CurrentStep == 2)
@@ -69,7 +69,7 @@
                     <ValidationMessage For="() => ContactForm.PhoneNumber" />
                     <div class="signup-actions">
                         <button class="signup-secondary" type="button" @onclick="GoToPreviousStep" disabled="@Saving">Back</button>
-                        <button class="signup-button" type="submit" disabled="@Saving">Continue <span aria-hidden="true">→</span></button>
+                        <button class="signup-button" type="submit" disabled="@(!RendererInfo.IsInteractive || Saving)">@(!RendererInfo.IsInteractive ? "Connecting…" : "Continue") <span aria-hidden="true">→</span></button>
                     </div>
                 </EditForm>
             }
@@ -109,7 +109,7 @@
                     <ValidationMessage For="() => PasswordForm.ConfirmPassword" />
                     <div class="signup-actions">
                         <button class="signup-secondary" type="button" @onclick="GoToPreviousStep" disabled="@Saving">Back</button>
-                        <button class="signup-button" type="submit" disabled="@Saving">@(Saving ? "Creating account…" : "Create account") <span aria-hidden="true">→</span></button>
+                        <button class="signup-button" type="submit" disabled="@(!RendererInfo.IsInteractive || Saving)">@(Saving ? "Creating account…" : "Create account") <span aria-hidden="true">→</span></button>
                     </div>
                 </EditForm>
                 <p class="signup-terms">By continuing, you agree to use Safe Passage responsibly and keep your sign-in details secure.</p>
