@@ -64,16 +64,27 @@ public sealed class SecurityMiddleware(RequestDelegate next, ILogger<SecurityMid
             return;
         }
 
-        var isTrusted = await dbContext.Devices.AnyAsync(device =>
-            device.DeviceId == deviceId
-            && device.UserId == userId
-            && device.Status == DeviceStatus.Active
-            && device.TrustStatus == DeviceTrustStatus.Trusted,
+        var device = await dbContext.Devices.AsNoTracking().SingleOrDefaultAsync(candidate =>
+            candidate.DeviceId == deviceId
+            && candidate.UserId == userId
+            && candidate.Status == DeviceStatus.Active
+            && candidate.TrustStatus == DeviceTrustStatus.Trusted,
             context.RequestAborted);
 
-        if (!isTrusted)
+        if (device is null)
         {
             await WriteProblemAsync(context, StatusCodes.Status403Forbidden, "Trusted device required", "This device is not trusted for the signed-in user.");
+            return;
+        }
+
+        var postureResult = DevicePostureEvaluator.Evaluate(device, policy);
+        if (!postureResult.IsCompliant)
+        {
+            await WriteProblemAsync(
+                context,
+                StatusCodes.Status403Forbidden,
+                "Device posture non-compliant",
+                postureResult.FailureReason ?? "This device does not meet the enforced security posture policy.");
             return;
         }
 

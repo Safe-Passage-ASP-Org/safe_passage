@@ -455,6 +455,9 @@ namespace SafePassage.Api.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool?>("IsRootedOrJailbroken")
+                        .HasColumnType("INTEGER");
+
                     b.Property<DateTimeOffset?>("LastActiveDate")
                         .HasColumnType("TEXT");
 
@@ -467,8 +470,14 @@ namespace SafePassage.Api.Data.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("PostureUpdatedAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("RegistrationDate")
                         .HasColumnType("TEXT");
+
+                    b.Property<bool?>("ScreenLockEnabled")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("SigningPublicKey")
                         .HasMaxLength(128)

@@ -24,6 +24,9 @@ public sealed record DeviceRegistrationRequest
     /// <summary>Base64-encoded uncompressed P-256 signing public key for this installation.</summary>
     [Required, StringLength(128, MinimumLength = 88)]
     public required string SigningPublicKey { get; init; }
+
+    /// <summary>Optional device security posture signals reported by supported mobile platforms.</summary>
+    public DevicePostureRequest? Posture { get; init; }
 }
 
 /// <summary>Credentials plus device data used to submit a device while the user has not completed MFA.</summary>
@@ -36,7 +39,26 @@ public sealed record PendingDeviceRegistrationRequest
     [Required, StringLength(100, MinimumLength = 1)] public required string DeviceType { get; init; }
     [Required, StringLength(100, MinimumLength = 1)] public required string OS { get; init; }
     [Required, StringLength(128, MinimumLength = 88)] public required string SigningPublicKey { get; init; }
+    public DevicePostureRequest? Posture { get; init; }
 }
+
+public sealed record DevicePostureRequest(
+    bool? ScreenLockEnabled = null,
+    bool? IsRootedOrJailbroken = null,
+    string? SignalSource = null);
+
+public sealed record DevicePostureUpdateRequest
+{
+    [Required, StringLength(256, MinimumLength = 1)]
+    public required string DeviceId { get; init; }
+
+    public DevicePostureRequest? Posture { get; init; }
+}
+
+public sealed record DevicePostureResponse(
+    bool? ScreenLockEnabled,
+    bool? IsRootedOrJailbroken,
+    DateTimeOffset? ReportedAt);
 
 public sealed record DeviceSigningKeyRequest
 {
@@ -60,4 +82,5 @@ public sealed record DeviceResponse(
     string TrustStatus,
     Guid UserId,
     bool HasSigningKey = false,
-    bool HasPendingSigningKey = false);
+    bool HasPendingSigningKey = false,
+    DevicePostureResponse? Posture = null);

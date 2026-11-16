@@ -483,6 +483,15 @@ using (var scope = app.Services.CreateScope())
                 var creator = dbContext.GetService<IRelationalDatabaseCreator>();
                 creator.CreateTables();
             }
+
+            using var postureCmd = conn.CreateCommand();
+            postureCmd.CommandText = """
+                ALTER TABLE "Devices"
+                  ADD COLUMN IF NOT EXISTS "ScreenLockEnabled" boolean NULL,
+                  ADD COLUMN IF NOT EXISTS "IsRootedOrJailbroken" boolean NULL,
+                  ADD COLUMN IF NOT EXISTS "PostureUpdatedAt" timestamp with time zone NULL;
+                """;
+            postureCmd.ExecuteNonQuery();
         }
         else
         {

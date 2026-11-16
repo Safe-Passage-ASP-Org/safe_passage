@@ -35,7 +35,7 @@ else
                 <label class="policy-check"><input type="checkbox" @bind="MfaEnforced" /> Require MFA / step-up verification</label>
                 <label class="policy-check"><input type="checkbox" @bind="Rules.AllowMfaBypass" /> Allow trusted-device MFA bypass</label>
             </div>
-            <p class="posture-note">Screen-lock and device-integrity flags are preserved when editing, but this version does not collect or enforce those checks.</p>
+            <p class="posture-note">Screen-lock and device-integrity rules are enforced on device trust approval and sensitive application access. Devices with unknown posture are blocked when a rule requires verification.</p>
             @if (!string.IsNullOrWhiteSpace(FormError)) { <div class="policy-alert" role="alert">@FormError</div> }
             <footer><button type="button" class="policy-cancel" @onclick="CloseEditor" disabled="@Saving">Cancel</button><button type="submit" class="policy-save" disabled="@Saving">@(Saving ? "Saving…" : "Save policy")</button></footer>
         </form>
@@ -65,7 +65,7 @@ else
     private bool MfaEnforced { get => Rules.RequireMfa || Rules.RequireStepUp; set { Rules.RequireMfa = value; Rules.RequireStepUp = value; } }
     protected override async Task OnInitializedAsync() => await LoadAsync();
     private async Task LoadAsync() { Loading = true; Error = ""; try { PolicyRecords = await Api.GetPoliciesAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
-    private static List<string> DescribeRules(string json) { try { var rules = JsonSerializer.Deserialize<PolicyRules>(json, JsonOptions) ?? new(); var enabled = new List<string>(); if (rules.RequireMfa) enabled.Add("MFA required"); if (rules.RequireTrustedDevice) enabled.Add("Trusted device required"); if (rules.RequireStepUp) enabled.Add("Step-up required"); if (rules.AllowMfaBypass) enabled.Add("MFA bypass allowed"); if (rules.RequireScreenLock || rules.BlockRooted || rules.BlockJailbroken) enabled.Add("Device posture flag stored (not enforced)"); return enabled; } catch { return ["Invalid policy rules JSON"]; } }
+    private static List<string> DescribeRules(string json) { try { var rules = JsonSerializer.Deserialize<PolicyRules>(json, JsonOptions) ?? new(); var enabled = new List<string>(); if (rules.RequireMfa) enabled.Add("MFA required"); if (rules.RequireTrustedDevice) enabled.Add("Trusted device required"); if (rules.RequireStepUp) enabled.Add("Step-up required"); if (rules.AllowMfaBypass) enabled.Add("MFA bypass allowed"); if (rules.RequireScreenLock) enabled.Add("Screen lock required"); if (rules.BlockRooted || rules.BlockJailbroken) enabled.Add("Block rooted/jailbroken"); return enabled; } catch { return ["Invalid policy rules JSON"]; } }
     private void CreatePolicy() { IsNew = true; Editing = new(Guid.Empty, "", "Authentication", true, "{}"); Draft = new() { PolicyType = "Authentication", IsEnforced = true }; Rules = new() { RequireMfa = true, RequireTrustedDevice = true, RequireStepUp = true }; FormError = ""; }
     private void EditPolicy(AdminPolicy policy) { IsNew = false; Editing = policy; Draft = new() { PolicyName = policy.PolicyName, PolicyType = policy.PolicyType, IsEnforced = policy.IsEnforced, RulesJson = policy.RulesJson }; try { Rules = JsonSerializer.Deserialize<PolicyRules>(policy.RulesJson, JsonOptions) ?? new(); } catch { Rules = new(); FormError = "The stored policy JSON was invalid; saving will replace it with valid rules."; } }
     private void CloseEditor() { if (!Saving) Editing = null; }
