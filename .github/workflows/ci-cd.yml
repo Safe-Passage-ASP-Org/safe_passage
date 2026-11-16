@@ -80,13 +80,13 @@ jobs:
         run: |
           check_url() {
             local url="$1"
-            for i in $(seq 1 12); do
+            for i in $(seq 1 18); do
               code=$(curl -sS -L -m 20 -o /dev/null -w "%{http_code}" "$url" || echo "000")
               if [ "$code" = "200" ]; then
                 echo "OK ($code): $url"
                 return 0
               fi
-              echo "Attempt $i/12 for $url returned $code; retrying in 10s..."
+              echo "Attempt $i/18 for $url returned $code; retrying in 10s..."
               sleep 10
             done
             echo "FAILED: $url did not return 200"
@@ -96,3 +96,23 @@ jobs:
           check_url "https://safe-passage-api.onrender.com/api/status"
           check_url "https://safe-passage-web.onrender.com/"
           check_url "https://safepassage-mobile.vercel.app/"
+
+          status_json=$(curl -fsS -m 20 "https://safe-passage-api.onrender.com/api/status" || echo "{}")
+          live_commit=$(echo "$status_json" | jq -r '.commit // "unknown"')
+
+          {
+            echo "## Deployment Verification Summary"
+            echo ""
+            echo "| Service | URL | Status |"
+            echo "|---|---|---|"
+            echo "| Backend API (Render) | https://safe-passage-api.onrender.com/api/status | Passed (HTTP 200) |"
+            echo "| Admin Web (Render) | https://safe-passage-web.onrender.com/ | Passed (HTTP 200) |"
+            echo "| Mobile Web (Vercel) | https://safepassage-mobile.vercel.app/ | Passed (HTTP 200) |"
+            echo ""
+            echo "- **Branch:** \`${{ github.ref_name }}\`"
+            echo "- **Expected Commit:** \`${{ github.sha }}\`"
+            echo "- **Live Backend Commit:** \`${live_commit}\`"
+            if [ "$live_commit" != "${{ github.sha }}" ] && [ "$live_commit" != "unknown" ] && [ "$live_commit" != "local" ]; then
+              echo "- **Note:** Render is still serving an earlier commit (\`${live_commit}\`) while \`${{ github.sha }}\` rolls out or if the new deploy failed."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

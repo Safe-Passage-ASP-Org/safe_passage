@@ -529,6 +529,7 @@ app.MapGet("/api/status", () => Results.Ok(new
 {
     Status = "Online",
     System = "Safe Passage API",
+    Commit = Environment.GetEnvironmentVariable("RENDER_GIT_COMMIT") ?? "local",
     Timestamp = DateTime.UtcNow
 }))
 .WithName("GetSystemStatus");
