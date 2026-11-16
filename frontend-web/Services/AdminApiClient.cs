@@ -434,9 +434,10 @@ public sealed record AdminUser(Guid Id, string Username, string Email, bool IsAc
     string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null);
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
 public sealed class AdminGroupForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
+public sealed record DevicePostureInfo(bool? ScreenLockEnabled, bool? IsRootedOrJailbroken, DateTimeOffset? ReportedAt);
 public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, string DeviceType, string OS,
     DateTimeOffset RegistrationDate, DateTimeOffset? LastActiveDate, string Status, string TrustStatus, Guid UserId,
-    bool HasSigningKey = false, bool HasPendingSigningKey = false);
+    bool HasSigningKey = false, bool HasPendingSigningKey = false, DevicePostureInfo? Posture = null);
 public sealed record AdminApplication(Guid Id, string Name, string Description, int UserAccessCount, int GroupAccessCount,
     string LaunchUrl = "", string? ClientId = null, string ClientType = "confidential", string RedirectUris = "", string PostLogoutRedirectUris = "", string AllowedScopes = "openid profile email", bool IsPublished = false, bool AllowAccessRequests = false, string? ClientSecret = null);
 public sealed record AccessibleApplication(Guid Id, string Name, string Description, string LaunchUrl);

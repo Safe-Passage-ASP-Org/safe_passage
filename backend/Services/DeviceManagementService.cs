@@ -12,13 +12,14 @@ public enum DeviceManagementFailure
     DuplicateDevice,
     NotFound,
     InvalidSigningKey,
-    SigningKeyAlreadyRegistered
+    SigningKeyAlreadyRegistered,
+    PostureNonCompliant
 }
 
-public sealed record DeviceManagementResult<T>(T? Response, DeviceManagementFailure Failure)
+public sealed record DeviceManagementResult<T>(T? Response, DeviceManagementFailure Failure, string? Detail = null)
 {
     public static DeviceManagementResult<T> Success(T response) => new(response, DeviceManagementFailure.None);
-    public static DeviceManagementResult<T> Failed(DeviceManagementFailure failure) => new(default, failure);
+    public static DeviceManagementResult<T> Failed(DeviceManagementFailure failure, string? detail = null) => new(default, failure, detail);
 }
 
 public interface IDeviceManagementService
@@ -26,13 +27,16 @@ public interface IDeviceManagementService
     Task<IReadOnlyList<DeviceResponse>> GetAllAsync(Guid requesterId, bool includeAll, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> GetByIdAsync(Guid id, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> RegisterAsync(Guid userId, DeviceRegistrationRequest request, CancellationToken cancellationToken);
+    Task<DeviceManagementResult<DeviceResponse>> UpdatePostureAsync(Guid userId, DevicePostureUpdateRequest request, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> EnrollSigningKeyAsync(Guid userId, DeviceSigningKeyRequest request, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> RequestSigningKeyRecoveryAsync(Guid userId, DeviceSigningKeyRequest request, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> TrustAsync(Guid id, Guid actorId, CancellationToken cancellationToken);
     Task<DeviceManagementResult<DeviceResponse>> RevokeAsync(Guid id, Guid actorId, CancellationToken cancellationToken);
 }
 
-public sealed class DeviceManagementService(ApplicationDbContext dbContext) : IDeviceManagementService
+public sealed class DeviceManagementService(
+    ApplicationDbContext dbContext,
+    ISecurityPolicyEvaluator? policyEvaluator = null) : IDeviceManagementService
 {
     public async Task<IReadOnlyList<DeviceResponse>> GetAllAsync(
         Guid requesterId,
@@ -88,6 +92,9 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
             Status = DeviceStatus.PendingApproval,
             TrustStatus = DeviceTrustStatus.Untrusted,
             SigningPublicKey = request.SigningPublicKey,
+            ScreenLockEnabled = request.Posture?.ScreenLockEnabled,
+            IsRootedOrJailbroken = request.Posture?.IsRootedOrJailbroken,
+            PostureUpdatedAt = request.Posture is not null ? DateTimeOffset.UtcNow : null,
             UserId = userId
         };
 
@@ -102,6 +109,25 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
             return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.DuplicateDevice);
         }
 
+        return DeviceManagementResult<DeviceResponse>.Success(ToResponse(device));
+    }
+
+    public async Task<DeviceManagementResult<DeviceResponse>> UpdatePostureAsync(
+        Guid userId,
+        DevicePostureUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        var device = await dbContext.Devices.SingleOrDefaultAsync(
+            candidate => candidate.UserId == userId && candidate.DeviceId == request.DeviceId.Trim(),
+            cancellationToken);
+        if (device is null)
+            return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.NotFound);
+
+        device.ScreenLockEnabled = request.Posture?.ScreenLockEnabled;
+        device.IsRootedOrJailbroken = request.Posture?.IsRootedOrJailbroken;
+        device.PostureUpdatedAt = DateTimeOffset.UtcNow;
+        AddActivity(userId, "Device Posture Updated", device.DeviceId, ActivityLogStatus.Success);
+        await dbContext.SaveChangesAsync(cancellationToken);
         return DeviceManagementResult<DeviceResponse>.Success(ToResponse(device));
     }
 
@@ -167,6 +193,18 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
         if (device is null)
             return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.NotFound);
 
+        var evaluator = policyEvaluator ?? new SecurityPolicyEvaluator(dbContext);
+        var policy = await evaluator.EvaluateAsync(cancellationToken);
+        var postureResult = DevicePostureEvaluator.Evaluate(device, policy);
+        if (!postureResult.IsCompliant)
+        {
+            AddActivity(actorId, "Device Trust Blocked", device.DeviceId, ActivityLogStatus.Failure);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return DeviceManagementResult<DeviceResponse>.Failed(
+                DeviceManagementFailure.PostureNonCompliant,
+                postureResult.FailureReason);
+        }
+
         device.Status = DeviceStatus.Active;
         device.TrustStatus = DeviceTrustStatus.Trusted;
         if (!string.IsNullOrWhiteSpace(device.PendingSigningPublicKey))
@@ -226,5 +264,9 @@ public sealed class DeviceManagementService(ApplicationDbContext dbContext) : ID
         device.TrustStatus == DeviceTrustStatus.Trusted ? "TRUSTED" : "UNTRUSTED",
         device.UserId,
         !string.IsNullOrWhiteSpace(device.SigningPublicKey),
-        !string.IsNullOrWhiteSpace(device.PendingSigningPublicKey));
+        !string.IsNullOrWhiteSpace(device.PendingSigningPublicKey),
+        new DevicePostureResponse(
+            device.ScreenLockEnabled,
+            device.IsRootedOrJailbroken,
+            device.PostureUpdatedAt));
 }

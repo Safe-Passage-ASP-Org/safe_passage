@@ -26,6 +26,9 @@ public sealed class Device
     public DeviceTrustStatus TrustStatus { get; set; } = DeviceTrustStatus.Untrusted;
     public string? SigningPublicKey { get; set; }
     public string? PendingSigningPublicKey { get; set; }
+    public bool? ScreenLockEnabled { get; set; }
+    public bool? IsRootedOrJailbroken { get; set; }
+    public DateTimeOffset? PostureUpdatedAt { get; set; }
     public Guid UserId { get; set; }
 
     public User User { get; set; } = null!;

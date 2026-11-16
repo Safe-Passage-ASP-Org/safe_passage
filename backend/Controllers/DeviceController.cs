@@ -170,6 +170,25 @@ public sealed class DeviceController(
             : ToProblem(result.Failure);
     }
 
+    /// <summary>Updates reported security posture for an enrolled device.</summary>
+    [Authorize]
+    [HttpPost("posture")]
+    [ProducesResponseType<DeviceResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<ActionResult<DeviceResponse>> UpdatePosture(
+        [FromBody] DevicePostureUpdateRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var result = await deviceManagement.UpdatePostureAsync(userId, request, cancellationToken);
+        return result.Failure == DeviceManagementFailure.None
+            ? Ok(result.Response)
+            : ToProblem(result);
+    }
+
     /// <summary>Approves and trusts a registered device.</summary>
     [Authorize(Roles = "Admin,Administrator,Super Admin")]
     [HttpPut("{id:guid}/trust")]
@@ -183,7 +202,7 @@ public sealed class DeviceController(
         var result = await deviceManagement.TrustAsync(id, actorId, cancellationToken);
         return result.Failure == DeviceManagementFailure.None
             ? Ok(result.Response)
-            : ToProblem(result.Failure);
+            : ToProblem(result);
     }
 
     /// <summary>Revokes and disables a registered device.</summary>
@@ -212,7 +231,7 @@ public sealed class DeviceController(
     private bool IsAdministrator() =>
         User.IsInRole("Admin") || User.IsInRole("Administrator") || User.IsInRole("Super Admin");
 
-    private ObjectResult ToProblem(DeviceManagementFailure failure)
+    private ObjectResult ToProblem(DeviceManagementFailure failure, string? detailOverride = null)
     {
         var (statusCode, title, detail) = failure switch
         {
@@ -221,11 +240,15 @@ public sealed class DeviceController(
             DeviceManagementFailure.InvalidSigningKey => (StatusCodes.Status400BadRequest, "Invalid signing key", "The supplied signing key is not a valid P-256 public key."),
             DeviceManagementFailure.SigningKeyAlreadyRegistered => (StatusCodes.Status409Conflict, "Signing key already enrolled", "A different signing key is already bound to this device."),
             DeviceManagementFailure.NotFound => (StatusCodes.Status404NotFound, "Device not found", "The requested device does not exist."),
+            DeviceManagementFailure.PostureNonCompliant => (StatusCodes.Status403Forbidden, "Device posture non-compliant", detailOverride ?? "The device does not meet the enforced security posture policy."),
             _ => (StatusCodes.Status500InternalServerError, "Device operation failed", "The device operation could not be completed.")
         };
 
         return Problem(statusCode: statusCode, title: title, detail: detail);
     }
+
+    private ObjectResult ToProblem<T>(DeviceManagementResult<T> result) =>
+        ToProblem(result.Failure, result.Detail);
 }
 
 public sealed record PushTokenRequest(string? Token, string? Platform);

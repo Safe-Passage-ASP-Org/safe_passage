@@ -32,6 +32,9 @@ export async function collectDeviceTelemetry() {
     ? `${globalThis.navigator?.userAgentData?.brands?.[0]?.brand || 'Web'} browser`
     : Device.deviceName ?? (`${Device.manufacturer || ''} ${Device.modelName || 'Device'}`.trim() || 'Android Device');
 
+  // Collect only posture signals supported by the current platform; leave unsupported checks null.
+  const posture = await collectDevicePosture();
+
   return {
     deviceId: deviceId || 'DEVICE-' + Math.random().toString(36).substring(2, 9).toUpperCase(),
     deviceName,
@@ -42,9 +45,36 @@ export async function collectDeviceTelemetry() {
     manufacturer: Device.manufacturer ?? 'Unknown',
     modelName: Device.modelName ?? 'Unknown Model',
     hardwareFingerprint,
+    posture,
     appVersion: Application.nativeApplicationVersion ?? '1.0.0',
     buildVersion: Application.nativeBuildVersion ?? '1',
     registeredAt: new Date().toISOString(),
+  };
+}
+
+export async function collectDevicePosture() {
+  if (Platform.OS === 'web') {
+    return {
+      screenLockEnabled: null,
+      isRootedOrJailbroken: null,
+      signalSource: 'unavailable-web',
+    };
+  }
+
+  let isRootedOrJailbroken = null;
+  try {
+    if (typeof Device.isRootedExperimentalAsync === 'function') {
+      const rooted = await Device.isRootedExperimentalAsync();
+      isRootedOrJailbroken = typeof rooted === 'boolean' ? rooted : null;
+    }
+  } catch {
+    isRootedOrJailbroken = null;
+  }
+
+  return {
+    screenLockEnabled: null,
+    isRootedOrJailbroken,
+    signalSource: isRootedOrJailbroken === null ? 'unavailable-native' : 'expo-device',
   };
 }
 
@@ -99,6 +129,7 @@ export async function registerDeviceWithBackend(telemetry, credentials = null) {
     deviceType: telemetry.deviceType || 'Phone',
     os: telemetry.os || `${telemetry.osName} ${telemetry.osVersion}`.trim(),
     signingPublicKey: await getDeviceSigningPublicKey(getUserIdFromToken(token) ?? credentials?.username?.trim()),
+    posture: telemetry.posture ?? null,
   };
 
   const isPendingEnrollment = !token;

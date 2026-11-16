@@ -41,7 +41,8 @@ public sealed class PendingDeviceRegistrationService(
             DeviceName = request.DeviceName,
             DeviceType = request.DeviceType,
             OS = request.OS,
-            SigningPublicKey = request.SigningPublicKey
+            SigningPublicKey = request.SigningPublicKey,
+            Posture = request.Posture
         }, cancellationToken);
     }
 
