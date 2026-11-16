@@ -29,7 +29,10 @@ jobs:
         run: dotnet test backend-tests/SafePassage.Api.Tests/SafePassage.Api.Tests.csproj --configuration Release --no-restore
 
       - name: Publish Frontend Web
-        run: dotnet publish frontend-web/SafePassage.Web.csproj --configuration Release --no-restore --output ./out/web
+        run: |
+          dotnet publish frontend-web/SafePassage.Web.csproj --configuration Release --no-restore --output ./out/web
+          ls -la ./out/web/wwwroot ./out/web/wwwroot/_framework 2>&1 || true
+          grep -i "blazor" ./out/web/SafePassage.Web.staticwebassets.endpoints.json 2>&1 || true
 
   mobile:
     name: Test Mobile & Verify Vercel Web Export
