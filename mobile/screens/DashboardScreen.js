@@ -9,61 +9,72 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { getMfaStatus, getToken, saveAccessToken } from '../services/AuthService';
+import { getMfaStatus, saveAccessToken } from '../services/AuthService';
 import { getApprovalDeviceId, storeApprovalDeviceId } from '../services/DeviceSigningService';
-import { BASE_URL, getApplicationHeaders } from '../config';
+import { deriveSecurityStatus, fetchDashboardData } from '../services/DashboardService';
 import { startMfaRealtime } from '../services/RealtimeService';
 
-async function fetchRecentActivity(deviceId) {
-  const token = await getToken();
-  if (!token || !deviceId) throw new Error('Sign in on an enrolled device.');
-  const response = await fetch(`${BASE_URL}/api/activity`, {
-    headers: { Authorization: `Bearer ${token}`, ...getApplicationHeaders(deviceId) },
-  });
-  if (!response.ok) throw new Error('Could not load activity.');
-  return response.json();
-}
+const INITIAL_SECURITY_STATUS = {
+  state: 'checking',
+  label: 'Checking...',
+  detail: 'Verifying device trust and recent security alerts.',
+  icon: 'shield-outline',
+  color: '#94a3b8',
+};
 
 export default function DashboardScreen({ navigation, route }) {
   const sessionToken = route?.params?.sessionToken ?? null;
   const approvalDeviceId = route?.params?.approvalDeviceId ?? null;
 
   const [recentActivity, setRecentActivity] = useState([]);
+  const [securityStatus, setSecurityStatus] = useState(INITIAL_SECURITY_STATUS);
   const [loading, setLoading] = useState(true);
-
   const [activityError, setActivityError] = useState('');
+
+  const loadDashboard = useCallback(async (isActive = () => true) => {
+    try {
+      const deviceId = approvalDeviceId ?? await getApprovalDeviceId();
+      const data = await fetchDashboardData(deviceId);
+      if (isActive()) {
+        setRecentActivity(data.recentActivity);
+        setSecurityStatus(data.securityStatus);
+        setActivityError('');
+      }
+    } catch (error) {
+      if (isActive()) {
+        setRecentActivity([]);
+        setSecurityStatus(deriveSecurityStatus({ error }));
+        setActivityError(error?.message || 'Could not load live alerts. Check your connection.');
+      }
+    } finally {
+      if (isActive()) setLoading(false);
+    }
+  }, [approvalDeviceId]);
 
   useFocusEffect(useCallback(() => {
     let active = true;
     let refreshing = false;
     setLoading(true);
     setRecentActivity([]);
+    setSecurityStatus(INITIAL_SECURITY_STATUS);
     setActivityError('');
-    const loadRecentActivity = async () => {
+    const refresh = async () => {
       if (refreshing) return;
       refreshing = true;
       try {
-        const deviceId = approvalDeviceId ?? await getApprovalDeviceId();
-        const data = await fetchRecentActivity(deviceId);
-        if (active) {
-          setRecentActivity(data.slice(0, 3));
-          setActivityError('');
-        }
-      } catch (error) {
-        if (active) setActivityError('Could not load live alerts. Check your connection.');
+        await loadDashboard(() => active);
       } finally {
         refreshing = false;
-        if (active) setLoading(false);
       }
     };
 
-    loadRecentActivity();
-    const intervalId = setInterval(loadRecentActivity, 30000);
+    refresh();
+    const intervalId = setInterval(refresh, 30000);
     return () => {
       active = false;
       clearInterval(intervalId);
     };
-  }, [approvalDeviceId]));
+  }, [loadDashboard]));
 
   useEffect(() => {
     if (!sessionToken) return undefined;
@@ -84,8 +95,12 @@ export default function DashboardScreen({ navigation, route }) {
             await startMfaRealtime();
             if (!active) return;
             navigation.setParams({ sessionToken: null, approvalDeviceId: approvedDeviceId });
-            const activity = await fetchRecentActivity(approvedDeviceId);
-            if (active) setRecentActivity(activity.slice(0, 3));
+            const dashboard = await fetchDashboardData(approvedDeviceId);
+            if (active) {
+              setRecentActivity(dashboard.recentActivity);
+              setSecurityStatus(dashboard.securityStatus);
+              setActivityError('');
+            }
             return;
           }
 
@@ -113,9 +128,12 @@ export default function DashboardScreen({ navigation, route }) {
     <ScrollView style={styles.container}>
       {/* ── Security Status Card ─────────────────────────────── */}
       <View style={styles.statusCard}>
-        <Ionicons name="shield-checkmark" size={48} color="#10b981" />
+        <Ionicons name={securityStatus.icon} size={48} color={securityStatus.color} />
         <Text style={styles.statusTitle}>Security Status</Text>
-        <Text style={styles.statusValue}>Protected</Text>
+        <Text style={[styles.statusValue, { color: securityStatus.color }]}>
+          {securityStatus.label}
+        </Text>
+        <Text style={styles.statusDetail}>{securityStatus.detail}</Text>
       </View>
 
       {/* ── Pending MFA Request ───────────────────────────────── */}
@@ -140,7 +158,19 @@ export default function DashboardScreen({ navigation, route }) {
             <ActivityIndicator color="#0ea5e9" style={{ padding: 20 }} />
           )}
           {!loading && activityError ? (
-            <Text style={styles.emptyText}>{activityError}</Text>
+            <View style={styles.errorContainer}>
+              <Text style={styles.errorText}>{activityError}</Text>
+              <TouchableOpacity
+                style={styles.retryButton}
+                onPress={() => {
+                  setLoading(true);
+                  setActivityError('');
+                  loadDashboard();
+                }}
+              >
+                <Text style={styles.retryButtonText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
           ) : null}
           {!loading && !activityError && recentActivity.length === 0 && (
             <Text style={styles.emptyText}>No recent alerts.</Text>
@@ -180,6 +210,7 @@ const styles = StyleSheet.create({
   },
   statusTitle: { fontSize: 16, color: '#94a3b8', marginTop: 12 },
   statusValue: { fontSize: 28, fontWeight: 'bold', color: '#10b981', marginTop: 4 },
+  statusDetail: { fontSize: 13, color: '#94a3b8', textAlign: 'center', marginTop: 6 },
   section: { marginBottom: 24 },
   sectionTitle: { fontSize: 18, fontWeight: '600', color: '#f8fafc', marginBottom: 12 },
   alertCard: {
@@ -199,6 +230,15 @@ const styles = StyleSheet.create({
   },
   alertContent: { flex: 1 },
   emptyText: { color: '#64748b', textAlign: 'center', padding: 20 },
+  errorContainer: { padding: 20, alignItems: 'center', gap: 12 },
+  errorText: { color: '#fca5a5', textAlign: 'center', fontSize: 14 },
+  retryButton: {
+    backgroundColor: '#0ea5e9',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  retryButtonText: { color: '#f8fafc', fontWeight: '600', fontSize: 14 },
   alertTitle: { fontSize: 16, fontWeight: '500', color: '#f8fafc' },
   alertDesc: { fontSize: 14, color: '#94a3b8', marginTop: 2 },
   card: {
