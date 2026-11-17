@@ -47,6 +47,9 @@ export async function startMfaRealtime() {
     requestHandler?.({
       requestId: payload.sessionToken,
       deviceId: payload.deviceId,
+      ip: payload.ipAddress ?? payload.ip ?? 'Not provided',
+      os: payload.operatingSystem ?? payload.os ?? 'Not provided',
+      location: payload.location ?? 'Not provided',
       time: payload.requestedAt ? new Date(payload.requestedAt).toLocaleTimeString() : 'Just now',
     });
   });

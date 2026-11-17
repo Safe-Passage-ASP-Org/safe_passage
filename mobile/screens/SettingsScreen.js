@@ -1,11 +1,39 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView, Alert, ActivityIndicator, Modal, TextInput, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
+import * as SecureStore from 'expo-secure-store';
 import { logout, getToken } from '../services/AuthService';
 import { getApprovalDeviceId, getDeviceSigningPublicKey, getUserIdFromToken } from '../services/DeviceSigningService';
-import { stopMfaRealtime } from '../services/RealtimeService';
+import { registerForPushNotificationsAsync } from '../services/NotificationService';
+import { startMfaRealtime, stopMfaRealtime } from '../services/RealtimeService';
+
+const PIN_KEY = 'safepassage_local_pin';
+const PUSH_PREF_KEY = 'safepassage_push_enabled';
+
+async function readSetting(key) {
+  if (Platform.OS === 'web') {
+    try { return globalThis.localStorage?.getItem(key) ?? null; } catch { return null; }
+  }
+  return SecureStore.getItemAsync(key);
+}
+
+async function writeSetting(key, value) {
+  if (Platform.OS === 'web') {
+    try { globalThis.localStorage?.setItem(key, value); } catch {}
+    return;
+  }
+  await SecureStore.setItemAsync(key, value);
+}
+
+async function deleteSetting(key) {
+  if (Platform.OS === 'web') {
+    try { globalThis.localStorage?.removeItem(key); } catch {}
+    return;
+  }
+  await SecureStore.deleteItemAsync(key);
+}
 
 /**
  * Decode the payload from a JWT token without verifying the signature.
@@ -54,6 +82,11 @@ export default function SettingsScreen({ navigation }) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [userInfo, setUserInfo] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
+  const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [hasPin, setHasPin] = useState(false);
+  const [pinDraft, setPinDraft] = useState('');
+  const [pinConfirm, setPinConfirm] = useState('');
+  const [pinError, setPinError] = useState('');
 
   useFocusEffect(React.useCallback(() => {
     let active = true;
@@ -61,7 +94,17 @@ export default function SettingsScreen({ navigation }) {
     setLoadingUser(true);
     (async () => {
       try {
-        const token = await getToken();
+        const [token, pushPref, storedPin] = await Promise.all([
+          getToken(),
+          readSetting(PUSH_PREF_KEY),
+          readSetting(PIN_KEY),
+        ]);
+        if (active && pushPref !== null) {
+          setNotificationsEnabled(pushPref !== 'false');
+        }
+        if (active) {
+          setHasPin(Boolean(storedPin));
+        }
         const payload = token ? decodeJwtPayload(token) : null;
         const name = payload?.name
           ?? payload?.unique_name
@@ -93,11 +136,43 @@ export default function SettingsScreen({ navigation }) {
   };
 
   const handleChangePin = () => {
-    Alert.alert(
-      'Change PIN',
-      'PIN management will be available in a future update.',
-      [{ text: 'OK' }]
-    );
+    setPinDraft('');
+    setPinConfirm('');
+    setPinError('');
+    setPinModalVisible(true);
+  };
+
+  const handleSavePin = async () => {
+    if (!/^\d{4,8}$/.test(pinDraft)) {
+      setPinError('Enter a 4 to 8 digit numeric PIN.');
+      return;
+    }
+    if (pinDraft !== pinConfirm) {
+      setPinError('PIN confirmation does not match.');
+      return;
+    }
+    await writeSetting(PIN_KEY, pinDraft);
+    setHasPin(true);
+    setPinModalVisible(false);
+    Alert.alert('PIN saved', 'Your local authenticator PIN has been updated.');
+  };
+
+  const handleClearPin = async () => {
+    await deleteSetting(PIN_KEY);
+    setHasPin(false);
+    setPinModalVisible(false);
+    Alert.alert('PIN removed', 'Local authenticator PIN has been cleared.');
+  };
+
+  const handleToggleNotifications = async (enabled) => {
+    setNotificationsEnabled(enabled);
+    await writeSetting(PUSH_PREF_KEY, enabled ? 'true' : 'false');
+    if (enabled) {
+      await registerForPushNotificationsAsync();
+      await startMfaRealtime();
+    } else {
+      await stopMfaRealtime();
+    }
   };
 
   const handleCopyEnrollmentInfo = async () => {
@@ -170,7 +245,7 @@ export default function SettingsScreen({ navigation }) {
             </View>
             <Switch
               value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
+              onValueChange={handleToggleNotifications}
               trackColor={{ false: '#1e293b', true: '#0ea5e9' }}
               thumbColor={notificationsEnabled ? '#ffffff' : '#94a3b8'}
             />
@@ -183,6 +258,48 @@ export default function SettingsScreen({ navigation }) {
         <Ionicons name="log-out" size={24} color="#ef4444" />
         <Text style={styles.logoutText}>Sign Out</Text>
       </TouchableOpacity>
+
+      <Modal visible={pinModalVisible} transparent animationType="fade" onRequestClose={() => setPinModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>{hasPin ? 'Update Authenticator PIN' : 'Set Authenticator PIN'}</Text>
+            <TextInput
+              style={styles.pinInput}
+              placeholder="Enter 4–8 digit PIN"
+              placeholderTextColor="#64748b"
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={8}
+              value={pinDraft}
+              onChangeText={setPinDraft}
+            />
+            <TextInput
+              style={styles.pinInput}
+              placeholder="Confirm PIN"
+              placeholderTextColor="#64748b"
+              keyboardType="number-pad"
+              secureTextEntry
+              maxLength={8}
+              value={pinConfirm}
+              onChangeText={setPinConfirm}
+            />
+            {pinError ? <Text style={styles.pinErrorText}>{pinError}</Text> : null}
+            <View style={styles.modalActions}>
+              {hasPin ? (
+                <TouchableOpacity style={styles.modalDangerBtn} onPress={handleClearPin}>
+                  <Text style={styles.modalDangerText}>Remove</Text>
+                </TouchableOpacity>
+              ) : null}
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setPinModalVisible(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalSaveBtn} onPress={handleSavePin}>
+                <Text style={styles.modalSaveText}>Save PIN</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -256,4 +373,37 @@ const styles = StyleSheet.create({
     borderColor: '#ef444440',
   },
   logoutText: { fontSize: 16, fontWeight: 'bold', color: '#ef4444', marginLeft: 8 },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(2, 6, 23, 0.8)',
+    justifyContent: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: '#0f172a',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1e293b',
+    padding: 20,
+    gap: 12,
+  },
+  modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#f8fafc', marginBottom: 4 },
+  pinInput: {
+    backgroundColor: '#020617',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: '#f8fafc',
+    fontSize: 16,
+  },
+  pinErrorText: { color: '#ef4444', fontSize: 13 },
+  modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 10, marginTop: 4 },
+  modalCancelBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, backgroundColor: '#1e293b' },
+  modalCancelText: { color: '#cbd5e1', fontWeight: '600' },
+  modalSaveBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, backgroundColor: '#0ea5e9' },
+  modalSaveText: { color: '#ffffff', fontWeight: '600' },
+  modalDangerBtn: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 8, backgroundColor: '#ef444420', marginRight: 'auto' },
+  modalDangerText: { color: '#ef4444', fontWeight: '600' },
 });
