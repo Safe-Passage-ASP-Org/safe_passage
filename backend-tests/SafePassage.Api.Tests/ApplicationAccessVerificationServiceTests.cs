@@ -104,6 +104,61 @@ public sealed class ApplicationAccessVerificationServiceTests
         Assert.True(trustedDevice.RequiresTrustedDevice);
     }
 
+    [Fact]
+    public async Task Verify_DeniesNonCompliantDevicePosture_WhenPosturePolicyIsEnforced()
+    {
+        await using var dbContext = CreateDbContext();
+        var (user, application) = await SeedUserAndApplicationAsync(dbContext);
+        dbContext.ApplicationUserAccesses.Add(new ApplicationUserAccess
+        {
+            UserId = user.Id,
+            ApplicationId = application.Id
+        });
+        dbContext.SecurityPolicies.Add(new SecurityPolicy
+        {
+            Id = Guid.NewGuid(),
+            PolicyName = "Posture policy",
+            PolicyType = "Device",
+            IsEnforced = true,
+            RulesJson = "{\"requiresTrustedDevice\":true,\"requiresScreenLock\":true,\"blockRootedDevice\":true}"
+        });
+        dbContext.Devices.Add(new Device
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            DeviceId = "rooted-device",
+            DeviceName = "Rooted Phone",
+            DeviceType = "mobile",
+            OS = "Android",
+            Status = DeviceStatus.Active,
+            TrustStatus = DeviceTrustStatus.Trusted,
+            ScreenLockEnabled = true,
+            IsRootedOrJailbroken = true
+        });
+        dbContext.Devices.Add(new Device
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            DeviceId = "healthy-device",
+            DeviceName = "Healthy Phone",
+            DeviceType = "mobile",
+            OS = "Android",
+            Status = DeviceStatus.Active,
+            TrustStatus = DeviceTrustStatus.Trusted,
+            ScreenLockEnabled = true,
+            IsRootedOrJailbroken = false
+        });
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext);
+
+        var denied = await service.VerifyAsync(user.Id, "rooted-device", application.Id, CancellationToken.None);
+        var allowed = await service.VerifyAsync(user.Id, "healthy-device", application.Id, CancellationToken.None);
+
+        Assert.False(denied.Allowed);
+        Assert.Equal("device_posture_noncompliant", denied.Reason);
+        Assert.True(allowed.Allowed);
+    }
+
     private static ApplicationAccessVerificationService CreateService(ApplicationDbContext dbContext) =>
         new(dbContext, new SecurityPolicyEvaluator(dbContext));
 

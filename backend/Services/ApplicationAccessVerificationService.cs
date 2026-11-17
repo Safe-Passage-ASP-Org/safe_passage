@@ -60,16 +60,34 @@ public sealed class ApplicationAccessVerificationService(
 
         if (policy.RequiresTrustedDevice)
         {
-            var isTrustedDevice = !string.IsNullOrWhiteSpace(deviceId)
-                && await dbContext.Devices.AnyAsync(device =>
-                    device.DeviceId == deviceId
-                    && device.UserId == userId
-                    && device.Status == DeviceStatus.Active
-                    && device.TrustStatus == DeviceTrustStatus.Trusted,
-                    cancellationToken);
+            var device = !string.IsNullOrWhiteSpace(deviceId)
+                ? await dbContext.Devices.AsNoTracking().SingleOrDefaultAsync(candidate =>
+                    candidate.DeviceId == deviceId
+                    && candidate.UserId == userId
+                    && candidate.Status == DeviceStatus.Active
+                    && candidate.TrustStatus == DeviceTrustStatus.Trusted,
+                    cancellationToken)
+                : null;
 
-            if (!isTrustedDevice)
+            if (device is null)
                 return await DenyAsync(applicationId, userId, "trusted_device_required", cancellationToken, true);
+
+            var posture = DevicePostureEvaluator.Evaluate(device, policy);
+            if (!posture.IsCompliant)
+                return await DenyAsync(applicationId, userId, "device_posture_noncompliant", cancellationToken, true);
+        }
+        else if (policy.RequiresScreenLock || policy.BlocksRootedDevices || policy.BlocksJailbrokenDevices)
+        {
+            var device = !string.IsNullOrWhiteSpace(deviceId)
+                ? await dbContext.Devices.AsNoTracking().SingleOrDefaultAsync(candidate =>
+                    candidate.DeviceId == deviceId
+                    && candidate.UserId == userId
+                    && candidate.Status == DeviceStatus.Active,
+                    cancellationToken)
+                : null;
+
+            if (device is null || !DevicePostureEvaluator.Evaluate(device, policy).IsCompliant)
+                return await DenyAsync(applicationId, userId, "device_posture_noncompliant", cancellationToken, false);
         }
 
         dbContext.ActivityLogs.Add(CreateActivity(userId, applicationId, ActivityLogStatus.Success));

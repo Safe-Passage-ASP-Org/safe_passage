@@ -34,6 +34,9 @@ else
                 <label class="policy-check"><input type="checkbox" @bind="Rules.RequireTrustedDevice" /> Require a trusted device</label>
                 <label class="policy-check"><input type="checkbox" @bind="MfaEnforced" /> Require MFA / step-up verification</label>
                 <label class="policy-check"><input type="checkbox" @bind="Rules.AllowMfaBypass" /> Allow trusted-device MFA bypass</label>
+                <label class="policy-check"><input type="checkbox" @bind="Rules.RequireScreenLock" /> Require screen lock on device</label>
+                <label class="policy-check"><input type="checkbox" @bind="Rules.BlockRooted" /> Block rooted Android devices</label>
+                <label class="policy-check"><input type="checkbox" @bind="Rules.BlockJailbroken" /> Block jailbroken iOS devices</label>
             </div>
             <p class="posture-note">Screen-lock and device-integrity rules are enforced on device trust approval and sensitive application access. Devices with unknown posture are blocked when a rule requires verification.</p>
             @if (!string.IsNullOrWhiteSpace(FormError)) { <div class="policy-alert" role="alert">@FormError</div> }

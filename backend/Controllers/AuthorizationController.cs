@@ -10,6 +10,7 @@ using OpenIddict.Server.AspNetCore;
 using OpenIddict.Validation.AspNetCore;
 using SafePassage.Api.Data;
 using SafePassage.Api.Models;
+using SafePassage.Api.Services;
 
 namespace SafePassage.Api.Controllers;
 
@@ -18,7 +19,8 @@ public sealed class AuthorizationController(
     ApplicationDbContext db,
     IOpenIddictApplicationManager applications,
     IConfiguration configuration,
-    IMemoryCache cache) : ControllerBase
+    IMemoryCache cache,
+    ISecurityPolicyEvaluator policyEvaluator) : ControllerBase
 {
     [HttpGet("/connect/authorize")]
     [HttpPost("/connect/authorize")]
@@ -54,6 +56,42 @@ public sealed class AuthorizationController(
             assigned = await db.ApplicationGroupAccesses.AnyAsync(x => x.ApplicationId == app.Id
                 && db.UserGroups.Any(g => g.UserId == user.Id && g.GroupId == x.GroupId), cancellationToken);
         if (!assigned) return Forbid("oidc");
+
+        var policy = await policyEvaluator.EvaluateAsync(cancellationToken);
+        if (!policy.IsValid)
+            return Forbid("oidc");
+
+        if (policy.RequiresTrustedDevice || policy.RequiresScreenLock || policy.BlocksRootedDevices || policy.BlocksJailbrokenDevices)
+        {
+            var requestedDeviceId = Request.Query["device_id"].FirstOrDefault()
+                ?? Request.Headers["X-Device-Id"].FirstOrDefault();
+
+            var candidateQuery = db.Devices.AsNoTracking()
+                .Where(d => d.UserId == user!.Id && d.Status == DeviceStatus.Active);
+
+            if (policy.RequiresTrustedDevice)
+                candidateQuery = candidateQuery.Where(d => d.TrustStatus == DeviceTrustStatus.Trusted);
+
+            if (!string.IsNullOrWhiteSpace(requestedDeviceId))
+                candidateQuery = candidateQuery.Where(d => d.DeviceId == requestedDeviceId);
+
+            var candidates = await candidateQuery.ToListAsync(cancellationToken);
+            var hasCompliantDevice = candidates.Any(d => DevicePostureEvaluator.Evaluate(d, policy).IsCompliant);
+            if (!hasCompliantDevice)
+            {
+                db.ActivityLogs.Add(new ActivityLog
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = user!.Id,
+                    Timestamp = DateTimeOffset.UtcNow,
+                    Action = "OIDC Authorization",
+                    Resource = app?.Name ?? request.ClientId ?? "oidc",
+                    Status = ActivityLogStatus.Denied
+                });
+                await db.SaveChangesAsync(cancellationToken);
+                return Forbid("oidc");
+            }
+        }
 
         var principal = new ClaimsPrincipal(new ClaimsIdentity("OpenIddict.Server.AspNetCore"));
         principal.SetClaim(OpenIddictConstants.Claims.Subject, user!.Id.ToString());
