@@ -47,7 +47,7 @@ public sealed class SqliteDateOrderingTests
         var devices = await new DeviceManagementService(dbContext)
             .GetAllAsync(user.Id, includeAll: true, CancellationToken.None);
         var activity = await new AdminActivityController(dbContext)
-            .GetRecent(CancellationToken.None);
+            .GetRecent(cancellationToken: CancellationToken.None);
         var userActivityController = new ActivityController(dbContext)
         {
             ControllerContext = new ControllerContext
