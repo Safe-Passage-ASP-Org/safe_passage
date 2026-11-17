@@ -43,6 +43,8 @@ jwtSettings.Validate();
 
 builder.Services.AddSingleton(jwtSettings);
 builder.Services.AddMemoryCache();
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddHttpClient();
 builder.Services.AddSingleton<IJwtTokenService, JwtTokenService>();
 builder.Services.AddScoped<IAuthFlowService, AuthFlowService>();
 builder.Services.AddScoped<ISecurityPolicyEvaluator, SecurityPolicyEvaluator>();

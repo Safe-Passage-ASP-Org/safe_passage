@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -15,7 +16,8 @@ public sealed class AuthFlowService(
     INotificationService notificationService,
     IJwtTokenService jwtTokenService,
     ISecurityPolicyEvaluator securityPolicyEvaluator,
-    ILogger<AuthFlowService> logger) : IAuthFlowService
+    ILogger<AuthFlowService> logger,
+    IHttpContextAccessor? httpContextAccessor = null) : IAuthFlowService
 {
     private static readonly TimeSpan MfaLifetime = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan LongPollDuration = TimeSpan.FromSeconds(25);
@@ -171,7 +173,8 @@ public sealed class AuthFlowService(
 
         try
         {
-            await notificationService.SendMfaApprovalRequestAsync(user, device, sessionToken, cancellationToken);
+            var mfaContext = BuildMfaRequestContext();
+            await notificationService.SendMfaApprovalRequestAsync(user, device, sessionToken, mfaContext, cancellationToken);
         }
         catch (OperationCanceledException)
         {
@@ -247,7 +250,8 @@ public sealed class AuthFlowService(
         await dbContext.SaveChangesAsync(cancellationToken);
         try
         {
-            await notificationService.SendMfaApprovalRequestAsync(user, device, sessionToken, cancellationToken);
+            var mfaContext = BuildMfaRequestContext();
+            await notificationService.SendMfaApprovalRequestAsync(user, device, sessionToken, mfaContext, cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception)
@@ -426,6 +430,37 @@ public sealed class AuthFlowService(
             Resource = resource,
             Status = status
         });
+
+    private MfaRequestContext BuildMfaRequestContext()
+    {
+        var http = httpContextAccessor?.HttpContext;
+        if (http is null)
+            return new MfaRequestContext();
+
+        var forwardedFor = http.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+        var ipAddress = !string.IsNullOrWhiteSpace(forwardedFor)
+            ? forwardedFor.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault()
+            : http.Connection.RemoteIpAddress?.ToString();
+
+        var userAgent = http.Request.Headers.UserAgent.ToString();
+        var operatingSystem = ParseOperatingSystem(userAgent);
+        var location = http.Request.Headers["CF-IPCountry"].FirstOrDefault()
+            ?? http.Request.Headers["X-Vercel-IP-Country"].FirstOrDefault();
+
+        return new MfaRequestContext(ipAddress, operatingSystem, location);
+    }
+
+    private static string? ParseOperatingSystem(string? userAgent)
+    {
+        if (string.IsNullOrWhiteSpace(userAgent))
+            return null;
+        if (userAgent.Contains("Windows", StringComparison.OrdinalIgnoreCase)) return "Windows";
+        if (userAgent.Contains("Android", StringComparison.OrdinalIgnoreCase)) return "Android";
+        if (userAgent.Contains("iPhone", StringComparison.OrdinalIgnoreCase) || userAgent.Contains("iPad", StringComparison.OrdinalIgnoreCase)) return "iOS";
+        if (userAgent.Contains("Mac OS X", StringComparison.OrdinalIgnoreCase) || userAgent.Contains("Macintosh", StringComparison.OrdinalIgnoreCase)) return "macOS";
+        if (userAgent.Contains("Linux", StringComparison.OrdinalIgnoreCase)) return "Linux";
+        return "Web Browser";
+    }
 
     private static string HashSessionToken(string sessionToken) =>
         Base64UrlEncoder.Encode(SHA256.HashData(Encoding.UTF8.GetBytes(sessionToken)));

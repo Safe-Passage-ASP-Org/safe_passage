@@ -2,8 +2,11 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using SafePassage.Api.Contracts.Devices;
+using SafePassage.Api.Data;
 using SafePassage.Api.Middleware;
+using SafePassage.Api.Models;
 using SafePassage.Api.Services;
 
 namespace SafePassage.Api.Controllers;
@@ -15,6 +18,7 @@ public sealed class DeviceController(
     IDeviceManagementService deviceManagement,
     DeviceBootstrapService bootstrapService,
     PendingDeviceRegistrationService pendingDeviceRegistration,
+    ApplicationDbContext dbContext,
     IWebHostEnvironment environment) : ControllerBase
 {
     /// <summary>Development-only first-device setup for accounts without an enrolled MFA device.</summary>
@@ -143,9 +147,40 @@ public sealed class DeviceController(
     /// <summary>Registers a push notification token for the mobile device.</summary>
     [HttpPost("push-token")]
     [ProducesResponseType(StatusCodes.Status200OK)]
-    public IActionResult RegisterPushToken([FromBody] PushTokenRequest request)
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<IActionResult> RegisterPushToken(
+        [FromBody] PushTokenRequest request,
+        CancellationToken cancellationToken)
     {
-        return Ok(new { success = true, message = "Push token registered." });
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.Token))
+            return BadRequest(new { message = "Push token is required." });
+
+        var normalizedToken = request.Token.Trim();
+        var normalizedPlatform = string.IsNullOrWhiteSpace(request.Platform) ? null : request.Platform.Trim();
+
+        Device? device = null;
+        if (!string.IsNullOrWhiteSpace(request.DeviceId))
+        {
+            device = await dbContext.Devices
+                .FirstOrDefaultAsync(d => d.UserId == userId && d.DeviceId == request.DeviceId.Trim(), cancellationToken);
+        }
+
+        device ??= await dbContext.Devices
+            .Where(d => d.UserId == userId && d.Status == DeviceStatus.Active)
+            .OrderByDescending(d => d.LastActiveDate ?? d.RegistrationDate)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (device is not null)
+        {
+            device.PushToken = normalizedToken;
+            device.PushPlatform = normalizedPlatform;
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return Ok(new { success = true, persisted = device is not null, message = "Push token registered." });
     }
 
     /// <summary>Returns one registered device to its owner or an administrator.</summary>
@@ -251,4 +286,4 @@ public sealed class DeviceController(
         ToProblem(result.Failure, result.Detail);
 }
 
-public sealed record PushTokenRequest(string? Token, string? Platform);
+public sealed record PushTokenRequest(string? Token, string? Platform, string? DeviceId = null);

@@ -29,6 +29,8 @@ public sealed class Device
     public bool? ScreenLockEnabled { get; set; }
     public bool? IsRootedOrJailbroken { get; set; }
     public DateTimeOffset? PostureUpdatedAt { get; set; }
+    public string? PushToken { get; set; }
+    public string? PushPlatform { get; set; }
     public Guid UserId { get; set; }
 
     public User User { get; set; } = null!;

@@ -473,6 +473,12 @@ namespace SafePassage.Api.Data.Migrations
                     b.Property<DateTimeOffset?>("PostureUpdatedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("PushPlatform")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PushToken")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset>("RegistrationDate")
                         .HasColumnType("TEXT");
 

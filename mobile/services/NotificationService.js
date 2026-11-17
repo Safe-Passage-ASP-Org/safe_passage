@@ -1,30 +1,57 @@
 import * as Device from 'expo-device';
+import * as Notifications from 'expo-notifications';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { getToken } from './AuthService';
+import { getApprovalDeviceId } from './DeviceSigningService';
 import { BASE_URL } from '../config';
 
+const SIMULATOR_FALLBACK_TOKEN = 'ExponentPushToken[expo-go-dev-simulator]';
+
 /**
- * Registers device with backend.
- * Uses dev token simulator to be 100% compatible with Expo Go on Android.
+ * Registers the device for push notifications and sends the token to the backend.
+ * Attempts real Expo push token acquisition on physical native devices, falling back
+ * to the simulator token on web or unconfigured local dev environments.
  */
 export async function registerForPushNotificationsAsync() {
   try {
-    const token = 'ExponentPushToken[expo-go-dev-simulator]';
-    console.log('[Notifications] Device registered with token:', token);
+    let token = SIMULATOR_FALLBACK_TOKEN;
 
-    // Send token to backend
+    if (Platform.OS !== 'web' && Device.isDevice) {
+      try {
+        const existing = await Notifications.getPermissionsAsync();
+        let finalStatus = existing.status;
+        if (finalStatus !== 'granted') {
+          const requested = await Notifications.requestPermissionsAsync();
+          finalStatus = requested.status;
+        }
+        if (finalStatus === 'granted') {
+          const projectId = Constants?.expoConfig?.extra?.eas?.projectId
+            ?? Constants?.easConfig?.projectId;
+          const response = projectId
+            ? await Notifications.getExpoPushTokenAsync({ projectId })
+            : await Notifications.getExpoPushTokenAsync();
+          if (response?.data) {
+            token = response.data;
+          }
+        }
+      } catch (nativeErr) {
+        console.warn('[Notifications] Using fallback token:', nativeErr.message);
+      }
+    }
+
     try {
       const authToken = await getToken();
       if (authToken) {
+        const deviceId = await getApprovalDeviceId();
         await fetch(`${BASE_URL}/api/devices/push-token`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             Authorization: `Bearer ${authToken}`,
           },
-          body: JSON.stringify({ token, platform: Platform.OS }),
+          body: JSON.stringify({ token, platform: Platform.OS, deviceId }),
         });
-        console.log('[Notifications] Token sent to backend.');
       }
     } catch (e) {
       console.warn('[Notifications] Failed to send token to backend:', e.message);
@@ -43,10 +70,10 @@ export async function registerForPushNotificationsAsync() {
 export function parseMfaPayload(notification) {
   const data = notification?.request?.content?.data ?? notification ?? {};
   return {
-    location: data.location ?? 'San Francisco, CA, USA',
-    ip: data.ip ?? '192.168.1.42',
-    os: data.os ?? 'Windows 11',
+    location: data.location ?? 'Not provided',
+    ip: data.ip ?? 'Not provided',
+    os: data.os ?? 'Not provided',
     time: data.time ?? new Date().toLocaleTimeString(),
-    requestId: data.requestId ?? 'mock-req-001',
+    requestId: data.requestId ?? null,
   };
 }
