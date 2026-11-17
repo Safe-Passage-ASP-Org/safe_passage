@@ -8,7 +8,7 @@
 
 <div class="sp-page-header">
     <h1 class="sp-page-title">Subscription &amp; Billing</h1>
-    <p class="sp-page-subtitle">Manage your personal Safe Passage subscription via PayPal Sandbox.</p>
+    <p class="sp-page-subtitle">Manage your personal Safe Passage subscription via PayMongo Test Mode.</p>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(ErrorMessage))
@@ -37,7 +37,7 @@ else
                     <div class="sub-plan-name">@(Current?.PlanName ?? "Free")</div>
                     @if (!string.IsNullOrWhiteSpace(Current?.PayPalSubscriptionId))
                     {
-                        <div class="sub-meta">PayPal ID: <code>@Current.PayPalSubscriptionId</code></div>
+                        <div class="sub-meta">Reference ID: <code>@Current.PayPalSubscriptionId</code></div>
                     }
                 </div>
                 <span class="sub-status-badge @GetStatusClass(Current?.Status)">@(Current?.Status ?? "Free")</span>
@@ -73,13 +73,13 @@ else
             else if (string.Equals(Current?.Status, "ApprovalPending", StringComparison.OrdinalIgnoreCase))
             {
                 <div class="sub-details">
-                    <p class="mb-2">A PayPal checkout is awaiting your approval.</p>
+                    <p class="mb-2">A PayMongo checkout is awaiting your payment confirmation.</p>
                     <div class="d-flex flex-wrap gap-2">
                         @if (!string.IsNullOrWhiteSpace(Current.PendingApprovalUrl))
                         {
                             <button class="btn btn-primary btn-sm" type="button" disabled="@Busy"
                                     @onclick="() => LaunchPopupAsync(Current.PendingApprovalUrl!, Current.PayPalSubscriptionId!)">
-                                Resume PayPal Checkout
+                                Resume PayMongo Checkout
                             </button>
                         }
                         @if (!string.IsNullOrWhiteSpace(Current.PayPalSubscriptionId))
@@ -98,21 +98,21 @@ else
             }
             else
             {
-                <p class="sub-note mb-0">You are currently on the Free tier. Choose a Sandbox plan below to subscribe with PayPal.</p>
+                <p class="sub-note mb-0">You are currently on the Free tier. Choose a Test Mode plan below to subscribe with PayMongo (Card, GCash, Maya, GrabPay).</p>
             }
 
             @if (!string.IsNullOrWhiteSpace(BlockedPopupUrl))
             {
                 <div class="alert alert-warning mt-3 mb-0">
                     Popup was blocked by your browser.
-                    <a href="@BlockedPopupUrl" target="_blank" rel="noopener noreferrer" class="alert-link">Open PayPal Checkout</a>,
-                    then click <strong>Check / Confirm Status</strong> above after approving.
+                    <a href="@BlockedPopupUrl" target="_blank" rel="noopener noreferrer" class="alert-link">Open PayMongo Checkout</a>,
+                    then click <strong>Check / Confirm Status</strong> above after completing payment.
                 </div>
             }
         </section>
 
         <section class="sp-card sub-card">
-            <div class="sub-section-title">Available Sandbox Plans</div>
+            <div class="sub-section-title">Available Plans (PayMongo Test Mode)</div>
             @if (Plans.Count == 0)
             {
                 <p class="sub-note mb-0">No subscription plans are configured.</p>
@@ -134,13 +134,13 @@ else
                                 <div class="sub-plan-desc">@plan.Description</div>
                                 @if (!plan.IsConfigured)
                                 {
-                                    <div class="sub-unconfigured">PayPal Sandbox Plan ID not configured on server</div>
+                                    <div class="sub-unconfigured">PayMongo Test Mode secret key not configured on server</div>
                                 }
                             </div>
                             <button class="btn btn-primary btn-sm" type="button"
                                     disabled="@(Busy || !plan.IsConfigured || Current?.HasActiveEntitlement == true)"
                                     @onclick="() => StartCheckoutAsync(plan.PlanCode)">
-                                @(isCurrentActivePlan ? "Current Plan" : Busy ? "Starting..." : "Subscribe with PayPal")
+                                @(isCurrentActivePlan ? "Current Plan" : Busy ? "Starting..." : "Subscribe with PayMongo")
                             </button>
                         </div>
                     }

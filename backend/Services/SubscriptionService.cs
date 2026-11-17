@@ -35,13 +35,13 @@ public interface ISubscriptionService
     Task<SubscriptionResult<UserSubscriptionResponse>> ConfirmSubscriptionAsync(Guid userId, string subscriptionId, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<bool>> AbandonPendingAsync(Guid userId, string subscriptionId, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<UserSubscriptionResponse>> CancelSubscriptionAsync(Guid userId, string? reason, CancellationToken cancellationToken = default);
-    Task<SubscriptionResult<bool>> ProcessWebhookAsync(PayPalWebhookHeaders headers, string rawBody, CancellationToken cancellationToken = default);
+    Task<SubscriptionResult<bool>> ProcessWebhookAsync(string signatureHeader, string rawBody, CancellationToken cancellationToken = default);
 }
 
 public sealed class SubscriptionService(
     ApplicationDbContext dbContext,
-    IPayPalClient payPalClient,
-    IOptions<PayPalOptions> optionsAccessor,
+    IPayMongoClient payMongoClient,
+    IOptions<PayMongoOptions> optionsAccessor,
     IConfiguration? configuration = null) : ISubscriptionService
 {
     public IReadOnlyList<SubscriptionPlanResponse> GetPlans()
@@ -54,7 +54,7 @@ public sealed class SubscriptionService(
                 kvp.Value.Description,
                 kvp.Value.PriceDisplay,
                 kvp.Value.Interval,
-                options.HasCredentials && !string.IsNullOrWhiteSpace(kvp.Value.PayPalPlanId)))
+                options.HasCredentials && kvp.Value.AmountCentavos >= 2000))
             .ToList();
     }
 
@@ -95,8 +95,8 @@ public sealed class SubscriptionService(
         if (string.IsNullOrWhiteSpace(planCode) || !options.Plans.TryGetValue(planCode.Trim(), out var plan))
             return new(SubscriptionFailure.InvalidPlan, ErrorDetail: "The requested subscription plan does not exist.");
 
-        if (!options.HasCredentials || string.IsNullOrWhiteSpace(plan.PayPalPlanId))
-            return new(SubscriptionFailure.PlanNotConfigured, ErrorDetail: "PayPal Sandbox credentials or plan ID are not configured on the server.");
+        if (!options.HasCredentials || plan.AmountCentavos < 2000)
+            return new(SubscriptionFailure.PlanNotConfigured, ErrorDetail: "PayMongo Test Mode secret key is not configured on the server.");
 
         var normalizedPlanCode = options.Plans.Keys.First(k => string.Equals(k, planCode.Trim(), StringComparison.OrdinalIgnoreCase));
         var now = DateTimeOffset.UtcNow;
@@ -105,44 +105,50 @@ public sealed class SubscriptionService(
             .Where(sub => sub.UserId == userId)
             .ToListAsync(cancellationToken);
 
-        if (existing.Any(sub => HasActiveEntitlement(sub, now)))
+        if (existing.Any(sub => HasEntitlement(sub, now)))
             return new(SubscriptionFailure.AlreadySubscribed, ErrorDetail: "You already have an active subscription.");
 
         var ttl = TimeSpan.FromMinutes(Math.Max(5, options.PendingCheckoutTtlMinutes));
-        var pending = existing
-            .Where(sub => sub.Status == SubscriptionStatus.ApprovalPending)
-            .OrderByDescending(sub => sub.UpdatedAt)
+        var reusablePending = existing
+            .Where(sub => sub.Status == SubscriptionStatus.ApprovalPending
+                          && string.Equals(sub.PlanCode, normalizedPlanCode, StringComparison.OrdinalIgnoreCase)
+                          && !string.IsNullOrWhiteSpace(sub.ApprovalUrl)
+                          && now - sub.CreatedAt < ttl)
+            .OrderByDescending(sub => sub.CreatedAt)
             .FirstOrDefault();
 
-        if (pending is not null)
+        if (reusablePending is not null)
         {
-            var isFresh = now - pending.UpdatedAt < ttl;
-            if (isFresh
-                && string.Equals(pending.PlanCode, normalizedPlanCode, StringComparison.OrdinalIgnoreCase)
-                && !string.IsNullOrWhiteSpace(pending.ApprovalUrl))
-            {
-                return new(SubscriptionFailure.None, new CreateCheckoutResponse(
-                    pending.PayPalSubscriptionId,
-                    pending.ApprovalUrl,
-                    pending.PlanCode,
-                    ReusedPending: true));
-            }
-
-            foreach (var stale in existing.Where(sub => sub.Status == SubscriptionStatus.ApprovalPending))
-            {
-                stale.Status = SubscriptionStatus.Expired;
-                stale.UpdatedAt = now;
-            }
+            return new(SubscriptionFailure.None, new CreateCheckoutResponse(
+                reusablePending.PayPalSubscriptionId,
+                reusablePending.ApprovalUrl!,
+                reusablePending.PlanCode,
+                ReusedPending: true));
         }
 
-        PayPalCreateSubscriptionResult created;
+        foreach (var stale in existing.Where(sub => sub.Status == SubscriptionStatus.ApprovalPending))
+        {
+            stale.Status = SubscriptionStatus.Expired;
+            stale.UpdatedAt = now;
+        }
+
+        PayMongoCreateCheckoutResult created;
         try
         {
-            var (returnUrl, cancelUrl) = ResolveCallbackUrls(options);
-            created = await payPalClient.CreateSubscriptionAsync(
-                plan.PayPalPlanId,
+            var (successUrl, cancelUrl) = ResolveCallbackUrls(options);
+            var planName = string.IsNullOrWhiteSpace(plan.Name) ? normalizedPlanCode : plan.Name;
+            var description = string.IsNullOrWhiteSpace(plan.Description)
+                ? $"Safe Passage {planName} subscription"
+                : plan.Description;
+
+            created = await payMongoClient.CreateCheckoutSessionAsync(
+                plan.AmountCentavos,
+                plan.Currency,
+                planName,
+                description,
+                normalizedPlanCode,
                 userId.ToString(),
-                returnUrl,
+                successUrl,
                 cancelUrl,
                 cancellationToken);
         }
@@ -155,31 +161,22 @@ public sealed class SubscriptionService(
         {
             Id = Guid.NewGuid(),
             UserId = userId,
-            PayPalSubscriptionId = created.SubscriptionId,
-            PayPalPlanId = plan.PayPalPlanId,
+            PayPalSubscriptionId = created.SessionId,
+            PayPalPlanId = $"paymongo:{normalizedPlanCode}",
             PlanCode = normalizedPlanCode,
             Status = SubscriptionStatus.ApprovalPending,
-            ApprovalUrl = created.ApprovalUrl,
+            ApprovalUrl = created.CheckoutUrl,
             CreatedAt = now,
             UpdatedAt = now
         };
 
         dbContext.UserSubscriptions.Add(record);
-        dbContext.ActivityLogs.Add(new ActivityLog
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            Action = "SubscriptionCheckoutCreated",
-            Resource = $"{normalizedPlanCode}:{created.SubscriptionId}",
-            Status = ActivityLogStatus.Success,
-            Timestamp = now
-        });
-
+        AddActivity(userId, "Subscription Checkout", $"Created PayMongo checkout session {created.SessionId} ({normalizedPlanCode})", ActivityLogStatus.Success);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return new(SubscriptionFailure.None, new CreateCheckoutResponse(
-            created.SubscriptionId,
-            created.ApprovalUrl,
+            created.SessionId,
+            created.CheckoutUrl,
             normalizedPlanCode,
             ReusedPending: false));
     }
@@ -190,79 +187,55 @@ public sealed class SubscriptionService(
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(subscriptionId))
-            return new(SubscriptionFailure.NotFound, ErrorDetail: "Subscription ID is required.");
+            return new(SubscriptionFailure.NotFound, ErrorDetail: "Checkout session ID is required.");
 
-        var trimmedId = subscriptionId.Trim();
-        PayPalSubscriptionDetails details;
+        var normalizedId = subscriptionId.Trim();
+        var record = await dbContext.UserSubscriptions
+            .FirstOrDefaultAsync(sub => sub.PayPalSubscriptionId == normalizedId, cancellationToken);
+
+        if (record is null)
+            return new(SubscriptionFailure.NotFound, ErrorDetail: "No matching subscription record was found.");
+
+        if (record.UserId != userId)
+            return new(SubscriptionFailure.OwnershipMismatch, ErrorDetail: "This subscription belongs to a different account.");
+
+        PayMongoCheckoutSessionDetails details;
         try
         {
-            details = await payPalClient.GetSubscriptionAsync(trimmedId, cancellationToken);
-        }
-        catch (KeyNotFoundException ex)
-        {
-            return new(SubscriptionFailure.NotFound, ErrorDetail: ex.Message);
+            details = await payMongoClient.GetCheckoutSessionAsync(normalizedId, cancellationToken);
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
         {
             return new(SubscriptionFailure.ProviderError, ErrorDetail: ex.Message);
         }
 
+        if (!string.IsNullOrWhiteSpace(details.CustomUserId)
+            && (!Guid.TryParse(details.CustomUserId, out var metaUserId) || metaUserId != userId))
+        {
+            return new(SubscriptionFailure.OwnershipMismatch, ErrorDetail: "Checkout session user mismatch.");
+        }
+
         var now = DateTimeOffset.UtcNow;
-
-        // Enforce server-side binding: PayPal custom_id must match the authenticated user.
-        if (!Guid.TryParse(details.CustomId, out var ownerId) || ownerId != userId)
+        if (details.IsPaid)
         {
-            dbContext.ActivityLogs.Add(new ActivityLog
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                Action = "SubscriptionOwnershipMismatch",
-                Resource = trimmedId,
-                Status = ActivityLogStatus.Denied,
-                Timestamp = now
-            });
-            await dbContext.SaveChangesAsync(cancellationToken);
-            return new(SubscriptionFailure.OwnershipMismatch, ErrorDetail: "This PayPal subscription does not belong to the signed-in user.");
+            var periodStart = details.PaidAt ?? now;
+            var plan = optionsAccessor.Value.Plans.TryGetValue(record.PlanCode, out var opt) ? opt : null;
+            var isAnnual = string.Equals(plan?.Interval, "Year", StringComparison.OrdinalIgnoreCase);
+            record.Status = SubscriptionStatus.Active;
+            record.CurrentPeriodStart ??= periodStart;
+            record.CurrentPeriodEnd ??= isAnnual ? periodStart.AddYears(1) : periodStart.AddMonths(1);
+            record.ApprovalUrl = null;
+            record.UpdatedAt = now;
+            AddActivity(userId, "Subscription Activated", $"Confirmed PayMongo payment {normalizedId}", ActivityLogStatus.Success);
         }
-
-        var local = await dbContext.UserSubscriptions
-            .FirstOrDefaultAsync(sub => sub.PayPalSubscriptionId == trimmedId, cancellationToken);
-
-        if (local is null)
+        else if (string.Equals(details.Status, "expired", StringComparison.OrdinalIgnoreCase))
         {
-            local = new UserSubscription
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                PayPalSubscriptionId = trimmedId,
-                PayPalPlanId = details.PlanId,
-                PlanCode = ResolvePlanCode(details.PlanId),
-                Status = SubscriptionStatus.ApprovalPending,
-                CreatedAt = now,
-                UpdatedAt = now
-            };
-            dbContext.UserSubscriptions.Add(local);
+            record.Status = SubscriptionStatus.Expired;
+            record.UpdatedAt = now;
         }
-        else if (local.UserId != userId)
-        {
-            return new(SubscriptionFailure.OwnershipMismatch, ErrorDetail: "This subscription belongs to another account.");
-        }
-
-        var mappedStatus = MapPayPalStatus(details.Status);
-        ApplyProviderStatus(local, mappedStatus, details.StartTime, details.NextBillingTime, now);
-
-        dbContext.ActivityLogs.Add(new ActivityLog
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            Action = "SubscriptionConfirmed",
-            Resource = $"{local.PlanCode}:{trimmedId}:{local.Status}",
-            Status = ActivityLogStatus.Success,
-            Timestamp = now
-        });
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        return new(SubscriptionFailure.None, ToResponse(local, now));
+        return new(SubscriptionFailure.None, ToResponse(record, now));
     }
 
     public async Task<SubscriptionResult<bool>> AbandonPendingAsync(
@@ -271,23 +244,26 @@ public sealed class SubscriptionService(
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(subscriptionId))
-            return new(SubscriptionFailure.NotFound, ErrorDetail: "Subscription ID is required.");
+            return new(SubscriptionFailure.NotFound, ErrorDetail: "Checkout session ID is required.");
 
-        var local = await dbContext.UserSubscriptions
-            .FirstOrDefaultAsync(sub => sub.PayPalSubscriptionId == subscriptionId.Trim(), cancellationToken);
+        var normalizedId = subscriptionId.Trim();
+        var record = await dbContext.UserSubscriptions
+            .FirstOrDefaultAsync(sub => sub.PayPalSubscriptionId == normalizedId, cancellationToken);
 
-        if (local is null)
-            return new(SubscriptionFailure.NotFound, ErrorDetail: "Pending subscription was not found.");
+        if (record is null)
+            return new(SubscriptionFailure.NotFound, ErrorDetail: "No matching subscription record was found.");
 
-        if (local.UserId != userId)
-            return new(SubscriptionFailure.OwnershipMismatch, ErrorDetail: "This subscription belongs to another account.");
+        if (record.UserId != userId)
+            return new(SubscriptionFailure.OwnershipMismatch, ErrorDetail: "This subscription belongs to a different account.");
 
-        if (local.Status == SubscriptionStatus.ApprovalPending)
-        {
-            local.Status = SubscriptionStatus.Expired;
-            local.UpdatedAt = DateTimeOffset.UtcNow;
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
+        if (record.Status != SubscriptionStatus.ApprovalPending)
+            return new(SubscriptionFailure.InvalidState, ErrorDetail: "Only pending checkouts can be discarded.");
+
+        record.Status = SubscriptionStatus.Expired;
+        record.ApprovalUrl = null;
+        record.UpdatedAt = DateTimeOffset.UtcNow;
+        AddActivity(userId, "Subscription Checkout Discarded", $"Discarded pending checkout {normalizedId}", ActivityLogStatus.Success);
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         return new(SubscriptionFailure.None, true);
     }
@@ -297,6 +273,7 @@ public sealed class SubscriptionService(
         string? reason,
         CancellationToken cancellationToken = default)
     {
+        var now = DateTimeOffset.UtcNow;
         var subscriptions = await dbContext.UserSubscriptions
             .Where(sub => sub.UserId == userId)
             .ToListAsync(cancellationToken);
@@ -307,232 +284,75 @@ public sealed class SubscriptionService(
             .FirstOrDefault();
 
         if (active is null)
-            return new(SubscriptionFailure.InvalidState, ErrorDetail: "No active subscription was found to cancel.");
+            return new(SubscriptionFailure.NotFound, ErrorDetail: "No active subscription was found to cancel.");
 
-        var cancelReason = string.IsNullOrWhiteSpace(reason) ? "Cancelled by user in Safe Passage" : reason.Trim();
-        try
-        {
-            await payPalClient.CancelSubscriptionAsync(active.PayPalSubscriptionId, cancelReason, cancellationToken);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
-        {
-            return new(SubscriptionFailure.ProviderError, ErrorDetail: ex.Message);
-        }
-
-        var now = DateTimeOffset.UtcNow;
         active.Status = SubscriptionStatus.Cancelled;
-        active.CancelledAt ??= now;
+        active.CancelledAt = now;
         active.UpdatedAt = now;
-
-        dbContext.ActivityLogs.Add(new ActivityLog
-        {
-            Id = Guid.NewGuid(),
-            UserId = userId,
-            Action = "SubscriptionCancelled",
-            Resource = $"{active.PlanCode}:{active.PayPalSubscriptionId}",
-            Status = ActivityLogStatus.Success,
-            Timestamp = now
-        });
-
+        AddActivity(userId, "Subscription Cancelled", $"Cancelled subscription {active.PayPalSubscriptionId}", ActivityLogStatus.Success);
         await dbContext.SaveChangesAsync(cancellationToken);
+
         return new(SubscriptionFailure.None, ToResponse(active, now));
     }
 
     public async Task<SubscriptionResult<bool>> ProcessWebhookAsync(
-        PayPalWebhookHeaders headers,
+        string signatureHeader,
         string rawBody,
         CancellationToken cancellationToken = default)
     {
-        JsonDocument doc;
+        var options = optionsAccessor.Value;
+        if (!string.IsNullOrWhiteSpace(options.WebhookSecret)
+            && !payMongoClient.VerifyWebhookSignature(signatureHeader, rawBody, options.WebhookSecret))
+        {
+            return new(SubscriptionFailure.InvalidWebhookSignature, ErrorDetail: "Invalid PayMongo webhook signature.");
+        }
+
+        string? eventType = null;
+        string? sessionId = null;
+
         try
         {
-            doc = JsonDocument.Parse(rawBody);
-        }
-        catch (JsonException)
-        {
-            return new(SubscriptionFailure.InvalidWebhookSignature, ErrorDetail: "Invalid JSON payload.");
-        }
-
-        using (doc)
-        {
-            var root = doc.RootElement;
-            var verified = await payPalClient.VerifyWebhookSignatureAsync(headers, root, cancellationToken);
-            if (!verified)
-                return new(SubscriptionFailure.InvalidWebhookSignature, ErrorDetail: "PayPal webhook signature verification failed.");
-
-            var eventId = root.TryGetProperty("id", out var idProp) ? idProp.GetString() : null;
-            var eventType = root.TryGetProperty("event_type", out var typeProp) ? typeProp.GetString() : null;
-            if (string.IsNullOrWhiteSpace(eventId) || string.IsNullOrWhiteSpace(eventType))
-                return new(SubscriptionFailure.None, true);
-
-            var alreadyProcessed = await dbContext.SubscriptionWebhookEvents
-                .AnyAsync(evt => evt.PayPalEventId == eventId, cancellationToken);
-            if (alreadyProcessed)
-                return new(SubscriptionFailure.None, true);
-
-            string? subscriptionId = null;
-            string? customId = null;
-            string? resourceStatus = null;
-            DateTimeOffset? nextBillingTime = null;
-
-            if (root.TryGetProperty("resource", out var resource))
+            using var doc = JsonDocument.Parse(rawBody);
+            var attrs = doc.RootElement.GetProperty("data").GetProperty("attributes");
+            eventType = attrs.TryGetProperty("type", out var typeEl) ? typeEl.GetString() : null;
+            if (attrs.TryGetProperty("data", out var eventData)
+                && eventData.TryGetProperty("id", out var idEl))
             {
-                if (resource.TryGetProperty("id", out var resId))
-                    subscriptionId = resId.GetString();
-                if (resource.TryGetProperty("custom_id", out var resCustomId))
-                    customId = resCustomId.GetString();
-                if (resource.TryGetProperty("status", out var resStatus))
-                    resourceStatus = resStatus.GetString();
-                if (resource.TryGetProperty("billing_info", out var billingInfo)
-                    && billingInfo.TryGetProperty("next_billing_time", out var nextBillingProp)
-                    && nextBillingProp.ValueKind == JsonValueKind.String
-                    && DateTimeOffset.TryParse(nextBillingProp.GetString(), out var parsedNextBilling))
-                {
-                    nextBillingTime = parsedNextBilling;
-                }
+                sessionId = idEl.GetString();
             }
+        }
+        catch (Exception)
+        {
+            return new(SubscriptionFailure.InvalidState, ErrorDetail: "Malformed webhook payload.");
+        }
 
-            var now = DateTimeOffset.UtcNow;
-            dbContext.SubscriptionWebhookEvents.Add(new SubscriptionWebhookEvent
-            {
-                Id = Guid.NewGuid(),
-                PayPalEventId = eventId,
-                EventType = eventType,
-                PayPalSubscriptionId = subscriptionId,
-                ProcessedAt = now,
-                PayloadSummary = $"{eventType} ({resourceStatus ?? "n/a"})"
-            });
-
-            if (!string.IsNullOrWhiteSpace(subscriptionId))
-            {
-                var local = await dbContext.UserSubscriptions
-                    .FirstOrDefaultAsync(sub => sub.PayPalSubscriptionId == subscriptionId, cancellationToken);
-
-                if (local is not null)
-                {
-                    var isOwnerValid = string.IsNullOrWhiteSpace(customId)
-                        || (Guid.TryParse(customId, out var parsedOwner) && parsedOwner == local.UserId);
-
-                    if (isOwnerValid)
-                    {
-                        var mapped = MapWebhookEventToStatus(eventType, resourceStatus);
-                        if (mapped.HasValue)
-                        {
-                            ApplyProviderStatus(local, mapped.Value, null, nextBillingTime, now);
-                            dbContext.ActivityLogs.Add(new ActivityLog
-                            {
-                                Id = Guid.NewGuid(),
-                                UserId = local.UserId,
-                                Action = $"Webhook:{eventType}",
-                                Resource = $"{local.PlanCode}:{subscriptionId}:{local.Status}",
-                                Status = ActivityLogStatus.Success,
-                                Timestamp = now
-                            });
-                        }
-                    }
-                }
-            }
-
-            await dbContext.SaveChangesAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(sessionId))
             return new(SubscriptionFailure.None, true);
-        }
-    }
 
-    private static void ApplyProviderStatus(
-        UserSubscription local,
-        SubscriptionStatus incomingStatus,
-        DateTimeOffset? startTime,
-        DateTimeOffset? nextBillingTime,
-        DateTimeOffset now)
-    {
-        // Guard against out-of-order downgrade from Active/Cancelled/Suspended back to ApprovalPending.
-        if (incomingStatus == SubscriptionStatus.ApprovalPending && local.Status != SubscriptionStatus.ApprovalPending)
-            return;
+        var record = await dbContext.UserSubscriptions
+            .FirstOrDefaultAsync(sub => sub.PayPalSubscriptionId == sessionId, cancellationToken);
 
-        local.Status = incomingStatus;
-        local.UpdatedAt = now;
+        if (record is null)
+            return new(SubscriptionFailure.None, true);
 
-        if (startTime.HasValue && !local.CurrentPeriodStart.HasValue)
-            local.CurrentPeriodStart = startTime.Value;
-
-        if (incomingStatus == SubscriptionStatus.Active)
+        var now = DateTimeOffset.UtcNow;
+        if (string.Equals(eventType, "checkout_session.payment.paid", StringComparison.OrdinalIgnoreCase))
         {
-            local.CurrentPeriodStart ??= now;
-            if (nextBillingTime.HasValue)
-                local.CurrentPeriodEnd = nextBillingTime.Value;
-            local.CancelledAt = null;
+            var plan = options.Plans.TryGetValue(record.PlanCode, out var opt) ? opt : null;
+            var isAnnual = string.Equals(plan?.Interval, "Year", StringComparison.OrdinalIgnoreCase);
+            record.Status = SubscriptionStatus.Active;
+            record.CurrentPeriodStart ??= now;
+            record.CurrentPeriodEnd ??= isAnnual ? now.AddYears(1) : now.AddMonths(1);
+            record.ApprovalUrl = null;
+            record.UpdatedAt = now;
+            AddActivity(record.UserId, "Subscription Webhook", $"Processed {eventType} for {sessionId}", ActivityLogStatus.Success);
+            await dbContext.SaveChangesAsync(cancellationToken);
         }
-        else if (incomingStatus == SubscriptionStatus.Cancelled)
-        {
-            local.CancelledAt ??= now;
-            if (nextBillingTime.HasValue)
-                local.CurrentPeriodEnd ??= nextBillingTime.Value;
-        }
+
+        return new(SubscriptionFailure.None, true);
     }
 
-    private static SubscriptionStatus MapPayPalStatus(string status) => status.ToUpperInvariant() switch
-    {
-        "ACTIVE" => SubscriptionStatus.Active,
-        "APPROVAL_PENDING" or "APPROVED" => SubscriptionStatus.ApprovalPending,
-        "SUSPENDED" => SubscriptionStatus.Suspended,
-        "CANCELLED" => SubscriptionStatus.Cancelled,
-        "EXPIRED" => SubscriptionStatus.Expired,
-        _ => SubscriptionStatus.ApprovalPending
-    };
-
-    private static SubscriptionStatus? MapWebhookEventToStatus(string eventType, string? resourceStatus) =>
-        eventType.ToUpperInvariant() switch
-        {
-            "BILLING.SUBSCRIPTION.ACTIVATED" or "BILLING.SUBSCRIPTION.RE-ACTIVATED" => SubscriptionStatus.Active,
-            "BILLING.SUBSCRIPTION.SUSPENDED" or "PAYMENT.SALE.DENIED" => SubscriptionStatus.Suspended,
-            "BILLING.SUBSCRIPTION.CANCELLED" => SubscriptionStatus.Cancelled,
-            "BILLING.SUBSCRIPTION.EXPIRED" => SubscriptionStatus.Expired,
-            _ => string.IsNullOrWhiteSpace(resourceStatus) ? null : MapPayPalStatus(resourceStatus)
-        };
-
-    private string ResolvePlanCode(string payPalPlanId)
-    {
-        var match = optionsAccessor.Value.Plans
-            .FirstOrDefault(kvp => string.Equals(kvp.Value.PayPalPlanId, payPalPlanId, StringComparison.OrdinalIgnoreCase));
-        return string.IsNullOrWhiteSpace(match.Key) ? payPalPlanId : match.Key;
-    }
-
-    private static bool HasActiveEntitlement(UserSubscription subscription, DateTimeOffset now) =>
-        subscription.Status == SubscriptionStatus.Active
-        || (subscription.Status == SubscriptionStatus.Cancelled
-            && subscription.CurrentPeriodEnd.HasValue
-            && subscription.CurrentPeriodEnd.Value > now);
-
-    private static UserSubscription? SelectCurrentSubscription(IReadOnlyList<UserSubscription> subscriptions, DateTimeOffset now)
-    {
-        return subscriptions
-            .OrderByDescending(sub => sub.Status == SubscriptionStatus.Active)
-            .ThenByDescending(sub => HasActiveEntitlement(sub, now))
-            .ThenByDescending(sub => sub.Status == SubscriptionStatus.ApprovalPending)
-            .ThenByDescending(sub => sub.UpdatedAt)
-            .FirstOrDefault();
-    }
-
-    private UserSubscriptionResponse ToResponse(UserSubscription subscription, DateTimeOffset now)
-    {
-        optionsAccessor.Value.Plans.TryGetValue(subscription.PlanCode, out var planOption);
-        var activeEntitlement = HasActiveEntitlement(subscription, now);
-        var cancelAtPeriodEnd = subscription.Status == SubscriptionStatus.Cancelled && activeEntitlement;
-
-        return new UserSubscriptionResponse(
-            activeEntitlement,
-            subscription.Status.ToString(),
-            subscription.PlanCode,
-            planOption?.Name ?? subscription.PlanCode,
-            subscription.PayPalSubscriptionId,
-            subscription.CurrentPeriodStart,
-            subscription.CurrentPeriodEnd,
-            subscription.CancelledAt,
-            cancelAtPeriodEnd,
-            subscription.Status == SubscriptionStatus.ApprovalPending ? subscription.ApprovalUrl : null);
-    }
-
-    private (string ReturnUrl, string CancelUrl) ResolveCallbackUrls(PayPalOptions options)
+    private (string SuccessUrl, string CancelUrl) ResolveCallbackUrls(PayMongoOptions options)
     {
         var configuredFrontend = configuration?["Frontend:BaseUrl"];
         if (string.IsNullOrWhiteSpace(configuredFrontend))
@@ -548,21 +368,89 @@ public sealed class SubscriptionService(
         if (!string.IsNullOrWhiteSpace(configuredFrontend)
             && Uri.TryCreate(configuredFrontend.TrimEnd('/'), UriKind.Absolute, out var frontendUri))
         {
-            var returnUrl = IsUnsetOrLoopback(options.ReturnUrl)
-                ? new Uri(frontendUri, "/subscription/paypal-callback?status=success").ToString()
-                : options.ReturnUrl;
+            var successUrl = IsUnsetOrLoopback(options.SuccessUrl)
+                ? new Uri(frontendUri, "/subscription/paymongo-callback?status=success").ToString()
+                : options.SuccessUrl;
             var cancelUrl = IsUnsetOrLoopback(options.CancelUrl)
-                ? new Uri(frontendUri, "/subscription/paypal-callback?status=cancel").ToString()
+                ? new Uri(frontendUri, "/subscription/paymongo-callback?status=cancel").ToString()
                 : options.CancelUrl;
-            return (returnUrl, cancelUrl);
+            return (successUrl, cancelUrl);
         }
 
-        return (options.ReturnUrl, options.CancelUrl);
+        return (options.SuccessUrl, options.CancelUrl);
     }
 
     private static bool IsUnsetOrLoopback(string? url) =>
         string.IsNullOrWhiteSpace(url)
         || (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsLoopback);
+
+    private static UserSubscription? SelectCurrentSubscription(IReadOnlyCollection<UserSubscription> subscriptions, DateTimeOffset now)
+    {
+        var active = subscriptions
+            .Where(sub => HasEntitlement(sub, now))
+            .OrderByDescending(sub => sub.CurrentPeriodEnd ?? DateTimeOffset.MaxValue)
+            .FirstOrDefault();
+
+        if (active is not null)
+            return active;
+
+        var pending = subscriptions
+            .Where(sub => sub.Status == SubscriptionStatus.ApprovalPending)
+            .OrderByDescending(sub => sub.CreatedAt)
+            .FirstOrDefault();
+
+        if (pending is not null)
+            return pending;
+
+        return subscriptions
+            .OrderByDescending(sub => sub.UpdatedAt)
+            .FirstOrDefault();
+    }
+
+    private static bool HasEntitlement(UserSubscription subscription, DateTimeOffset now)
+    {
+        if (subscription.Status == SubscriptionStatus.Active)
+            return true;
+
+        if (subscription.Status == SubscriptionStatus.Cancelled
+            && subscription.CurrentPeriodEnd.HasValue
+            && subscription.CurrentPeriodEnd.Value > now)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private void AddActivity(Guid userId, string action, string resource, ActivityLogStatus status) =>
+        dbContext.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            Timestamp = DateTimeOffset.UtcNow,
+            Action = action,
+            Resource = resource,
+            Status = status
+        });
+
+    private UserSubscriptionResponse ToResponse(UserSubscription subscription, DateTimeOffset now)
+    {
+        optionsAccessor.Value.Plans.TryGetValue(subscription.PlanCode, out var planOption);
+        var hasEntitlement = HasEntitlement(subscription, now);
+        var cancelAtPeriodEnd = subscription.Status == SubscriptionStatus.Cancelled && hasEntitlement;
+
+        return new UserSubscriptionResponse(
+            hasEntitlement,
+            subscription.Status.ToString(),
+            subscription.PlanCode,
+            planOption?.Name ?? subscription.PlanCode,
+            subscription.PayPalSubscriptionId,
+            subscription.CurrentPeriodStart,
+            subscription.CurrentPeriodEnd,
+            subscription.CancelledAt,
+            cancelAtPeriodEnd,
+            subscription.Status == SubscriptionStatus.ApprovalPending ? subscription.ApprovalUrl : null);
+    }
 
     private static UserSubscriptionResponse ToFreeResponse() =>
         new(

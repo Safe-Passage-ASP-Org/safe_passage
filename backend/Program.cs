@@ -60,7 +60,9 @@ builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
 builder.Services.Configure<AccountActivationOptions>(builder.Configuration.GetSection(AccountActivationOptions.SectionName));
 builder.Services.Configure<PayPalOptions>(builder.Configuration.GetSection(PayPalOptions.SectionName));
+builder.Services.Configure<PayMongoOptions>(builder.Configuration.GetSection(PayMongoOptions.SectionName));
 builder.Services.AddHttpClient<IPayPalClient, PayPalHttpClient>();
+builder.Services.AddHttpClient<IPayMongoClient, PayMongoHttpClient>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 
 var oidcIssuer = builder.Configuration["OpenIddict:Issuer"] ?? "http://localhost:5143";
