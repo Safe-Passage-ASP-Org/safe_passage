@@ -30,6 +30,7 @@ public interface ISubscriptionService
 {
     IReadOnlyList<SubscriptionPlanResponse> GetPlans();
     Task<UserSubscriptionResponse> GetUserSubscriptionAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<bool> HasActiveEntitlementAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<CreateCheckoutResponse>> CreateCheckoutAsync(Guid userId, string planCode, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<UserSubscriptionResponse>> ConfirmSubscriptionAsync(Guid userId, string subscriptionId, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<bool>> AbandonPendingAsync(Guid userId, string subscriptionId, CancellationToken cancellationToken = default);
@@ -40,7 +41,8 @@ public interface ISubscriptionService
 public sealed class SubscriptionService(
     ApplicationDbContext dbContext,
     IPayPalClient payPalClient,
-    IOptions<PayPalOptions> optionsAccessor) : ISubscriptionService
+    IOptions<PayPalOptions> optionsAccessor,
+    IConfiguration? configuration = null) : ISubscriptionService
 {
     public IReadOnlyList<SubscriptionPlanResponse> GetPlans()
     {
@@ -69,6 +71,14 @@ public sealed class SubscriptionService(
         return current is null
             ? ToFreeResponse()
             : ToResponse(current, now);
+    }
+
+    public async Task<bool> HasActiveEntitlementAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var current = await GetUserSubscriptionAsync(userId, cancellationToken);
+        return current.HasActiveEntitlement;
     }
 
     public async Task<SubscriptionResult<CreateCheckoutResponse>> CreateCheckoutAsync(
@@ -128,11 +138,12 @@ public sealed class SubscriptionService(
         PayPalCreateSubscriptionResult created;
         try
         {
+            var (returnUrl, cancelUrl) = ResolveCallbackUrls(options);
             created = await payPalClient.CreateSubscriptionAsync(
                 plan.PayPalPlanId,
                 userId.ToString(),
-                options.ReturnUrl,
-                options.CancelUrl,
+                returnUrl,
+                cancelUrl,
                 cancellationToken);
         }
         catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException)
@@ -520,6 +531,38 @@ public sealed class SubscriptionService(
             cancelAtPeriodEnd,
             subscription.Status == SubscriptionStatus.ApprovalPending ? subscription.ApprovalUrl : null);
     }
+
+    private (string ReturnUrl, string CancelUrl) ResolveCallbackUrls(PayPalOptions options)
+    {
+        var configuredFrontend = configuration?["Frontend:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(configuredFrontend))
+        {
+            var loginUrl = configuration?["OpenIddict:LoginUrl"];
+            if (Uri.TryCreate(loginUrl, UriKind.Absolute, out var loginUri)
+                && !loginUri.IsLoopback)
+            {
+                configuredFrontend = loginUri.GetLeftPart(UriPartial.Authority);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(configuredFrontend)
+            && Uri.TryCreate(configuredFrontend.TrimEnd('/'), UriKind.Absolute, out var frontendUri))
+        {
+            var returnUrl = IsUnsetOrLoopback(options.ReturnUrl)
+                ? new Uri(frontendUri, "/subscription/paypal-callback?status=success").ToString()
+                : options.ReturnUrl;
+            var cancelUrl = IsUnsetOrLoopback(options.CancelUrl)
+                ? new Uri(frontendUri, "/subscription/paypal-callback?status=cancel").ToString()
+                : options.CancelUrl;
+            return (returnUrl, cancelUrl);
+        }
+
+        return (options.ReturnUrl, options.CancelUrl);
+    }
+
+    private static bool IsUnsetOrLoopback(string? url) =>
+        string.IsNullOrWhiteSpace(url)
+        || (Uri.TryCreate(url, UriKind.Absolute, out var uri) && uri.IsLoopback);
 
     private static UserSubscriptionResponse ToFreeResponse() =>
         new(

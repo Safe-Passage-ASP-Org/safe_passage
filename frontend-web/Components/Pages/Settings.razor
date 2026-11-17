@@ -38,6 +38,13 @@
 
     <section class="sp-card settings-section">
         <div class="settings-section-title">Subscription</div>
+        @if (CurrentSubscription is not null)
+        {
+            <div class="settings-sub-row">
+                <span class="settings-role-badge">@CurrentSubscription.PlanName</span>
+                <span class="settings-sub-status">@(CurrentSubscription.HasActiveEntitlement ? "Active entitlement" : CurrentSubscription.Status)</span>
+            </div>
+        }
         <p class="settings-note">Manage your Safe Passage subscription plan, PayPal Sandbox billing, and renewal status.</p>
         <a class="settings-link" href="/subscription">Manage Subscription →</a>
     </section>
@@ -89,11 +96,26 @@
     .settings-alert{padding:8px 10px;border-radius:5px;font-size:12px}
     .settings-alert.error{background:#fcecea;color:#9d332b}
     .settings-alert.ok{background:#edf7f2;color:#087f5b}
+    .settings-sub-row{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+    .settings-sub-status{font-size:12px;color:#64748b}
 </style>
 
 @code {
     private string CurrentPassword = "", NewPassword = "", ConfirmPassword = "", PasswordError = "", PasswordNotice = "";
     private bool SavingPassword;
+    private UserSubscriptionDto? CurrentSubscription;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            CurrentSubscription = await Api.GetMySubscriptionAsync();
+        }
+        catch
+        {
+            // Keep settings accessible even if subscription status is temporarily unavailable.
+        }
+    }
     private string AvatarInitials
     {
         get
