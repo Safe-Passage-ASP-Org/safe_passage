@@ -1,13 +1,14 @@
 @page "/subscription/paypal-callback"
+@page "/subscription/paymongo-callback"
 @layout SafePassage.Web.Components.Layout.AuthLayout
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 
-<PageTitle>PayPal Checkout – Safe Passage</PageTitle>
+<PageTitle>PayMongo Checkout – Safe Passage</PageTitle>
 
 <div class="auth-card" style="max-width:440px;margin:48px auto;padding:28px;text-align:center;">
     <h2 style="font-size:18px;font-weight:700;color:#1e293b;margin-bottom:8px;">
-        @(IsSuccess ? "PayPal Approval Received" : "PayPal Checkout Cancelled")
+        @(IsSuccess ? "Payment Completed" : "Checkout Cancelled")
     </h2>
     <p style="font-size:13px;color:#64748b;margin-bottom:20px;">
         @(NotifiedOpener

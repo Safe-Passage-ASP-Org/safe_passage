@@ -101,14 +101,8 @@ public sealed class SubscriptionsController(ISubscriptionService subscriptionSer
         using var reader = new StreamReader(Request.Body, Encoding.UTF8);
         var rawBody = await reader.ReadToEndAsync(cancellationToken);
 
-        var headers = new PayPalWebhookHeaders(
-            Request.Headers["PAYPAL-TRANSMISSION-ID"].ToString(),
-            Request.Headers["PAYPAL-TRANSMISSION-TIME"].ToString(),
-            Request.Headers["PAYPAL-TRANSMISSION-SIG"].ToString(),
-            Request.Headers["PAYPAL-CERT-URL"].ToString(),
-            Request.Headers["PAYPAL-AUTH-ALGO"].ToString());
-
-        var result = await subscriptionService.ProcessWebhookAsync(headers, rawBody, cancellationToken);
+        var signatureHeader = Request.Headers["Paymongo-Signature"].ToString();
+        var result = await subscriptionService.ProcessWebhookAsync(signatureHeader, rawBody, cancellationToken);
         return result.Failure == SubscriptionFailure.None
             ? Ok()
             : ToProblem(result.Failure, result.ErrorDetail);
