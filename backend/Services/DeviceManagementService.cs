@@ -89,8 +89,10 @@ public sealed class DeviceManagementService(
             DeviceType = request.DeviceType.Trim(),
             OS = request.OS.Trim(),
             RegistrationDate = DateTimeOffset.UtcNow,
-            Status = DeviceStatus.PendingApproval,
-            TrustStatus = DeviceTrustStatus.Untrusted,
+            // Authenticated registration and credential-verified first-device
+            // registration trust the device without an administrator step.
+            Status = DeviceStatus.Active,
+            TrustStatus = DeviceTrustStatus.Trusted,
             SigningPublicKey = request.SigningPublicKey,
             ScreenLockEnabled = request.Posture?.ScreenLockEnabled,
             IsRootedOrJailbroken = request.Posture?.IsRootedOrJailbroken,

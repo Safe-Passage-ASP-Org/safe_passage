@@ -63,7 +63,7 @@ function RegistrationResult({ result, telemetry, onDismiss }) {
         <View style={styles.resultIconWrapper}>
           <Ionicons name="time" size={56} color="#f59e0b" />
         </View>
-        <Text style={styles.resultTitle}>Device Submitted</Text>
+        <Text style={styles.resultTitle}>Device Registered</Text>
         <View style={styles.statusChip}>
           <Text style={styles.statusChipText}>Status: {result.status}</Text>
         </View>
@@ -121,7 +121,7 @@ export default function DevicesScreen() {
         const token = await getToken();
         const deviceId = await getApprovalDeviceId();
         if (!token) {
-          if (active) setFetchError('Sign-in is waiting for approval. You can submit this device for administrator approval below.');
+          if (active) setFetchError('Sign-in is waiting for approval. You can register this device below using your account credentials.');
           return;
         }
         if (!deviceId) throw new Error('Device information is unavailable. Sign in again.');
@@ -196,7 +196,7 @@ export default function DevicesScreen() {
           <View style={styles.credentialsCard}>
             <Text style={styles.credentialsTitle}>Verify your account</Text>
             <Text style={styles.credentialsDescription}>
-              This sign-in is waiting for MFA approval. Re-enter your credentials to submit this device. It will remain untrusted until an administrator approves it.
+              This sign-in is waiting for MFA approval. Re-enter your credentials to verify your account and register this device.
             </Text>
             <Text style={styles.credentialsLabel}>Email or username</Text>
             <TextInput
@@ -223,7 +223,7 @@ export default function DevicesScreen() {
               onPress={submitDeviceRegistration}
               disabled={loading}
             >
-              {loading ? <ActivityIndicator color="white" /> : <Text style={styles.registerButtonText}>Submit for Approval</Text>}
+              {loading ? <ActivityIndicator color="white" /> : <Text style={styles.registerButtonText}>Register Device</Text>}
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.cancelRegistrationButton}

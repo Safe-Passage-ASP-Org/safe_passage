@@ -42,7 +42,7 @@ public sealed class DeviceController(
         }
     }
 
-    /// <summary>Registers this authenticated user's device for administrator approval.</summary>
+    /// <summary>Registers and trusts this authenticated user's device.</summary>
     [Authorize]
     [HttpPost("register")]
     [ProducesResponseType<DeviceResponse>(StatusCodes.Status201Created)]
@@ -62,7 +62,7 @@ public sealed class DeviceController(
         return ToProblem(result.Failure);
     }
 
-    /// <summary>Submits a device for admin approval after password verification when MFA has not completed.</summary>
+    /// <summary>Registers and trusts a device after password verification when MFA has not completed.</summary>
     [AllowAnonymous]
     [HttpPost("register-pending")]
     [ProducesResponseType<DeviceResponse>(StatusCodes.Status201Created)]

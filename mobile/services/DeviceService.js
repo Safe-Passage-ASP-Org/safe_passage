@@ -121,7 +121,7 @@ export async function registerDeviceWithBackend(telemetry, credentials = null) {
   const token = await getToken();
   const approvalDeviceId = await getApprovalDeviceId();
   if (!token && (!credentials?.username?.trim() || !credentials?.password))
-    throw new Error('Sign-in is still waiting for approval. Enter your account credentials to submit this device for administrator approval.');
+    throw new Error('Sign-in is still waiting for approval. Enter your account credentials to register this device.');
 
   const payload = {
     deviceId: telemetry.deviceId,
@@ -151,9 +151,9 @@ export async function registerDeviceWithBackend(telemetry, credentials = null) {
   const data = await response.json().catch(() => ({}));
   return {
     success: true,
-    status: data.status === 'PendingApproval' ? 'PENDING_APPROVAL' : (data.status || 'PENDING_APPROVAL'),
+    status: data.status || 'ACTIVE',
     deviceId: data.deviceId ?? telemetry.deviceId,
-    message: 'Your device has been submitted for administrator approval.',
+    message: 'Your device is registered and ready to use.',
     submittedAt: data.registrationDate ?? new Date().toISOString(),
     raw: data,
   };
