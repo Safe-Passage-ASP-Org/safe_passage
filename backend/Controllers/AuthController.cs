@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -20,7 +21,8 @@ public sealed class AuthController(
     IAccountRegistrationService accountRegistrationService,
     ApplicationDbContext dbContext,
     IMemoryCache cache,
-    IConfiguration configuration) : ControllerBase
+    IConfiguration configuration,
+    IPasswordHasher<User> passwordHasher) : ControllerBase
 {
     [HttpGet("facebook/enabled")]
     [AllowAnonymous]
@@ -457,6 +459,63 @@ public sealed class AuthController(
 
         return Ok(result.Response);
     }
+
+    /// <summary>Changes the authenticated user's password after verifying their current password.</summary>
+    [Authorize]
+    [HttpPost("change-password")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ChangePassword(
+        [FromBody] ChangePasswordRequest request,
+        CancellationToken cancellationToken)
+    {
+        var rawUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!Guid.TryParse(rawUserId, out var userId))
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.CurrentPassword) || string.IsNullOrWhiteSpace(request.NewPassword))
+            return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Invalid password", detail: "Current and new passwords are required.");
+
+        if (request.NewPassword.Length < 8)
+            return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Weak password", detail: "New password must be at least 8 characters.");
+
+        var user = await dbContext.Users.SingleOrDefaultAsync(u => u.Id == userId && u.IsActive, cancellationToken);
+        if (user is null)
+            return Unauthorized();
+
+        var verify = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.CurrentPassword);
+        if (verify == PasswordVerificationResult.Failed)
+        {
+            dbContext.ActivityLogs.Add(new ActivityLog
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                Timestamp = DateTimeOffset.UtcNow,
+                Action = "Password Change",
+                Resource = "Incorrect current password",
+                Status = ActivityLogStatus.Denied
+            });
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Incorrect password", detail: "Your current password is incorrect.");
+        }
+
+        user.PasswordHash = passwordHasher.HashPassword(user, request.NewPassword);
+        dbContext.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            Timestamp = DateTimeOffset.UtcNow,
+            Action = "Password Change",
+            Resource = "Self-service password updated",
+            Status = ActivityLogStatus.Success
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new { success = true, message = "Password updated successfully." });
+    }
+
+    public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
     private ObjectResult ToProblem(AuthFlowFailure failure)
     {

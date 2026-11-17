@@ -239,8 +239,26 @@ public sealed class AdminApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
-    public async Task<List<AdminActivity>> GetAdminActivityAsync(CancellationToken cancellationToken = default) =>
-        await http.GetFromJsonAsync<List<AdminActivity>>("api/admin/activity", cancellationToken) ?? [];
+    public async Task<List<AdminActivity>> GetAdminActivityAsync(
+        DateTimeOffset? from = null,
+        int limit = 250,
+        CancellationToken cancellationToken = default)
+    {
+        var query = $"api/admin/activity?limit={Math.Clamp(limit, 1, 2000)}";
+        if (from.HasValue)
+            query += $"&from={Uri.EscapeDataString(from.Value.ToString("O"))}";
+        return await http.GetFromJsonAsync<List<AdminActivity>>(query, cancellationToken) ?? [];
+    }
+
+    public async Task<AdminActivitySummary> GetAdminActivitySummaryAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<AdminActivitySummary>("api/admin/activity/summary", cancellationToken)
+        ?? new AdminActivitySummary(0, 0, 0, 0);
+
+    public async Task ChangePasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/change-password", new { currentPassword, newPassword }, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
 
     public async Task<List<AdminPolicy>> GetPoliciesAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminPolicy>>("api/admin/policies", cancellationToken) ?? [];
@@ -447,6 +465,7 @@ public sealed record AdminAccessRequest(Guid Id, Guid ApplicationId, string Appl
 public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; public string LaunchUrl { get; set; } = ""; public string ClientType { get; set; } = "confidential"; public string RedirectUris { get; set; } = ""; public string PostLogoutRedirectUris { get; set; } = ""; public string AllowedScopes { get; set; } = "openid profile email"; public bool IsPublished { get; set; } public bool AllowAccessRequests { get; set; } }
 public sealed record AdminApplicationAccess(List<Guid> UserIds, List<Guid> GroupIds);
 public sealed record AdminActivity(Guid Id, DateTimeOffset Timestamp, string Username, string Action, string Resource, string Status);
+public sealed record AdminActivitySummary(int TotalCount, int MfaLast24h, int DeniedCount, int DeniedLast24h);
 public sealed record AdminPolicy(Guid Id, string PolicyName, string PolicyType, bool IsEnforced, string RulesJson);
 public sealed class AdminPolicyForm { public string PolicyName { get; set; } = ""; public string PolicyType { get; set; } = "Authentication"; public bool IsEnforced { get; set; } = true; public string RulesJson { get; set; } = "{}"; }
 public sealed record AdminRole(string Id, string Name, string Description);

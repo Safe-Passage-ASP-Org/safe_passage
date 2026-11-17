@@ -15,8 +15,8 @@
     <div class="sp-stat-card"><span class="sp-stat-label">Trusted Devices</span><span class="sp-stat-value">@FormatMetric(TrustedDevices)</span><span class="sp-stat-change">Active and trusted</span></div>
     <div class="sp-stat-card"><span class="sp-stat-label">Applications</span><span class="sp-stat-value">@FormatMetric(TotalApplications)</span><span class="sp-stat-change"><a href="/applications" style="color:inherit;text-decoration:none;">Registered apps →</a></span></div>
     <div class="sp-stat-card"><span class="sp-stat-label">Pending Requests</span><span class="sp-stat-value" style="@(PendingAccessRequests > 0 ? "color:var(--sp-danger);" : "")">@FormatMetric(PendingAccessRequests)</span><span class="sp-stat-change"><a href="/access-requests" style="color:inherit;text-decoration:none;">Awaiting review →</a></span></div>
-    <div class="sp-stat-card"><span class="sp-stat-label">MFA Events (24h)</span><span class="sp-stat-value">@FormatMetric(MfaEvents)</span><span class="sp-stat-change">Within latest 250 activity records</span></div>
-    <div class="sp-stat-card"><span class="sp-stat-label">Denied Events</span><span class="sp-stat-value" style="color:var(--sp-danger)">@FormatMetric(DeniedEvents)</span><span class="sp-stat-change">Within latest 250 activity records</span></div>
+    <div class="sp-stat-card"><span class="sp-stat-label">MFA Events (24h)</span><span class="sp-stat-value">@FormatMetric(MfaEvents)</span><span class="sp-stat-change">Last 24 hours across all logs</span></div>
+    <div class="sp-stat-card"><span class="sp-stat-label">Denied Events</span><span class="sp-stat-value" style="color:var(--sp-danger)">@FormatMetric(DeniedEvents)</span><span class="sp-stat-change">All recorded denied activity</span></div>
 </div>
 <section class="sp-card home-events">
     <div class="home-heading">
@@ -119,24 +119,25 @@ else
 
             var usersTask = Api.GetUsersAsync();
             var devicesTask = Api.GetDevicesAsync();
-            var activityTask = Api.GetAdminActivityAsync();
+            var activityTask = Api.GetAdminActivityAsync(limit: 8);
+            var summaryTask = Api.GetAdminActivitySummaryAsync();
             var applicationsTask = Api.GetApplicationsAsync();
             var accessRequestsTask = Api.GetAdminAccessRequestsAsync("Pending");
-            await Task.WhenAll(usersTask, devicesTask, activityTask, applicationsTask, accessRequestsTask);
+            await Task.WhenAll(usersTask, devicesTask, activityTask, summaryTask, applicationsTask, accessRequestsTask);
 
             var users = await usersTask;
             var devices = await devicesTask;
             var activity = await activityTask;
+            var summary = await summaryTask;
             var applications = await applicationsTask;
             var accessRequests = await accessRequestsTask;
 
-            var since = DateTimeOffset.UtcNow.AddHours(-24);
             TotalUsers = users.Count;
             TrustedDevices = devices.Count(device => device.Status == "ACTIVE" && device.TrustStatus == "TRUSTED");
             TotalApplications = applications.Count;
             PendingAccessRequests = accessRequests.Count;
-            MfaEvents = activity.Count(item => item.Timestamp >= since && item.Action.Contains("MFA", StringComparison.OrdinalIgnoreCase));
-            DeniedEvents = activity.Count(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase));
+            MfaEvents = summary.MfaLast24h;
+            DeniedEvents = summary.DeniedCount;
             RecentEvents = activity.Take(8).ToList();
         }
         catch (Exception ex) { Error = ex.Message; }

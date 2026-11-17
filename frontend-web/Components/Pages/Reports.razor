@@ -26,7 +26,7 @@ else if (!string.IsNullOrWhiteSpace(Error))
 }
 else
 {
-    <div class="report-coverage-note">Showing @WindowActivity.Count events from the selected window. The activity API returns at most 250 recent events.</div>
+    <div class="report-coverage-note">Showing @WindowActivity.Count events from the selected window (up to 2,000 server-filtered records).</div>
     <section class="report-metrics" aria-label="Report summary">
         <article class="sp-stat-card"><span class="sp-stat-label">Login success rate</span><strong class="sp-stat-value">@(LoginSuccessRate is decimal rate ? $"{rate:F1}%" : "N/A")</strong><span class="sp-stat-change">@LoginSuccessCount successful of @LoginEvents.Count total login events</span></article>
         <article class="sp-stat-card"><span class="sp-stat-label">Denied events</span><strong class="sp-stat-value">@DeniedCount</strong><span class="sp-stat-change">All event types in this window</span></article>
@@ -93,7 +93,7 @@ else
             </tbody></table></div>
         }
     </section>
-    <p class="report-footnote">Activity metrics use the latest 250 events returned by Safe Passage. Device and application figures show their current registry state. Historical retention and date-range queries are not yet available.</p>
+    <p class="report-footnote">Activity metrics use server-side date-range filtering (up to 2,000 events per window). Device and application figures show their current registry state.</p>
 }
 
 <style>
@@ -171,7 +171,7 @@ else
         Error = "";
         try
         {
-            var activityTask = Api.GetAdminActivityAsync();
+            var activityTask = Api.GetAdminActivityAsync(from: WindowStart, limit: 2000);
             var devicesTask = Api.GetDevicesAsync();
             var applicationsTask = Api.GetApplicationsAsync();
             await Task.WhenAll(activityTask, devicesTask, applicationsTask);
