@@ -162,6 +162,7 @@
 
     protected override void OnInitialized()
     {
+        Navigation.LocationChanged += HandleLocationChanged;
         var query = QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
         if (query.TryGetValue("returnUrl", out var value)) OidcReturnUrl = value.ToString();
 
@@ -446,8 +447,12 @@
         catch (JSException) { }
     }
 
+    private void HandleLocationChanged(object? sender, LocationChangedEventArgs args) =>
+        _ = InvokeAsync(StateHasChanged);
+
     public void Dispose()
     {
+        Navigation.LocationChanged -= HandleLocationChanged;
         PollCancellation?.Cancel();
         PollCancellation?.Dispose();
     }
