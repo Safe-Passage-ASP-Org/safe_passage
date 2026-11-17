@@ -37,6 +37,7 @@ else
     <div class="sp-stat-grid">
         <div class="sp-stat-card"><span class="sp-stat-label">Assigned applications</span><span class="sp-stat-value">@FormatMetric(MyApplications.Count)</span><span class="sp-stat-change">Active access granted</span></div>
         <div class="sp-stat-card"><span class="sp-stat-label">Pending requests</span><span class="sp-stat-value">@FormatMetric(PendingRequests)</span><span class="sp-stat-change"><a href="/my-applications" style="color:inherit;text-decoration:none;">Track requests →</a></span></div>
+        <div class="sp-stat-card"><span class="sp-stat-label">Subscription plan</span><span class="sp-stat-value">@(MySubscription?.PlanName ?? "—")</span><span class="sp-stat-change"><a href="/subscription" style="color:inherit;text-decoration:none;">@(MySubscription?.HasActiveEntitlement == true ? "Active entitlement →" : "Manage plan →")</a></span></div>
     </div>
     <section class="sp-card home-events">
         <div class="home-heading">
@@ -82,6 +83,7 @@ else
     private string EventSort = "newest", ApplicationSort = "name-asc";
     private List<AdminActivity> RecentEvents = [];
     private List<AccessibleApplication> MyApplications = [];
+    private UserSubscriptionDto? MySubscription;
     private IEnumerable<AdminActivity> SortedRecentEvents => EventSort switch
     {
         "oldest" => RecentEvents.OrderBy(item => item.Timestamp),
@@ -110,9 +112,11 @@ else
             {
                 var myAppsTask = Api.GetMyApplicationsAsync();
                 var myRequestsTask = Api.GetMyApplicationRequestsAsync();
-                await Task.WhenAll(myAppsTask, myRequestsTask);
+                var mySubTask = Api.GetMySubscriptionAsync();
+                await Task.WhenAll(myAppsTask, myRequestsTask, mySubTask);
                 MyApplications = await myAppsTask;
                 var requests = await myRequestsTask;
+                MySubscription = await mySubTask;
                 PendingRequests = requests.Count(r => r.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase));
                 return;
             }
