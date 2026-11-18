@@ -148,12 +148,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         apiUrl: state.apiUrl,
         signedIn: Boolean(state.accessToken),
         username: state.username,
-        customSites: state.customSites.map(({ id, name, origin, siteUsername, applicationId }) => ({
+        customSites: state.customSites.map(({ id, name, origin, url, category, description, siteUsername }) => ({
           id,
           name,
           origin,
+          url: url || origin,
+          category: category || '',
+          description: description || '',
           siteUsername,
-          applicationId: applicationId || null,
         })),
       };
     }
@@ -174,16 +176,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === 'SAVE_CUSTOM_SITE') {
-      const origin = new URL(msg.url).origin;
+      const applicationUrl = new URL(msg.url);
+      if (!['http:', 'https:'].includes(applicationUrl.protocol)) throw new Error('Login/Web URL must use HTTP or HTTPS.');
+      if (!msg.name?.trim() || !msg.category) throw new Error('Application name and category are required.');
+      const origin = applicationUrl.origin;
       const encryptedPassword = await encryptSecret(msg.sitePassword || '');
       const next = state.customSites.filter((s) => s.origin !== origin);
       next.push({
         id: crypto.randomUUID(),
-        name: msg.name || origin,
+        name: msg.name.trim(),
         origin,
+        url: applicationUrl.href,
+        category: msg.category,
+        description: (msg.description || '').trim(),
         siteUsername: msg.siteUsername || '',
         encryptedPassword,
-        applicationId: msg.applicationId || null,
+        applicationId: null,
       });
       await chrome.storage.local.set({ customSites: next });
       return { ok: true, origin };

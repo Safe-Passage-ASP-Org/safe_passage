@@ -7,7 +7,8 @@
     body { width: 320px; margin: 0; padding: 14px; background: #111315; color: #e6e8eb; font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 13px; }
     h1 { font-size: 15px; margin: 0 0 10px; }
     h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; color: #939aa3; margin: 14px 0 6px; }
-    input { width: 100%; box-sizing: border-box; padding: 7px 9px; margin-bottom: 8px; border-radius: 6px; border: 1px solid #262a30; background: #171a1e; color: #e6e8eb; font-size: 12px; }
+    input, select, textarea { width: 100%; box-sizing: border-box; padding: 7px 9px; margin-bottom: 8px; border-radius: 6px; border: 1px solid #262a30; background: #171a1e; color: #e6e8eb; font: inherit; font-size: 12px; }
+    textarea { min-height: 54px; resize: vertical; }
     button { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #2e343b; background: #1d4ed8; color: #fff; font-weight: 600; cursor: pointer; font-size: 12px; }
     button.secondary { background: #171a1e; color: #e6e8eb; }
     button.danger { background: #7f1d1d; border-color: #991b1b; padding: 4px 8px; width: auto; font-size: 11px; }
@@ -35,15 +36,18 @@
       <button id="logoutBtn" type="button" class="secondary" style="width:auto;padding:4px 10px;">Sign out</button>
     </div>
 
-    <button id="autofillTabBtn" type="button">Request Approval &amp; Unlock Current Site</button>
-
-    <h2>Add Custom Site (Current Tab)</h2>
-    <input id="siteName" type="text" placeholder="Site name (e.g. Campus Portal)" />
-    <input id="siteOrigin" type="text" placeholder="https://example.com" />
-    <input id="siteUser" type="text" placeholder="Site username or email (optional)" />
-    <input id="sitePass" type="password" placeholder="Site password for autofill (optional; encrypted locally)" />
-    <input id="siteAppId" type="text" placeholder="Optional Safe Passage app ID for access checks (OIDC not required)" />
-    <button id="saveSiteBtn" type="button" class="secondary">Save Custom Site</button>
+    <h2>Add Application</h2>
+    <input id="siteName" type="text" placeholder="Application Name" />
+    <input id="siteOrigin" type="url" placeholder="Login/Web URL (https://example.com)" />
+    <select id="siteCategory" aria-label="Category" required>
+      <option value="" disabled selected>Category</option>
+      <option>Work</option><option>Social</option><option>Finance</option><option>Education</option>
+      <option>Shopping</option><option>Entertainment</option><option>Health</option><option>Other</option>
+    </select>
+    <textarea id="siteDescription" placeholder="Description (Optional)"></textarea>
+    <input id="siteUser" type="text" autocomplete="off" placeholder="Auto Fill Username/Email (Optional)" />
+    <input id="sitePass" type="password" autocomplete="new-password" placeholder="Auto Fill Password (Optional; encrypted locally)" />
+    <button id="saveSiteBtn" type="button" class="secondary">Save Application</button>
 
     <h2>Saved Custom Sites</h2>
     <div id="sitesList"></div>

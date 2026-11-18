@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Safe Passage Authenticator & Autofill",
-  "version": "1.0.0",
-  "description": "Authenticate custom sites through Safe Passage MFA and autofill credentials after API approval.",
+  "version": "1.1.0",
+  "description": "Request Safe Passage MFA on saved application login pages and optionally autofill credentials.",
   "permissions": ["storage", "activeTab", "tabs"],
   "host_permissions": ["<all_urls>"],
   "action": {
@@ -17,7 +17,7 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "run_at": "document_start"
+      "run_at": "document_idle"
     }
   ]
 }

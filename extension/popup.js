@@ -49,7 +49,14 @@ async function refresh() {
     for (const s of res.customSites) {
       const row = document.createElement('div');
       row.className = 'site-row';
-      row.innerHTML = `<div class="site-info"><strong>${s.name}</strong><br><span style="color:#939aa3;font-size:11px;">${s.origin}</span></div>`;
+      const info = document.createElement('div');
+      info.className = 'site-info';
+      const name = document.createElement('strong');
+      name.textContent = s.name;
+      const details = document.createElement('span');
+      details.style.cssText = 'display:block;color:#939aa3;font-size:11px;';
+      details.textContent = [s.url || s.origin, s.category, s.description].filter(Boolean).join(' · ');
+      info.append(name, details);
       const del = document.createElement('button');
       del.className = 'danger';
       del.textContent = 'Remove';
@@ -95,16 +102,30 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 
 document.getElementById('saveSiteBtn').addEventListener('click', async () => {
   const statusMsg = document.getElementById('statusMsg');
+  const applicationName = document.getElementById('siteName').value.trim();
+  const loginUrl = document.getElementById('siteOrigin').value.trim();
+  const category = document.getElementById('siteCategory').value;
+  if (!applicationName || !loginUrl || !category) {
+    statusMsg.textContent = 'Enter an application name and login/web URL, and choose a category.';
+    return;
+  }
   const res = await send({
     type: 'SAVE_CUSTOM_SITE',
-    name: document.getElementById('siteName').value.trim(),
-    url: document.getElementById('siteOrigin').value.trim(),
+    name: applicationName,
+    url: loginUrl,
+    category: document.getElementById('siteCategory').value,
+    description: document.getElementById('siteDescription').value.trim(),
     siteUsername: document.getElementById('siteUser').value.trim(),
     sitePassword: document.getElementById('sitePass').value,
-    applicationId: document.getElementById('siteAppId').value.trim() || null,
   });
-  statusMsg.textContent = res?.ok ? `Saved ${res.origin}` : (res?.error || 'Failed to save site');
+  statusMsg.textContent = res?.ok ? `Saved ${applicationName}` : (res?.error || 'Failed to save application');
   document.getElementById('sitePass').value = '';
+  if (res?.ok) {
+    document.getElementById('siteName').value = '';
+    document.getElementById('siteCategory').value = '';
+    document.getElementById('siteDescription').value = '';
+    document.getElementById('siteUser').value = '';
+  }
   if (res?.ok) {
     const tab = await getActiveTab();
     if (tab?.id && tab.url?.startsWith('http') && new URL(tab.url).origin === res.origin) {
@@ -112,25 +133,6 @@ document.getElementById('saveSiteBtn').addEventListener('click', async () => {
     }
   }
   refresh();
-});
-
-document.getElementById('autofillTabBtn').addEventListener('click', async () => {
-  const statusMsg = document.getElementById('statusMsg');
-  const tab = await getActiveTab();
-  if (!tab?.url || !tab.url.startsWith('http')) {
-    statusMsg.textContent = 'Open an http/https site first.';
-    return;
-  }
-  const origin = new URL(tab.url).origin;
-  statusMsg.textContent = 'Verifying Safe Passage access...';
-  const creds = await send({ type: 'AUTHENTICATE_AND_GET_CREDENTIALS', origin });
-  if (!creds?.ok) {
-    statusMsg.textContent = creds?.error || 'Access denied';
-    return;
-  }
-  chrome.tabs.sendMessage(tab.id, { type: 'AUTOFILL_NOW', username: creds.username, password: creds.password }, (fillRes) => {
-    statusMsg.textContent = fillRes?.ok ? 'Autofilled current tab.' : (fillRes?.error || 'Could not autofill page.');
-  });
 });
 
 refresh();
