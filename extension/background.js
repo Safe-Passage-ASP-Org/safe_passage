@@ -241,7 +241,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'SAVE_CUSTOM_SITE') {
       const applicationUrl = new URL(msg.url);
       if (!['http:', 'https:'].includes(applicationUrl.protocol)) throw new Error('Login/Web URL must use HTTP or HTTPS.');
-      if (!msg.name?.trim() || !msg.category) throw new Error('Application name and category are required.');
+      if (!msg.name?.trim()) throw new Error('Site name is required.');
       const origin = applicationUrl.origin;
       const encryptedPassword = await encryptSecret(msg.sitePassword || '');
       const next = state.customSites.filter((s) => s.origin !== origin);
@@ -250,11 +250,11 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         name: msg.name.trim(),
         origin,
         url: applicationUrl.href,
-        category: msg.category,
+        category: msg.category || '',
         description: (msg.description || '').trim(),
         siteUsername: msg.siteUsername || '',
         encryptedPassword,
-        applicationId: null,
+        applicationId: msg.applicationId || null,
       });
       await chrome.storage.local.set({ customSites: next });
       return { ok: true, origin };
