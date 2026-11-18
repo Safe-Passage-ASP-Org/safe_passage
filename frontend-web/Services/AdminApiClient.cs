@@ -22,7 +22,7 @@ public sealed class AdminApiClient(HttpClient http)
 
     public async Task<LoginResult> LoginAsync(string username, string password, CancellationToken cancellationToken = default)
     {
-        using var response = await http.PostAsJsonAsync("api/auth/login", new { username, password }, cancellationToken);
+        using var response = await http.PostAsJsonAsync("api/auth/login", new { username, password, webUserPortal = true }, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
@@ -39,6 +39,29 @@ public sealed class AdminApiClient(HttpClient http)
             SetToken(body.AccessToken);
 
         return new(body.MfaRequired, body.SessionToken, body.Message ?? "Sign-in request submitted.");
+    }
+
+    public async Task RequestAdminEmailLinkAsync(string email, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/admin-login/request-link", new { email }, cancellationToken);
+        if (response.IsSuccessStatusCode) return;
+        var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+        throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Could not request an admin sign-in link.");
+    }
+
+    public async Task<LoginResult> CompleteAdminEmailLinkAsync(string token, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync(
+            "api/auth/admin-login/complete-link", new { token }, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "This admin sign-in link is invalid or has expired. Request a new link.");
+        }
+        var body = await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken);
+        if (body is null || !body.MfaRequired || string.IsNullOrWhiteSpace(body.SessionToken))
+            throw new InvalidOperationException("Admin sign-in requires mobile approval. Request a new email link and try again.");
+        return new(body.MfaRequired, body.SessionToken, body.Message ?? "Email verified. Approve this sign-in on your trusted mobile device.");
     }
 
     public async Task<bool> IsFacebookSignInEnabledAsync(CancellationToken cancellationToken = default)

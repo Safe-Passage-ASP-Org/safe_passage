@@ -12,6 +12,12 @@ public interface IActivationEmailSender
         string activationUrl,
         bool requiresPasswordSetup,
         CancellationToken cancellationToken);
+    Task SendAdminLoginLinkAsync(
+        string email,
+        string username,
+        string loginUrl,
+        int tokenLifetimeMinutes,
+        CancellationToken cancellationToken);
 }
 
 public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivationEmailSender
@@ -79,5 +85,49 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
         {
             throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception);
         }
+    }
+
+    public async Task SendAdminLoginLinkAsync(
+        string email,
+        string username,
+        string loginUrl,
+        int tokenLifetimeMinutes,
+        CancellationToken cancellationToken)
+    {
+        var settings = options.Value;
+        if (string.IsNullOrWhiteSpace(settings.Host)
+            || settings.Port is < 1 or > 65535
+            || string.IsNullOrWhiteSpace(settings.FromAddress))
+            throw new EmailDeliveryException("SMTP is not configured to send admin sign-in links.");
+
+        try
+        {
+            using var message = new MailMessage
+            {
+                From = string.IsNullOrWhiteSpace(settings.FromName)
+                    ? new MailAddress(settings.FromAddress)
+                    : new MailAddress(settings.FromAddress, settings.FromName),
+                Subject = "Your Safe Passage admin sign-in link",
+                Body = $"Hello {username},\n\n"
+                    + "Use this one-time link to verify your email and start your Safe Passage administrator sign-in:\n\n"
+                    + $"{loginUrl}\n\n"
+                    + $"The link expires in {tokenLifetimeMinutes} minutes and can only be used once. After opening it, approve the sign-in on your trusted Safe Passage mobile device.\n\n"
+                    + "If you did not request this link, you can ignore this email.",
+                IsBodyHtml = false
+            };
+            message.To.Add(new MailAddress(email));
+            using var client = new SmtpClient(settings.Host, settings.Port)
+            {
+                EnableSsl = settings.EnableSsl,
+                Timeout = 15000
+            };
+            if (!string.IsNullOrWhiteSpace(settings.Username))
+                client.Credentials = new NetworkCredential(settings.Username, settings.Password);
+            await client.SendMailAsync(message, cancellationToken);
+        }
+        catch (SmtpException exception) { throw new EmailDeliveryException("The SMTP server could not deliver the admin sign-in email.", exception); }
+        catch (FormatException exception) { throw new EmailDeliveryException("The admin sign-in email address is invalid.", exception); }
+        catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the admin sign-in email.", exception); }
+        catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
     }
 }

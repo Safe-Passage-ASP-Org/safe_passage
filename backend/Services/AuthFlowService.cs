@@ -48,6 +48,13 @@ public sealed class AuthFlowService(
             return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
         }
 
+        if (request.WebUserPortal && IsAdministrator(user.Role))
+        {
+            AddActivity(user.Id, "Login", "Administrator directed to email verification", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.AdminEmailLoginRequired);
+        }
+
         if (verification == PasswordVerificationResult.SuccessRehashNeeded)
             user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
 
@@ -266,6 +273,69 @@ public sealed class AuthFlowService(
         return AuthFlowResult<LoginResponse>.Success(new(
             true, sessionToken, device.DeviceId, MfaSessionStatus.Pending, expiresAt, null, null,
             $"Approve the {provider} sign-in on your registered device."));
+    }
+
+    public async Task<AuthFlowResult<LoginResponse>> RequestAdminLoginMfaAsync(
+        User user,
+        CancellationToken cancellationToken)
+    {
+        if (!user.IsActive || !user.IsEmailVerified || !IsAdministrator(user.Role))
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.UserUnavailable);
+
+        var devices = await dbContext.Devices
+            .Where(device => device.UserId == user.Id
+                && device.Status == DeviceStatus.Active
+                && device.TrustStatus == DeviceTrustStatus.Trusted
+                && (device.DeviceType.ToLower() == "mobile" || device.DeviceType.ToLower() == "phone"
+                    || device.OS.ToLower().StartsWith("android") || device.OS.ToLower().StartsWith("ios")))
+            .ToListAsync(cancellationToken);
+        var device = devices
+            .OrderByDescending(candidate => candidate.LastActiveDate)
+            .ThenByDescending(candidate => candidate.RegistrationDate)
+            .FirstOrDefault();
+        if (device is null)
+        {
+            AddActivity(user.Id, "Admin Login", "Denied: no active trusted mobile device", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.NoActiveMobileDevice);
+        }
+        if (string.IsNullOrWhiteSpace(device.SigningPublicKey))
+        {
+            AddActivity(user.Id, "Admin Login", "Denied: mobile device signing key is not enrolled", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.DeviceSigningKeyNotRegistered);
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        var expiresAt = now.Add(MfaLifetime);
+        var sessionToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
+        var session = new MfaSession
+        {
+            Id = Guid.NewGuid(), UserId = user.Id, DeviceId = device.Id,
+            SessionToken = HashSessionToken(sessionToken), Status = MfaSessionStatus.Pending,
+            CreatedAt = now, ExpiresAt = expiresAt
+        };
+        dbContext.MfaSessions.Add(session);
+        AddActivity(user.Id, "Admin Login", "Email link accepted; mobile approval pending", ActivityLogStatus.Success);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await notificationService.SendMfaApprovalRequestAsync(user, device, sessionToken, cancellationToken);
+        }
+        catch (OperationCanceledException) { throw; }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Admin login MFA notification failed for user {UserId}.", user.Id);
+            session.Status = MfaSessionStatus.Denied;
+            AddActivity(user.Id, "Admin Login MFA", "Notification delivery failed", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.NotificationFailed);
+        }
+
+        return AuthFlowResult<LoginResponse>.Success(new(
+            true, sessionToken, device.DeviceId, MfaSessionStatus.Pending, expiresAt, null, null,
+            "Email verified. Approve this administrator sign-in on your trusted mobile device."));
     }
 
     public async Task<AuthFlowResult<MfaActionResponse>> ApproveMfaAsync(
@@ -561,6 +631,11 @@ public sealed class AuthFlowService(
             Resource = resource,
             Status = status
         });
+
+    private static bool IsAdministrator(string role) =>
+        string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(role, "Administrator", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(role, "Super Admin", StringComparison.OrdinalIgnoreCase);
 
     private MfaRequestContext BuildMfaRequestContext()
     {

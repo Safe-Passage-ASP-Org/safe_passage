@@ -18,11 +18,13 @@ namespace SafePassage.Api.Controllers;
 [Route("api/auth")]
 public sealed class AuthController(
     IAuthFlowService authFlow,
+    IAdminEmailLoginService adminEmailLoginService,
     IAccountRegistrationService accountRegistrationService,
     ApplicationDbContext dbContext,
     IMemoryCache cache,
     IConfiguration configuration,
-    IPasswordHasher<User> passwordHasher) : ControllerBase
+    IPasswordHasher<User> passwordHasher,
+    ILogger<AuthController> logger) : ControllerBase
 {
     [HttpGet("facebook/enabled")]
     [AllowAnonymous]
@@ -402,6 +404,75 @@ public sealed class AuthController(
         return ToProblem(result.Failure);
     }
 
+    /// <summary>Sends a one-time email sign-in link to an active, verified administrator.</summary>
+    [HttpPost("admin-login/request-link")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> RequestAdminLoginLink(
+        [FromBody] AdminLoginLinkRequest request,
+        CancellationToken cancellationToken)
+    {
+        var ipKey = "admin-email-login-ip:" + (HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+        cache.TryGetValue(ipKey, out int requestCount);
+        if (requestCount >= 10)
+            return Problem(statusCode: StatusCodes.Status429TooManyRequests, title: "Too many requests", detail: "Please wait before requesting another sign-in link.");
+        cache.Set(ipKey, requestCount + 1, TimeSpan.FromHours(1));
+
+        var email = request.Email?.Trim();
+        if (!string.IsNullOrWhiteSpace(email) && email.Length <= 320 && email.Contains('@'))
+        {
+            var emailKey = "admin-email-login-address:" + Convert.ToHexString(
+                SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(email.ToUpperInvariant())));
+            if (!cache.TryGetValue(emailKey, out _))
+            {
+                cache.Set(emailKey, true, TimeSpan.FromSeconds(30));
+                try
+                {
+                    await adminEmailLoginService.RequestLinkAsync(email, cancellationToken);
+                }
+                catch (EmailDeliveryException exception)
+                {
+                    logger.LogError(exception, "Could not deliver an administrator sign-in email.");
+                }
+                catch (InvalidOperationException exception)
+                {
+                    logger.LogError(exception, "Administrator sign-in email configuration is invalid.");
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    logger.LogError(exception, "Administrator sign-in link request failed.");
+                }
+            }
+        }
+
+        return Accepted(new { message = "If this address belongs to an active administrator, a sign-in link will be sent." });
+    }
+
+    /// <summary>Consumes an administrator email link and starts mandatory trusted-device approval.</summary>
+    [HttpPost("admin-login/complete-link")]
+    [AllowAnonymous]
+    [ProducesResponseType<LoginResponse>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<LoginResponse>> CompleteAdminLoginLink(
+        [FromBody] AdminLoginLinkCompletionRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await adminEmailLoginService.CompleteLinkAsync(request.Token, cancellationToken);
+        if (result.Failure != AuthFlowFailure.None)
+            return ToProblem(result.Failure);
+        if (!result.Response!.MfaRequired || string.IsNullOrWhiteSpace(result.Response.SessionToken))
+            return Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Mobile approval required", detail: "Admin sign-in could not start mobile approval. Request a new email link and try again.");
+        return Accepted(result.Response);
+    }
+
+    public sealed record AdminLoginLinkRequest(string? Email);
+    public sealed record AdminLoginLinkCompletionRequest(string Token);
+
     /// <summary>Approves a pending MFA challenge from the mobile application.</summary>
     [HttpPost("mfa/approve")]
     [ProducesResponseType<MfaActionResponse>(StatusCodes.Status200OK)]
@@ -553,6 +624,7 @@ public sealed class AuthController(
         var (statusCode, title, detail) = failure switch
         {
             AuthFlowFailure.InvalidCredentials => (StatusCodes.Status401Unauthorized, "Sign-in failed", "The supplied credentials are invalid."),
+            AuthFlowFailure.AdminEmailLoginRequired => (StatusCodes.Status403Forbidden, "Administrator email verification required", "Administrator accounts must sign in through Admin Login using a one-time email link, then approve the request on a trusted mobile device."),
             AuthFlowFailure.NoActiveMobileDevice => (StatusCodes.Status409Conflict, "MFA device unavailable", "No active mobile device is registered for this account."),
             AuthFlowFailure.NotificationFailed => (StatusCodes.Status503ServiceUnavailable, "MFA notification unavailable", "The MFA request could not be delivered. Try again later."),
             AuthFlowFailure.InvalidApprovalSignature => (StatusCodes.Status401Unauthorized, "Approval rejected", "The MFA approval could not be validated."),

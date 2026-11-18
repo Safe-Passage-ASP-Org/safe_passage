@@ -261,6 +261,39 @@ namespace SafePassage.Api.Data.Migrations
                     b.ToTable("AccountActivationTokens");
                 });
 
+            modelBuilder.Entity("SafePassage.Api.Models.AdminLoginToken", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("UsedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("UserId", "ExpiresAt");
+
+                    b.ToTable("AdminLoginTokens");
+                });
+
             modelBuilder.Entity("SafePassage.Api.Models.ActivityLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -722,6 +755,17 @@ namespace SafePassage.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("SafePassage.Api.Models.AccountActivationToken", b =>
+                {
+                    b.HasOne("SafePassage.Api.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SafePassage.Api.Models.AdminLoginToken", b =>
                 {
                     b.HasOne("SafePassage.Api.Models.User", "User")
                         .WithMany()

@@ -13,6 +13,9 @@ public sealed record LoginRequest
     [Required, StringLength(1024, MinimumLength = 1)]
     public required string Password { get; init; }
 
+    /// <summary>Indicates that this sign-in is from the web user portal, which excludes administrator accounts.</summary>
+    public bool WebUserPortal { get; init; }
+
     /// <summary>The requesting device's registered hardware fingerprint, when available.</summary>
     [StringLength(256)]
     public string? DeviceId { get; init; }

@@ -15,9 +15,7 @@
 
 <main class="signup-page">
     <a class="signup-brand" href="/" aria-label="Safe Passage home">
-        <span class="signup-brand-mark" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2.7 4.5 5.5v5.2c0 5 3.2 8.6 7.5 10.6 4.3-2 7.5-5.6 7.5-10.6V5.5L12 2.7Z" /><path d="m8.8 12.1 2.1 2.1 4.4-4.6" /></svg>
-        </span>
+        <span class="signup-brand-mark" aria-hidden="true"><img src="/favicon.png" alt="" /></span>
         <span>Safe Passage</span>
     </a>
 
@@ -68,6 +66,28 @@
                 <span class="pending-indicator"></span>
                 <strong>Connecting to Safe Passage</strong>
             </div>
+        }
+        else if (IsAdminLogin)
+        {
+            <p class="signup-eyebrow">ADMINISTRATOR ACCESS</p>
+            <h1 id="login-title">Verify your email.</h1>
+            <p class="signup-subtitle">Enter the verified email address for your administrator account. We’ll send a one-time sign-in link. You’ll still need to approve the sign-in on your trusted mobile device.</p>
+            @if (!string.IsNullOrWhiteSpace(Error))
+            {
+                <div class="signup-error" role="alert">@Error</div>
+            }
+            @if (AdminEmailSent)
+            {
+                <div class="signup-notice" role="status">If this address belongs to an active administrator, a sign-in link will be sent. Check your inbox and spam folder.</div>
+            }
+            <EditForm Model="AdminEmailForm" OnValidSubmit="RequestAdminEmailLinkAsync">
+                <DataAnnotationsValidator />
+                <label for="admin-email">Administrator email address</label>
+                <InputText id="admin-email" type="email" @bind-Value="AdminEmailForm.Email" autocomplete="email" disabled="@AdminEmailRequestBusy" placeholder="you@gmail.com" />
+                <ValidationMessage For="() => AdminEmailForm.Email" />
+                <InteractiveSubmitButton Busy="@AdminEmailRequestBusy" BusyText="Sending link…">Send verification link <span aria-hidden="true">→</span></InteractiveSubmitButton>
+            </EditForm>
+            <p class="signup-switch"><a href="/login">← User Login</a></p>
         }
         else
         {
@@ -125,14 +145,7 @@
                     <a class="social-signin gitlab-signin" href="@GitLabSignInUrl"><span aria-hidden="true" style="color:#fc6d26">🦊</span> Continue with GitLab</a>
                 }
             }
-            @if (IsAdminLogin)
-            {
-                <p class="signup-switch"><a href="/login">← User Login</a></p>
-            }
-            else
-            {
-                <p class="signup-switch">New to Safe Passage? <a href="/signup">Create an account</a></p>
-            }
+            <p class="signup-switch">New to Safe Passage? <a href="/signup">Create an account</a></p>
         }
     </section>
     <a class="signup-back" href="/">← Back to Safe Passage</a>
@@ -165,6 +178,10 @@
     private string GitHubSignInUrl = "";
     private bool GitLabEnabled;
     private string GitLabSignInUrl = "";
+    private readonly AdminEmailLoginForm AdminEmailForm = new();
+    private bool AdminEmailSent;
+    private bool AdminEmailRequestBusy;
+    private bool AdminEmailLinkExchangeStarted;
     private bool IsAdminLogin => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin-login", StringComparison.OrdinalIgnoreCase);
 
     protected override void OnInitialized()
@@ -250,6 +267,37 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (IsAdminLogin && !AdminEmailLinkExchangeStarted)
+        {
+            AdminEmailLinkExchangeStarted = true;
+            string? emailToken = null;
+            try { emailToken = await JS.InvokeAsync<string?>("safePassageAuthSession.getAdminEmailToken"); }
+            catch (JSException) { }
+            if (!string.IsNullOrWhiteSpace(emailToken))
+            {
+                try { await JS.InvokeVoidAsync("safePassageAuthSession.replaceUrl", "/admin-login"); }
+                catch (JSException) { }
+                await ClearPendingMfaAsync();
+                Busy = true;
+                Error = "Verifying your email link and starting mobile approval…";
+                await InvokeAsync(StateHasChanged);
+                try
+                {
+                    var result = await Api.CompleteAdminEmailLinkAsync(emailToken);
+                    await SavePendingMfaAsync(result.SessionToken!);
+                    Error = "";
+                    await ContinueLoginAsync(result);
+                }
+                catch (Exception exception) { Error = exception.Message; }
+                finally
+                {
+                    Busy = false;
+                    await InvokeAsync(StateHasChanged);
+                }
+                return;
+            }
+        }
+
         if (ExternalTicketExchangeStarted)
             return;
 
@@ -318,6 +366,20 @@
         finally { Busy = false; }
     }
 
+    private async Task RequestAdminEmailLinkAsync()
+    {
+        AdminEmailRequestBusy = true;
+        Error = "";
+        AdminEmailSent = false;
+        try
+        {
+            await Api.RequestAdminEmailLinkAsync(AdminEmailForm.Email.Trim());
+            AdminEmailSent = true;
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { AdminEmailRequestBusy = false; }
+    }
+
     private async Task ContinueLoginAsync(LoginResult result)
     {
         if (result.MfaRequired)
@@ -382,6 +444,11 @@
 
     private async Task ContinueAfterAuthenticationAsync()
     {
+        if (!IsAdminLogin && Api.IsAdministrator)
+        {
+            Api.SignOut();
+            throw new InvalidOperationException("Administrator accounts must use Admin Login, verify their email, then approve the request on a trusted mobile device.");
+        }
         if (IsAdminLogin && !Api.IsAdministrator)
         {
             Api.SignOut();
@@ -465,5 +532,11 @@
     {
         [Required, StringLength(320, MinimumLength = 1)] public string Username { get; set; } = "";
         [Required, StringLength(1024, MinimumLength = 1)] public string Password { get; set; } = "";
+    }
+
+    private sealed class AdminEmailLoginForm
+    {
+        [Required, EmailAddress, StringLength(320)]
+        public string Email { get; set; } = "";
     }
 }

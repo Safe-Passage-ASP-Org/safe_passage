@@ -10,5 +10,8 @@ window.safePassageAuthSession = {
     },
     replaceUrl(url) {
         window.history.replaceState(null, "", url);
+    },
+    getAdminEmailToken() {
+        return new URLSearchParams(window.location.hash.slice(1)).get("emailToken");
     }
 };

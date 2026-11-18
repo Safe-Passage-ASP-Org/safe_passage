@@ -15,6 +15,8 @@ dotnet user-secrets set "Smtp:Password" "your-smtp-password"
 
 Set `AccountActivation:PublicUrl` to the reachable web portal URL ending in `/activate`. Development defaults to `http://localhost:5092/activate`; deployment URLs must use HTTPS. The configured SMTP server must support STARTTLS when `EnableSsl` is enabled.
 
+Administrator web sign-in uses a one-time email link followed by mandatory approval from an active trusted mobile device. The link expires after `AdminLogin:TokenLifetimeMinutes` (default 10; allowed range 5–30 minutes), can be used once, and is sent only to active administrators with verified email addresses. Set `AdminLogin:PublicUrl` to the HTTPS web portal URL in production; if omitted, the API derives the portal origin from `AccountActivation:PublicUrl`.
+
 Create a user from the admin dashboard. The account remains inactive until the user opens the single-use invitation link and sets a password. Activation tokens expire after 60 minutes by default. Local testing requires an SMTP test server or a valid SMTP account; missing or failed SMTP configuration returns an explicit error and does not create an active account.
 
 ## OpenID Connect provider

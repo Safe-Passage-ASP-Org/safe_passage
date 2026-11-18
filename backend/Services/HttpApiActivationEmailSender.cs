@@ -42,6 +42,38 @@ public sealed class HttpApiActivationEmailSender(
         await smtpFallback.SendActivationEmailAsync(email, username, activationUrl, requiresPasswordSetup, cancellationToken);
     }
 
+    public async Task SendAdminLoginLinkAsync(
+        string email,
+        string username,
+        string loginUrl,
+        int tokenLifetimeMinutes,
+        CancellationToken cancellationToken)
+    {
+        var subject = "Your Safe Passage admin sign-in link";
+        var body = $"Hello {username},\n\n"
+            + "Use this one-time link to verify your email and start your Safe Passage administrator sign-in:\n\n"
+            + $"{loginUrl}\n\n"
+            + $"The link expires in {tokenLifetimeMinutes} minutes and can only be used once. After opening it, approve the sign-in on your trusted Safe Passage mobile device.\n\n"
+            + "If you did not request this link, you can ignore this email.";
+
+        var brevoApiKey = configuration["Brevo:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(brevoApiKey))
+        {
+            await SendViaBrevoAsync(brevoApiKey, email, username, subject, body, cancellationToken);
+            return;
+        }
+
+        var resendApiKey = configuration["Resend:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(resendApiKey))
+        {
+            await SendViaResendAsync(resendApiKey, email, subject, body, cancellationToken);
+            return;
+        }
+
+        await new SmtpEmailSender(smtpOptions).SendAdminLoginLinkAsync(
+            email, username, loginUrl, tokenLifetimeMinutes, cancellationToken);
+    }
+
     private async Task SendViaBrevoAsync(
         string apiKey,
         string recipientEmail,

@@ -54,11 +54,13 @@ builder.Services.AddScoped<IDeviceManagementService, DeviceManagementService>();
 builder.Services.AddScoped<PendingDeviceRegistrationService>();
 builder.Services.AddHttpClient<IActivationEmailSender, HttpApiActivationEmailSender>();
 builder.Services.AddScoped<IAccountActivationService, AccountActivationService>();
+builder.Services.AddScoped<IAdminEmailLoginService, AdminEmailLoginService>();
 builder.Services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
 builder.Services.AddScoped<DeviceBootstrapService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection(SmtpOptions.SectionName));
 builder.Services.Configure<AccountActivationOptions>(builder.Configuration.GetSection(AccountActivationOptions.SectionName));
+builder.Services.Configure<AdminLoginOptions>(builder.Configuration.GetSection(AdminLoginOptions.SectionName));
 builder.Services.Configure<PayPalOptions>(builder.Configuration.GetSection(PayPalOptions.SectionName));
 builder.Services.Configure<PayMongoOptions>(builder.Configuration.GetSection(PayMongoOptions.SectionName));
 builder.Services.AddHttpClient<IPayPalClient, PayPalHttpClient>();
@@ -498,6 +500,23 @@ using (var scope = app.Services.CreateScope())
                   ADD COLUMN IF NOT EXISTS "PushToken" text NULL;
                 """;
             postureCmd.ExecuteNonQuery();
+
+            using var adminLoginTokenCmd = conn.CreateCommand();
+            adminLoginTokenCmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS "AdminLoginTokens" (
+                    "Id" uuid PRIMARY KEY,
+                    "UserId" uuid NOT NULL REFERENCES "Users" ("Id") ON DELETE CASCADE,
+                    "TokenHash" character varying(64) NOT NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "ExpiresAt" timestamp with time zone NOT NULL,
+                    "UsedAt" timestamp with time zone NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_AdminLoginTokens_TokenHash"
+                    ON "AdminLoginTokens" ("TokenHash");
+                CREATE INDEX IF NOT EXISTS "IX_AdminLoginTokens_UserId_ExpiresAt"
+                    ON "AdminLoginTokens" ("UserId", "ExpiresAt");
+                """;
+            adminLoginTokenCmd.ExecuteNonQuery();
         }
         else
         {
