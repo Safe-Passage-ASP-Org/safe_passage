@@ -493,7 +493,9 @@ using (var scope = app.Services.CreateScope())
                 ALTER TABLE "Devices"
                   ADD COLUMN IF NOT EXISTS "ScreenLockEnabled" boolean NULL,
                   ADD COLUMN IF NOT EXISTS "IsRootedOrJailbroken" boolean NULL,
-                  ADD COLUMN IF NOT EXISTS "PostureUpdatedAt" timestamp with time zone NULL;
+                  ADD COLUMN IF NOT EXISTS "PostureUpdatedAt" timestamp with time zone NULL,
+                  ADD COLUMN IF NOT EXISTS "PushPlatform" text NULL,
+                  ADD COLUMN IF NOT EXISTS "PushToken" text NULL;
                 """;
             postureCmd.ExecuteNonQuery();
         }
