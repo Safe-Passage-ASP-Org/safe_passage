@@ -105,19 +105,24 @@ function findAssignedApplication(applications, origin) {
 async function getSiteForOrigin(state, origin) {
   const localSite = state.customSites.find((site) => site.origin === origin) || null;
   if (!state.accessToken) return localSite;
-  const apps = await getAssignedApplications(state.apiUrl, state.accessToken);
-  const app = findAssignedApplication(apps, origin);
-  if (app) {
-    return {
-      ...(localSite || {}),
-      id: localSite?.id || app.id,
-      name: app.name,
-      origin,
-      applicationId: app.id,
-      siteUsername: app.autoFillUsername || '',
-      remoteCredentials: true,
-      hasAutoFillPassword: app.hasAutoFillPassword,
-    };
+  try {
+    const apps = await getAssignedApplications(state.apiUrl, state.accessToken);
+    const app = findAssignedApplication(apps, origin);
+    if (app) {
+      return {
+        ...(localSite || {}),
+        id: localSite?.id || app.id,
+        name: app.name,
+        origin,
+        applicationId: app.id,
+        siteUsername: app.autoFillUsername || '',
+        remoteCredentials: true,
+        hasAutoFillPassword: app.hasAutoFillPassword,
+      };
+    }
+  } catch (error) {
+    // A locally saved site should still be detected when the API is unavailable.
+    if (!localSite) throw error;
   }
   return localSite;
 }

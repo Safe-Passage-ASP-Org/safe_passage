@@ -13,14 +13,14 @@
   let timer;
 
   const visible = (element) => Boolean(element && element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden');
-  const textOf = (element) => `${element.innerText || ''} ${element.getAttribute?.('aria-label') || ''}`.trim().toLowerCase();
+  const textOf = (element) => `${element.innerText || ''} ${element.value || ''} ${element.getAttribute?.('aria-label') || ''}`.trim().toLowerCase();
 
   function pageState() {
     const bodyText = (document.body?.innerText || '').toLowerCase();
     const urlLooksSignedOut = /\/(login|log-in|signin|sign-in|auth|authenticate|session-expired)(\/|$)/i.test(location.pathname);
     const signOutControl = [...document.querySelectorAll('a,button,[role="button"]')]
       .some((el) => visible(el) && /\b(sign out|log out|logout)\b/.test(textOf(el)));
-    const loginControl = [...document.querySelectorAll('button,input[type="submit"],[role="button"]')]
+    const loginControl = [...document.querySelectorAll('button,input[type="submit"],input[type="button"],[role="button"]')]
       .some((el) => visible(el) && /\b(sign in|log in|login|continue with email)\b/.test(textOf(el)));
     const loginLink = [...document.querySelectorAll('a')]
       .some((el) => visible(el) && /\b(sign in|log in|login)\b/.test(textOf(el)));
@@ -31,11 +31,12 @@
       return el.type === 'email' || /email|user(name)?|identifier/.test(hint);
     });
     const loginForm = Boolean(password && (password.closest('form') || loginControl || emailInput));
+    const emailLoginForm = Boolean(emailInput && loginControl && emailInput.closest('form'));
     const explicitSignedOut = /\b(session expired|you are signed out|you have been logged out|please sign in|sign in to continue)\b/.test(bodyText);
 
     // A visible login form is the strongest cross-site signal. Email-only login
     // steps, explicit signed-out messages, and /login routes cover common SPA/SSO flows.
-    const isSignedOut = !signOutControl && (loginForm || explicitSignedOut || (urlLooksSignedOut && (loginControl || emailInput || bodyText.length < 5000)) || (loginLink && emailInput));
+    const isSignedOut = !signOutControl && (loginForm || emailLoginForm || explicitSignedOut || (urlLooksSignedOut && (loginControl || emailInput)) || (loginLink && emailInput));
     return { isSignedOut, password, emailInput };
   }
 
@@ -170,11 +171,26 @@
     });
   }
 
+  function onSpaNavigation() {
+    refreshPrompt();
+    if (!site) checkSite();
+  }
+
   checkSite();
   new MutationObserver(refreshPrompt).observe(document.documentElement, {
-    childList: true, subtree: true, attributes: true,
+    childList: true, subtree: true, attributes: true, characterData: true,
     attributeFilter: ['type', 'style', 'hidden', 'aria-label'],
   });
+  window.addEventListener('popstate', onSpaNavigation);
+  window.addEventListener('hashchange', onSpaNavigation);
+  for (const method of ['pushState', 'replaceState']) {
+    const original = history[method].bind(history);
+    history[method] = (...args) => {
+      const result = original(...args);
+      onSpaNavigation();
+      return result;
+    };
+  }
 
   chrome.runtime.onMessage.addListener((message) => {
     if (message.type === 'APPROVAL_PENDING') {
