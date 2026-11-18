@@ -84,6 +84,6 @@ public sealed class SharedDeviceEnrollmentTests
 
     private sealed class TestJwtTokenService : IJwtTokenService
     {
-        public string CreateAccessToken(User user, string? deviceId = null) => "test-token";
+        public string CreateAccessToken(User user, string? deviceId = null, string? authContext = null, DateTimeOffset? authContextExpiresAt = null) => "test-token";
     }
 }

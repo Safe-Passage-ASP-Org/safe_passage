@@ -224,5 +224,12 @@ public sealed class AccountActivationServiceTests
                 throw Failure;
             return Task.CompletedTask;
         }
+
+        public Task SendAdminLoginLinkAsync(
+            string email,
+            string username,
+            string loginUrl,
+            int tokenLifetimeMinutes,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }
