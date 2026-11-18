@@ -1,6 +1,5 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SafePassage.Api.Contracts.Devices;
@@ -18,19 +17,15 @@ public sealed class DeviceController(
     IDeviceManagementService deviceManagement,
     DeviceBootstrapService bootstrapService,
     PendingDeviceRegistrationService pendingDeviceRegistration,
-    ApplicationDbContext dbContext,
-    IWebHostEnvironment environment) : ControllerBase
+    ApplicationDbContext dbContext) : ControllerBase
 {
-    /// <summary>Development-only first-device setup for accounts without an enrolled MFA device.</summary>
+    /// <summary>Credential-verified first-device setup for accounts without an enrolled MFA device.</summary>
     [AllowAnonymous]
     [HttpPost("bootstrap")]
     public async Task<ActionResult<DeviceBootstrapResponse>> Bootstrap(
         [FromBody] DeviceBootstrapRequest request,
         CancellationToken cancellationToken)
     {
-        if (!environment.IsDevelopment())
-            return NotFound();
-
         try
         {
             var result = await bootstrapService.EnrollAsync(request, cancellationToken);
