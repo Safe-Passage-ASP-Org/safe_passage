@@ -750,6 +750,28 @@ namespace SafePassage.Api.Data.Migrations
                     b.ToTable("UserGroups");
                 });
 
+            modelBuilder.Entity("SafePassage.Api.Models.VaultSite", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("TEXT");
+                    b.Property<string>("AutoFillUsername").IsRequired().HasMaxLength(320).HasColumnType("TEXT");
+                    b.Property<string>("Category").IsRequired().HasMaxLength(64).HasColumnType("TEXT");
+                    b.Property<DateTimeOffset>("CreatedAt").HasColumnType("TEXT");
+                    b.Property<string>("Description").IsRequired().HasMaxLength(2000).HasColumnType("TEXT");
+                    b.Property<string>("EncryptedPassword").IsRequired().HasMaxLength(2048).HasColumnType("TEXT");
+                    b.Property<string>("EncryptedTotpSecret").IsRequired().HasMaxLength(2048).HasColumnType("TEXT");
+                    b.Property<string>("LoginUrl").IsRequired().HasMaxLength(2048).HasColumnType("TEXT");
+                    b.Property<string>("Name").IsRequired().HasMaxLength(200).HasColumnType("TEXT");
+                    b.Property<string>("Origin").IsRequired().HasMaxLength(512).HasColumnType("TEXT");
+                    b.Property<Guid>("UserId").HasColumnType("TEXT");
+                    b.Property<DateTimeOffset?>("VerifiedAt").HasColumnType("TEXT");
+                    b.Property<Guid?>("VerifiedByUserId").HasColumnType("TEXT");
+                    b.Property<string>("VerificationStatus").IsRequired().HasMaxLength(32).HasColumnType("TEXT");
+                    b.HasKey("Id");
+                    b.HasIndex("VerificationStatus", "CreatedAt");
+                    b.HasIndex("UserId", "Origin").IsUnique();
+                    b.ToTable("VaultSites");
+                });
+
             modelBuilder.Entity("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreAuthorization", b =>
                 {
                     b.HasOne("OpenIddict.EntityFrameworkCore.Models.OpenIddictEntityFrameworkCoreApplication", "Application")
@@ -803,6 +825,16 @@ namespace SafePassage.Api.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SafePassage.Api.Models.VaultSite", b =>
+                {
+                    b.HasOne("SafePassage.Api.Models.User", "User")
+                        .WithMany("VaultSites")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                     b.Navigation("User");
                 });
 
@@ -943,6 +975,8 @@ namespace SafePassage.Api.Data.Migrations
                     b.Navigation("ApplicationAccess");
 
                     b.Navigation("UserGroups");
+
+                    b.Navigation("VaultSites");
                 });
 
             modelBuilder.Entity("SafePassage.Api.Models.User", b =>

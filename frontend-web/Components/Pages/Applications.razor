@@ -8,6 +8,17 @@
 <div class="apps-sort"><label for="application-sort">Sort by</label><select id="application-sort" aria-label="Sort applications" @bind="SortOrder"><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="users-desc">Most user assignments</option><option value="groups-desc">Most group assignments</option></select></div>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="apps-alert" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Notice)) { <div class="apps-notice" role="status">@Notice@if (!string.IsNullOrWhiteSpace(NewClientSecret)) { <p>New client secret (shown once): <code>@NewClientSecret</code></p> }</div> }
+@if (PendingVaultSites.Count > 0)
+{
+    <section class="sp-card verification-queue"><h2>Websites awaiting verification</h2><p>Review each website before approving it. Approval enables its owner's saved credentials and 2FA code in the extension.</p>
+        @foreach (var site in PendingVaultSites)
+        {
+            <article><div><strong>@site.Name</strong><span>@site.Email (@site.Username)</span><a href="@site.LoginUrl" target="_blank" rel="noopener noreferrer">@site.LoginUrl</a><small>@site.Category · submitted @site.CreatedAt.ToLocalTime().ToString("g")</small></div>
+                <button class="verify-button" disabled="@ReviewingSites.Contains(site.Id)" @onclick="() => ReviewVaultSiteAsync(site, true)">Verify</button><button class="reject-button" disabled="@ReviewingSites.Contains(site.Id)" @onclick="() => ReviewVaultSiteAsync(site, false)">Reject</button>
+            </article>
+        }
+    </section>
+}
 @if (Loading) { <p class="apps-state" role="status">Loading applications…</p> }
 else if (RegisteredApplications.Count == 0) { <div class="sp-card apps-state">No applications registered. Add an application to configure access assignments.</div> }
 else
@@ -71,6 +82,7 @@ else
 }
 
 <style>
+    .verification-queue{padding:16px 18px;margin-bottom:16px}.verification-queue h2{font-size:14px;margin:0 0 5px}.verification-queue>p{margin:0 0 10px;color:#64748b;font-size:11px}.verification-queue article{display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #edf0f2}.verification-queue article>div{display:grid;gap:3px;flex:1;min-width:0;font-size:11px}.verification-queue article a{color:#087f75;overflow-wrap:anywhere}.verification-queue article small,.verification-queue article span{color:#64748b}.verification-queue button{border:0;border-radius:5px;padding:7px 9px;font-size:10px;font-weight:700;cursor:pointer}.verification-queue .verify-button{background:#e5f5ed;color:#087f5b}.verification-queue .reject-button{background:#fcecea;color:#9d332b}
     .apps-sort{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:-4px 0 12px;color:#64748b;font-size:12px}.apps-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}
     .apps-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:18px}.apps-toolbar>div{display:flex;flex-direction:column;gap:4px}.apps-toolbar strong{font-size:13px}.apps-toolbar span{font-size:11px;color:#64748b}.apps-primary,.apps-cancel{border:0;border-radius:5px;padding:9px 14px;font-size:12px;font-weight:650;cursor:pointer}.apps-primary{background:#087f75;color:#fff}.apps-cancel{background:#f1f5f9;color:#334155}.apps-primary:disabled,.apps-cancel:disabled{opacity:.6}.apps-alert,.apps-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.apps-alert{background:#fcecea;color:#9d332b}.apps-notice{background:#edf7f2;color:#087f5b}.apps-state{padding:22px;color:#64748b;font-size:13px}.apps-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:14px}.app-card{padding:18px 19px;min-width:0}.app-card-top{display:flex;justify-content:space-between;align-items:center}.app-mark{width:38px;height:38px;display:grid;place-items:center;border-radius:7px;background:#e5f2ed;color:#087f75;font-size:13px;font-weight:800}.app-mark.app-site-icon{object-fit:contain;padding:3px}.app-state{display:flex;align-items:center;gap:6px;color:#087f5b;font-size:10px;font-weight:650}.app-state i{width:6px;height:6px;border-radius:50%;background:#099268}.app-card h2{font-size:16px;margin:17px 0 5px;overflow-wrap:anywhere}.app-description{font-size:11px;color:#64748b;min-height:32px;margin:0}.app-access-summary{display:flex;gap:20px;margin:16px 0;padding:12px 0;border-top:1px solid #edf0f2;border-bottom:1px solid #edf0f2}.app-access-summary div{display:flex;align-items:baseline;gap:5px}.app-access-summary strong{font-size:15px}.app-access-summary span{font-size:10px;color:#64748b}.app-card-footer{display:flex;justify-content:space-between;gap:8px}.app-card-footer button{border:0;background:none;color:#087f75;font-size:11px;font-weight:650;cursor:pointer}.apps-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.48)}.apps-modal{width:min(100%,500px);max-height:88vh;overflow:auto;background:#fff;border-radius:8px;padding:23px;box-shadow:0 24px 70px rgba(15,23,42,.24)}.apps-modal header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}.apps-modal header small{font-size:10px;font-weight:700;color:#087f75}.apps-modal header h2{font-size:20px;margin:5px 0}.apps-modal header p{font-size:12px;color:#64748b;margin:0}.apps-modal header>button{border:0;background:none;color:#64748b;font-size:25px;cursor:pointer}.apps-modal form{display:grid;gap:14px}.apps-modal form>label{display:grid;gap:6px;font-size:12px;font-weight:650;color:#334155}.apps-modal input:not([type=checkbox]),.apps-modal textarea{border:1px solid #cbd5dc;border-radius:5px;padding:10px;font:inherit;font-size:13px}.apps-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:15px}.assignment-section{margin:14px 0}.assignment-section h3{font-size:12px;margin:0 0 7px;color:#64748b;text-transform:uppercase}.assignment-row{display:flex;justify-content:space-between;align-items:center;padding:10px 2px;border-top:1px solid #edf0f2;font-size:13px;gap:12px}.assignment-row small{display:block;color:#64748b;font-size:11px}.assignment-row input{width:16px;height:16px;accent-color:#087f75;flex:0 0 auto}
     @@media(max-width:600px){.apps-toolbar{align-items:flex-start;flex-direction:column}.apps-toolbar .apps-primary{width:100%}.app-card{padding:16px}}
@@ -84,6 +96,8 @@ else
 
 @code {
     private List<AdminApplication> RegisteredApplications = [];
+    private List<PendingVaultSite> PendingVaultSites = [];
+    private readonly HashSet<Guid> ReviewingSites = [];
     private List<AdminUser> DirectoryUsers = [];
     private List<AdminGroup> DirectoryGroups = [];
     private HashSet<Guid> SelectedUsers = [];
@@ -103,10 +117,17 @@ else
         _ => RegisteredApplications.OrderBy(app => app.Name, StringComparer.OrdinalIgnoreCase)
     };
     protected override async Task OnInitializedAsync() { await LoadAsync(); }
-    private async Task LoadAsync() { Loading = true; Error = ""; try { RegisteredApplications = await Api.GetApplicationsAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
+    private async Task LoadAsync() { Loading = true; Error = ""; try { RegisteredApplications = await Api.GetApplicationsAsync(); PendingVaultSites = await Api.GetPendingVaultSitesAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
     private static string Mark(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
     private static string? IconUrl(string? launchUrl) => Uri.TryCreate(launchUrl, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp) ? new Uri(uri.GetLeftPart(UriPartial.Authority) + "/favicon.ico").AbsoluteUri : null;
     private void IconFailed(Guid id) => FailedIconIds.Add(id);
+    private async Task ReviewVaultSiteAsync(PendingVaultSite site, bool verified)
+    {
+        if (!ReviewingSites.Add(site.Id)) return;
+        try { await Api.ReviewVaultSiteAsync(site.Id, verified); Notice = verified ? $"Verified {site.Name}." : $"Rejected {site.Name}."; await LoadAsync(); }
+        catch (Exception ex) { Error = ex.Message; }
+        finally { ReviewingSites.Remove(site.Id); }
+    }
     private void OpenCreate() { Editing = null; Draft = new(); FormError = ""; EditModal = true; }
     private void OpenEdit(AdminApplication app) { Editing = app; Draft = new() { Name = app.Name, Description = app.Description, LaunchUrl = app.LaunchUrl, Category = app.Category, AutoFillUsername = app.AutoFillUsername, HasAutoFillPassword = app.HasAutoFillPassword }; FormError = ""; EditModal = true; }
     private void CloseModals() { if (!Saving) { EditModal = false; AccessApp = null; } }

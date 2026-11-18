@@ -102,6 +102,20 @@ public sealed class IntegrationAccessController(
         }
 
         var origin = requestedUri.GetLeftPart(UriPartial.Authority);
+        var groupIds = dbContext.UserGroups.Where(membership => membership.UserId == userId).Select(membership => membership.GroupId);
+        var assignedApplicationUrls = await dbContext.Applications.AsNoTracking()
+            .Where(application => application.UserAccess.Any(access => access.UserId == userId)
+                || application.GroupAccess.Any(access => groupIds.Contains(access.GroupId)))
+            .Select(application => application.LaunchUrl)
+            .ToListAsync(cancellationToken);
+        var assignedApplicationMatches = assignedApplicationUrls.Any(url =>
+            Uri.TryCreate(url, UriKind.Absolute, out var appUri)
+            && string.Equals(appUri.GetLeftPart(UriPartial.Authority), origin, StringComparison.OrdinalIgnoreCase));
+        var verifiedVaultSiteMatches = await dbContext.VaultSites.AsNoTracking().AnyAsync(site =>
+            site.UserId == userId && site.Origin == origin && site.VerificationStatus == "Verified", cancellationToken);
+        if (!assignedApplicationMatches && !verifiedVaultSiteMatches)
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Website not verified", detail: "This website must be registered and approved in Safe Passage before requesting mobile approval.");
+
         var cacheKey = $"browser-access:{userId}:{origin}";
         if (cache.TryGetValue(cacheKey, out _))
         {

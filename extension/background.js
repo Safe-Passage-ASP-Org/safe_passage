@@ -1,4 +1,4 @@
-import { encryptSecret, decryptSecret } from './crypto.js';
+import { decryptSecret } from './crypto.js';
 
 const DEFAULT_API_URL = 'https://safe-passage-api.onrender.com';
 const pendingApprovals = new Map();
@@ -95,6 +95,48 @@ async function getAssignedApplications(apiUrl, accessToken) {
   return assignedAppsCache;
 }
 
+async function getVaultSites(apiUrl, accessToken) {
+  const res = await fetch(`${apiUrl}/api/vault/sites`, { headers: { 'Authorization': `Bearer ${accessToken}` } });
+  if (res.status === 401) {
+    await chrome.storage.local.remove('accessToken');
+    throw new Error('Safe Passage session expired. Sign in again from the extension menu.');
+  }
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(body.detail || body.title || `Could not sync the Safe Passage vault (${res.status}).`);
+  }
+  const sites = await res.json();
+  await chrome.storage.local.set({ vaultSitesCache: sites });
+  return sites;
+}
+
+async function migrateLocalSites(state) {
+  if (!state.accessToken || state.customSites.length === 0) return;
+  let remoteSites;
+  try { remoteSites = await getVaultSites(state.apiUrl, state.accessToken); }
+  catch { return; }
+  const remaining = [...state.customSites];
+  for (const localSite of state.customSites) {
+    const origin = localSite.origin;
+    let password = '';
+    try { password = await decryptSecret(localSite.encryptedPassword); } catch { continue; }
+    const remoteSite = remoteSites.find((site) => site.origin === origin);
+    const response = await fetch(`${state.apiUrl}/api/vault/sites${remoteSite ? `/${encodeURIComponent(remoteSite.id)}` : ''}`, {
+      method: remoteSite ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.accessToken}` },
+      body: JSON.stringify({
+        name: localSite.name, loginUrl: localSite.url || origin, category: localSite.category || 'Other',
+        description: localSite.description || '', autoFillUsername: localSite.siteUsername || '',
+        password, totpSecret: '',
+      }),
+    });
+    if (!response.ok) continue;
+    const index = remaining.findIndex((site) => site.id === localSite.id);
+    if (index >= 0) remaining.splice(index, 1);
+  }
+  await chrome.storage.local.set({ customSites: remaining });
+}
+
 function findAssignedApplication(applications, origin) {
   return applications.find((app) => {
     try { return new URL(app.launchUrl).origin === origin; }
@@ -103,28 +145,39 @@ function findAssignedApplication(applications, origin) {
 }
 
 async function getSiteForOrigin(state, origin) {
-  const localSite = state.customSites.find((site) => site.origin === origin) || null;
-  if (!state.accessToken) return localSite;
+  if (state.accessToken) await migrateLocalSites(state);
+  const cached = await chrome.storage.local.get('vaultSitesCache');
+  let vaultSites = Array.isArray(cached.vaultSitesCache) ? cached.vaultSitesCache : [];
+  if (state.accessToken) vaultSites = await getVaultSites(state.apiUrl, state.accessToken);
+  const vaultSite = vaultSites.find((site) => site.origin === origin) || null;
+  if (vaultSite) {
+    return {
+      id: vaultSite.id, name: vaultSite.name, origin, vaultSiteId: vaultSite.id,
+      vaultSite: true, isVerified: vaultSite.verificationStatus === 'Verified',
+      verificationStatus: vaultSite.verificationStatus,
+      siteUsername: vaultSite.autoFillUsername || '', hasAutoFillPassword: vaultSite.hasPassword,
+    };
+  }
   try {
     const apps = await getAssignedApplications(state.apiUrl, state.accessToken);
     const app = findAssignedApplication(apps, origin);
     if (app) {
       return {
-        ...(localSite || {}),
-        id: localSite?.id || app.id,
+        id: app.id,
         name: app.name,
         origin,
         applicationId: app.id,
         siteUsername: app.autoFillUsername || '',
         remoteCredentials: true,
+        isVerified: true,
+        verificationStatus: 'Verified',
         hasAutoFillPassword: app.hasAutoFillPassword,
       };
     }
   } catch (error) {
-    // A locally saved site should still be detected when the API is unavailable.
-    if (!localSite) throw error;
+    throw error;
   }
-  return localSite;
+  return null;
 }
 
 async function getRegisteredApplicationCredentials(apiUrl, approvedToken, applicationId) {
@@ -134,6 +187,15 @@ async function getRegisteredApplicationCredentials(apiUrl, approvedToken, applic
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.detail || body.title || `Could not retrieve application credentials (${res.status})`);
   return { username: body.username || '', password: body.password || '' };
+}
+
+async function getVaultSiteCredentials(apiUrl, approvedToken, vaultSiteId) {
+  const res = await fetch(`${apiUrl}/api/vault/sites/${encodeURIComponent(vaultSiteId)}/credentials`, {
+    headers: { 'Authorization': `Bearer ${approvedToken}` },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || body.title || `Could not retrieve saved credentials (${res.status})`);
+  return { username: body.username || '', password: body.password || '', totpCode: body.totpCode || '' };
 }
 
 async function resendSiteApproval(apiUrl, origin) {
@@ -207,18 +269,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     const state = await getState();
 
     if (msg.type === 'GET_STATE') {
+      let sites = [];
+      if (state.accessToken) {
+        try { await migrateLocalSites(state); sites = await getVaultSites(state.apiUrl, state.accessToken); }
+        catch { sites = []; }
+      } else {
+        const cached = await chrome.storage.local.get('vaultSitesCache');
+        sites = Array.isArray(cached.vaultSitesCache) ? cached.vaultSitesCache : [];
+      }
       return {
         apiUrl: state.apiUrl,
         signedIn: Boolean(state.accessToken),
         username: state.username,
-        customSites: state.customSites.map(({ id, name, origin, url, category, description, siteUsername }) => ({
-          id,
-          name,
-          origin,
-          url: url || origin,
-          category: category || '',
-          description: description || '',
-          siteUsername,
+        customSites: sites.map(site => ({
+          id: site.id, name: site.name, origin: site.origin,
+          url: site.loginUrl || site.origin, category: site.category || '',
+          description: site.description || '', siteUsername: site.autoFillUsername || '',
+          verificationStatus: site.verificationStatus,
+          hasTotpSecret: site.hasTotpSecret,
         })),
       };
     }
@@ -235,44 +303,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
     if (msg.type === 'LOGOUT') {
       await chrome.storage.local.remove(['accessToken', 'username']);
+      await chrome.storage.session.clear();
       return { ok: true };
     }
 
     if (msg.type === 'SAVE_CUSTOM_SITE') {
+      if (!state.accessToken) throw new Error('Sign in to Safe Passage before saving this site to your synchronized vault.');
       const applicationUrl = new URL(msg.url);
-      if (!['http:', 'https:'].includes(applicationUrl.protocol)) throw new Error('Login/Web URL must use HTTP or HTTPS.');
       if (!msg.name?.trim()) throw new Error('Site name is required.');
-      const origin = applicationUrl.origin;
-      const encryptedPassword = await encryptSecret(msg.sitePassword || '');
-      const next = state.customSites.filter((s) => s.origin !== origin);
-      next.push({
-        id: crypto.randomUUID(),
-        name: msg.name.trim(),
-        origin,
-        url: applicationUrl.href,
-        category: msg.category || '',
-        description: (msg.description || '').trim(),
-        siteUsername: msg.siteUsername || '',
-        encryptedPassword,
-        applicationId: msg.applicationId || null,
+      const response = await fetch(`${state.apiUrl}/api/vault/sites`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.accessToken}` },
+        body: JSON.stringify({ name: msg.name.trim(), loginUrl: applicationUrl.href, category: msg.category || 'Other',
+          description: (msg.description || '').trim(), autoFillUsername: msg.siteUsername || '',
+          password: msg.sitePassword || '', totpSecret: msg.totpSecret || '' }),
       });
-      await chrome.storage.local.set({ customSites: next });
-      return { ok: true, origin };
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(body.detail || body.title || body.message || `Could not save site (${response.status})`);
+      await getVaultSites(state.apiUrl, state.accessToken);
+      return { ok: true, id: body.id, origin: body.origin, verificationStatus: body.verificationStatus };
     }
 
     if (msg.type === 'DELETE_CUSTOM_SITE') {
-      const next = state.customSites.filter((s) => s.id !== msg.id);
-      await chrome.storage.local.set({ customSites: next });
+      if (!state.accessToken) throw new Error('Sign in to Safe Passage before removing a synchronized site.');
+      const response = await fetch(`${state.apiUrl}/api/vault/sites/${encodeURIComponent(msg.id)}`, {
+        method: 'DELETE', headers: { 'Authorization': `Bearer ${state.accessToken}` },
+      });
+      if (!response.ok && response.status !== 404) throw new Error(`Could not remove saved site (${response.status})`);
+      await getVaultSites(state.apiUrl, state.accessToken);
       return { ok: true };
     }
 
     if (msg.type === 'CHECK_ORIGIN') {
       const site = await getSiteForOrigin(state, msg.origin);
       if (!site) return { matched: false };
+      const sessionKey = `approval:${site.origin}`;
+      const approval = (await chrome.storage.session.get(sessionKey))[sessionKey];
       return {
         matched: true,
         signedIn: Boolean(state.accessToken),
-        site: { id: site.id, name: site.name, origin: site.origin, applicationId: site.applicationId || null },
+        approved: Boolean(approval?.token && approval.expiresAt > Date.now()),
+        site: { id: site.id, name: site.name, origin: site.origin, applicationId: site.applicationId || null,
+          vaultSiteId: site.vaultSiteId || null, isVerified: site.isVerified !== false,
+          verificationStatus: site.verificationStatus || 'Verified' },
       };
     }
 
@@ -282,6 +355,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       }
       const site = await getSiteForOrigin(state, msg.origin);
       if (!site) throw new Error('Site is not registered in Safe Passage.');
+      if (!site.isVerified) throw new Error('This site is awaiting Safe Passage verification before credentials or 2FA can be used.');
 
       if (!approvalFlows.has(site.origin)) {
         const approvalFlow = requestSiteApproval(state.apiUrl, state.accessToken, site.origin, sender.tab?.id);
@@ -297,7 +371,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 
       let username = site.siteUsername || '';
       let password = '';
-      if (site.remoteCredentials && site.applicationId) {
+      let totpCode = '';
+      await chrome.storage.session.set({ [`approval:${site.origin}`]: {
+        token: approvedToken, expiresAt: Date.now() + 5 * 60 * 1000,
+        vaultSiteId: site.vaultSiteId || null, applicationId: site.applicationId || null,
+      } });
+      if (site.vaultSite && site.vaultSiteId) {
+        ({ username, password, totpCode } = await getVaultSiteCredentials(state.apiUrl, approvedToken, site.vaultSiteId));
+      } else if (site.remoteCredentials && site.applicationId) {
         const verification = await verifyAccess(state.apiUrl, approvedToken, site.applicationId);
         if (verification && verification.allowed === false)
           throw new Error(`Access denied by Safe Passage (${verification.reason || 'policy'}).`);
@@ -314,7 +395,35 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         ok: true,
         username,
         password,
+        totpCode,
       };
+    }
+
+    if (msg.type === 'GET_CURRENT_TOTP') {
+      const site = await getSiteForOrigin(state, msg.origin);
+      if (!site?.isVerified || !site.vaultSiteId) throw new Error('No verified 2FA account is saved for this site.');
+      const sessionKey = `approval:${site.origin}`;
+      const approval = (await chrome.storage.session.get(sessionKey))[sessionKey];
+      if (!approval?.token || approval.expiresAt <= Date.now()) throw new Error('Request mobile approval before using this 2FA code.');
+      const credentials = await getVaultSiteCredentials(state.apiUrl, approval.token, site.vaultSiteId);
+      if (!credentials.totpCode) throw new Error('No 2FA secret is saved for this site.');
+      return { ok: true, totpCode: credentials.totpCode };
+    }
+
+    if (msg.type === 'GET_APPROVED_CREDENTIALS') {
+      const site = await getSiteForOrigin(state, msg.origin);
+      if (!site?.isVerified) throw new Error('This site is not verified.');
+      const sessionKey = `approval:${site.origin}`;
+      const approval = (await chrome.storage.session.get(sessionKey))[sessionKey];
+      if (!approval?.token || approval.expiresAt <= Date.now()) throw new Error('Request mobile approval before using saved credentials.');
+      if (site.vaultSite && site.vaultSiteId)
+        return { ok: true, ...await getVaultSiteCredentials(state.apiUrl, approval.token, site.vaultSiteId) };
+      if (site.applicationId) {
+        const result = await verifyAccess(state.apiUrl, approval.token, site.applicationId);
+        if (result?.allowed === false) throw new Error(`Access denied by Safe Passage (${result.reason || 'policy'}).`);
+        return { ok: true, ...await getRegisteredApplicationCredentials(state.apiUrl, approval.token, site.applicationId) };
+      }
+      throw new Error('No saved credentials are available for this site.');
     }
 
     if (msg.type === 'RESEND_SITE_APPROVAL') {

@@ -326,6 +326,34 @@ public sealed class AdminApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
+    public async Task<List<VaultSiteSummary>> GetVaultSitesAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<VaultSiteSummary>>("api/vault/sites", cancellationToken) ?? [];
+
+    public async Task SaveVaultSiteAsync(VaultSiteForm site, Guid? id, CancellationToken cancellationToken = default)
+    {
+        var payload = new { site.Name, site.LoginUrl, site.Category, site.Description, site.AutoFillUsername,
+            Password = site.Password, TotpSecret = site.TotpSecret, site.ClearTotpSecret };
+        using var response = id is null
+            ? await http.PostAsJsonAsync("api/vault/sites", payload, cancellationToken)
+            : await http.PutAsJsonAsync($"api/vault/sites/{id}", payload, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task DeleteVaultSiteAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.DeleteAsync($"api/vault/sites/{id}", cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task<List<PendingVaultSite>> GetPendingVaultSitesAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<PendingVaultSite>>("api/admin/vault-sites/pending", cancellationToken) ?? [];
+
+    public async Task ReviewVaultSiteAsync(Guid id, bool verified, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsync($"api/admin/vault-sites/{id}/{(verified ? "verify" : "reject")}", null, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
     public async Task<string> CreateOidcSessionAsync(string returnUrl, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync("connect/session", new { returnUrl }, cancellationToken);
@@ -496,10 +524,15 @@ public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, st
 public sealed record AdminApplication(Guid Id, string Name, string Description, int UserAccessCount, int GroupAccessCount,
     string LaunchUrl = "", string? ClientId = null, string ClientType = "confidential", string RedirectUris = "", string PostLogoutRedirectUris = "", string AllowedScopes = "openid profile email", bool IsPublished = false, bool AllowAccessRequests = false, string Category = "Other", string AutoFillUsername = "", bool HasAutoFillPassword = false, string? ClientSecret = null);
 public sealed record AccessibleApplication(Guid Id, string Name, string Description, string LaunchUrl, string Category = "Other", string AutoFillUsername = "", bool HasAutoFillPassword = false);
+public sealed record VaultSiteSummary(Guid Id, string Name, string LoginUrl, string Origin, string Category, string Description,
+    string AutoFillUsername, bool HasPassword, bool HasTotpSecret, string VerificationStatus, DateTimeOffset CreatedAt);
+public sealed record PendingVaultSite(Guid Id, string Name, string LoginUrl, string Origin, string Category,
+    string Description, string Username, string Email, DateTimeOffset CreatedAt);
 public sealed record CatalogApplication(Guid Id, string Name, string Description, string LaunchUrl, bool IsAssigned, bool AllowAccessRequests, string? RequestStatus);
 public sealed record MyApplicationAccessRequest(Guid Id, Guid ApplicationId, string ApplicationName, string Status, string Reason, DateTimeOffset RequestedAt, DateTimeOffset? ReviewedAt, string? DecisionNote);
 public sealed record AdminAccessRequest(Guid Id, Guid ApplicationId, string ApplicationName, Guid UserId, string Username, string Email, string Status, string Reason, DateTimeOffset RequestedAt, DateTimeOffset? ReviewedAt, string? DecisionNote);
 public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; public string LaunchUrl { get; set; } = ""; public string Category { get; set; } = ""; public string AutoFillUsername { get; set; } = ""; public string AutoFillPassword { get; set; } = ""; public bool HasAutoFillPassword { get; set; } }
+public sealed class VaultSiteForm { public string Name { get; set; } = ""; public string LoginUrl { get; set; } = ""; public string Category { get; set; } = "Other"; public string Description { get; set; } = ""; public string AutoFillUsername { get; set; } = ""; public string Password { get; set; } = ""; public string TotpSecret { get; set; } = ""; public bool ClearTotpSecret { get; set; } public bool HasPassword { get; set; } public bool HasTotpSecret { get; set; } }
 public sealed record AdminApplicationAccess(List<Guid> UserIds, List<Guid> GroupIds);
 public sealed record AdminActivity(Guid Id, DateTimeOffset Timestamp, string Username, string Action, string Resource, string Status);
 public sealed record AdminActivitySummary(int TotalCount, int MfaLast24h, int DeniedCount, int DeniedLast24h);

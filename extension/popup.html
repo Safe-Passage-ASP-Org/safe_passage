@@ -56,6 +56,10 @@
     <input id="siteName" type="text" placeholder="Site name" />
     <label class="site-label" for="siteOrigin">Login/Web URL</label>
     <input id="siteOrigin" type="url" placeholder="https://example.com" />
+    <label class="site-label" for="siteCategory">Category</label>
+    <select id="siteCategory" aria-label="Category"><option>Other</option><option>Work</option><option>Social</option><option>Finance</option><option>Education</option><option>Shopping</option><option>Entertainment</option><option>Health</option></select>
+    <label class="site-label" for="siteDescription">Description (Optional)</label>
+    <input id="siteDescription" type="text" maxlength="2000" placeholder="Short description" />
     <label class="site-label" for="siteUser">Username / Email</label>
     <input id="siteUser" type="text" autocomplete="off" placeholder="Your login" />
     <label class="site-label" for="sitePass">Password</label>
@@ -63,6 +67,9 @@
       <input id="sitePass" type="password" autocomplete="new-password" placeholder="Your password" />
       <button id="togglePassword" class="password-toggle secondary" type="button" aria-label="Show password">Show</button>
     </div>
+    <label class="site-label" for="siteTotpSecret">2FA Secret (Base32, Optional)</label>
+    <input id="siteTotpSecret" type="password" autocomplete="off" placeholder="Enter the authenticator setup key" />
+    <p class="approval-copy">Credentials and 2FA stay unavailable until an administrator verifies this site.</p>
     <button id="saveSiteBtn" type="button" class="secondary">Save credentials for this site</button>
 
     <h2 class="section-title">Saved Sites</h2>

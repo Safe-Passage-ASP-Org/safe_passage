@@ -522,6 +522,26 @@ using (var scope = app.Services.CreateScope())
                     ADD COLUMN IF NOT EXISTS "EncryptedAutoFillPassword" character varying(2048) NOT NULL DEFAULT '';
                 ALTER TABLE "MfaSessions"
                     ADD COLUMN IF NOT EXISTS "Purpose" character varying(64) NOT NULL DEFAULT 'Login';
+                CREATE TABLE IF NOT EXISTS "VaultSites" (
+                    "Id" uuid PRIMARY KEY,
+                    "UserId" uuid NOT NULL REFERENCES "Users" ("Id") ON DELETE CASCADE,
+                    "Name" character varying(200) NOT NULL,
+                    "LoginUrl" character varying(2048) NOT NULL,
+                    "Origin" character varying(512) NOT NULL,
+                    "Category" character varying(64) NOT NULL,
+                    "Description" character varying(2000) NOT NULL,
+                    "AutoFillUsername" character varying(320) NOT NULL,
+                    "EncryptedPassword" character varying(2048) NOT NULL,
+                    "EncryptedTotpSecret" character varying(2048) NOT NULL,
+                    "VerificationStatus" character varying(32) NOT NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "VerifiedAt" timestamp with time zone NULL,
+                    "VerifiedByUserId" uuid NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_VaultSites_UserId_Origin"
+                    ON "VaultSites" ("UserId", "Origin");
+                CREATE INDEX IF NOT EXISTS "IX_VaultSites_VerificationStatus_CreatedAt"
+                    ON "VaultSites" ("VerificationStatus", "CreatedAt");
                 """;
             adminLoginTokenCmd.ExecuteNonQuery();
         }

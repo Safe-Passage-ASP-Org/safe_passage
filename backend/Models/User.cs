@@ -22,4 +22,5 @@ public sealed class User
     public ICollection<MfaSession> MfaSessions { get; set; } = new List<MfaSession>();
     public ICollection<ApplicationAccessRequest> ApplicationAccessRequests { get; set; } = new List<ApplicationAccessRequest>();
     public ICollection<UserSubscription> Subscriptions { get; set; } = new List<UserSubscription>();
+    public ICollection<VaultSite> VaultSites { get; set; } = new List<VaultSite>();
 }

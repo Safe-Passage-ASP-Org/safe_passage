@@ -20,6 +20,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<ApplicationAccessRequest> ApplicationAccessRequests => Set<ApplicationAccessRequest>();
     public DbSet<UserSubscription> UserSubscriptions => Set<UserSubscription>();
     public DbSet<SubscriptionWebhookEvent> SubscriptionWebhookEvents => Set<SubscriptionWebhookEvent>();
+    public DbSet<VaultSite> VaultSites => Set<VaultSite>();
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -214,6 +215,24 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(evt => evt.EventType).HasMaxLength(128).IsRequired();
             entity.Property(evt => evt.PayPalSubscriptionId).HasMaxLength(128);
             entity.Property(evt => evt.PayloadSummary).HasMaxLength(1000);
+        });
+
+        modelBuilder.Entity<VaultSite>(entity =>
+        {
+            entity.HasKey(site => site.Id);
+            entity.HasIndex(site => new { site.UserId, site.Origin }).IsUnique();
+            entity.HasIndex(site => new { site.VerificationStatus, site.CreatedAt });
+            entity.Property(site => site.Name).HasMaxLength(200).IsRequired();
+            entity.Property(site => site.LoginUrl).HasMaxLength(2048).IsRequired();
+            entity.Property(site => site.Origin).HasMaxLength(512).IsRequired();
+            entity.Property(site => site.Category).HasMaxLength(64).IsRequired();
+            entity.Property(site => site.Description).HasMaxLength(2000).IsRequired();
+            entity.Property(site => site.AutoFillUsername).HasMaxLength(320).IsRequired();
+            entity.Property(site => site.EncryptedPassword).HasMaxLength(2048).IsRequired();
+            entity.Property(site => site.EncryptedTotpSecret).HasMaxLength(2048).IsRequired();
+            entity.Property(site => site.VerificationStatus).HasMaxLength(32).IsRequired();
+            entity.HasOne(site => site.User).WithMany(user => user.VaultSites)
+                .HasForeignKey(site => site.UserId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

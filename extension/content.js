@@ -1,6 +1,6 @@
 (() => {
   const origin = location.origin;
-  if (window.top !== window || !/^https?:$/.test(location.protocol)) return;
+  if (!/^https?:$/.test(location.protocol)) return;
 
   let site;
   let signedIn = false;
@@ -10,6 +10,11 @@
   let resendButton;
   let busy = false;
   let dismissed = false;
+  let mobileApproved = false;
+  let loadingTotp = false;
+  let loadingCredentials = false;
+  let lastTotpAttempt = 0;
+  let lastCredentialAttempt = 0;
   let timer;
 
   const visible = (element) => Boolean(element && element.getClientRects().length && getComputedStyle(element).visibility !== 'hidden');
@@ -25,6 +30,11 @@
     const loginLink = [...document.querySelectorAll('a')]
       .some((el) => visible(el) && /\b(sign in|log in|login)\b/.test(textOf(el)));
     const password = [...document.querySelectorAll('input[type="password"]')].find(visible);
+    const totpInput = [...document.querySelectorAll('input:not([type="password"]),textarea')].find((el) => {
+      if (!visible(el) || el.disabled || el.type === 'hidden') return false;
+      const hint = `${el.name} ${el.id} ${el.autocomplete} ${el.placeholder} ${el.getAttribute('aria-label')}`.toLowerCase();
+      return el.autocomplete === 'one-time-code' || /one.?time|2fa|mfa|auth(?:entication)?[-_ ]?code|verification[-_ ]?code|otp/.test(hint);
+    });
     const emailInput = [...document.querySelectorAll('input:not([type="password"]),textarea')].find((el) => {
       if (!visible(el) || el.disabled || el.type === 'hidden') return false;
       const hint = `${el.type} ${el.name} ${el.id} ${el.autocomplete} ${el.placeholder}`.toLowerCase();
@@ -37,7 +47,7 @@
     // A visible login form is the strongest cross-site signal. Email-only login
     // steps, explicit signed-out messages, and /login routes cover common SPA/SSO flows.
     const isSignedOut = !signOutControl && (loginForm || emailLoginForm || explicitSignedOut || (urlLooksSignedOut && (loginControl || emailInput)) || (loginLink && emailInput));
-    return { isSignedOut, password, emailInput };
+    return { isSignedOut, password, emailInput, totpInput };
   }
 
   function removePrompt(resetDismissal = true) {
@@ -57,7 +67,11 @@
     title.textContent = 'Authenticate with Safe Passage?';
     title.style.cssText = 'font-size:15px;';
     const description = document.createElement('div');
-    description.textContent = `Approve this ${site.name} sign-in on your trusted Safe Passage device.`;
+    description.textContent = site.isVerified === false
+      ? `${site.name} is waiting for Safe Passage verification. Credentials and 2FA are disabled until an administrator approves this site.`
+      : mobileApproved
+        ? `Safe Passage approval is active for this ${site.name} sign-in.`
+        : `Approve this ${site.name} sign-in on your trusted Safe Passage device.`;
     description.style.cssText = 'margin-top:5px;color:#526078;';
     status = document.createElement('div');
     status.setAttribute('role', 'status');
@@ -66,6 +80,15 @@
     actions.style.cssText = 'display:flex;gap:8px;margin-top:12px;';
     approveButton = document.createElement('button');
     approveButton.textContent = 'Request approval';
+    if (mobileApproved) {
+      approveButton.disabled = true;
+      approveButton.textContent = 'Approved';
+      status.textContent = 'Mobile approval is active for this sign-in.';
+    }
+    if (site.isVerified === false) {
+      approveButton.disabled = true;
+      approveButton.textContent = 'Verification pending';
+    }
     approveButton.style.cssText = 'border:0;border-radius:7px;padding:9px 12px;background:#3457d5;color:white;font-weight:600;cursor:pointer;';
     resendButton = document.createElement('button');
     resendButton.textContent = 'Resend request';
@@ -95,6 +118,7 @@
     status.textContent = 'Check Safe Passage on your trusted device.';
     try {
       const result = await sendMessage({ type: 'AUTHENTICATE_AND_GET_CREDENTIALS', origin });
+      mobileApproved = true;
       if (result.username || result.password) fillCredentials(result);
       status.textContent = result.username || result.password
         ? 'Approved. Saved credentials were filled in.'
@@ -122,14 +146,50 @@
     }
   }
 
-  function fillCredentials({ username, password }) {
+  function fillCredentials({ username, password, totpCode }) {
     const state = pageState();
     const passwordInput = state.password;
     const usernameInput = state.emailInput || (passwordInput?.closest('form')
       ? [...passwordInput.closest('form').querySelectorAll('input[type="text"]')].find(visible)
       : null);
-    if (usernameInput && username) setValue(usernameInput, username);
-    if (passwordInput && password) setValue(passwordInput, password);
+    if (usernameInput && username && !usernameInput.value) setValue(usernameInput, username);
+    if (passwordInput && password && !passwordInput.value) setValue(passwordInput, password);
+    if (totpCode) fillTotpCode(totpCode);
+  }
+
+  function fillTotpCode(code) {
+    const input = pageState().totpInput;
+    if (input && code && !input.value) setValue(input, code);
+  }
+
+  async function fillApprovedCredentialsIfAvailable() {
+    if (!mobileApproved || loadingCredentials || Date.now() - lastCredentialAttempt < 10000) return;
+    const state = pageState();
+    const passwordInput = state.password;
+    const usernameInput = state.emailInput || (passwordInput?.closest('form')
+      ? [...passwordInput.closest('form').querySelectorAll('input[type="text"]')].find(visible)
+      : null);
+    if ((!passwordInput || passwordInput.value) && (!usernameInput || usernameInput.value)) return;
+    loadingCredentials = true;
+    lastCredentialAttempt = Date.now();
+    try {
+      const result = await sendMessage({ type: 'GET_APPROVED_CREDENTIALS', origin });
+      fillCredentials(result);
+    } catch { /* Never fill unless an approved Safe Passage session is available. */ }
+    finally { loadingCredentials = false; }
+  }
+
+  async function fillTotpIfAvailable() {
+    if (!mobileApproved || loadingTotp || Date.now() - lastTotpAttempt < 15000) return;
+    const input = pageState().totpInput;
+    if (!input || input.value) return;
+    loadingTotp = true;
+    lastTotpAttempt = Date.now();
+    try {
+      const result = await sendMessage({ type: 'GET_CURRENT_TOTP', origin });
+      if (result.totpCode) fillTotpCode(result.totpCode);
+    } catch { /* The visible site prompt reports approval and vault errors. */ }
+    finally { loadingTotp = false; }
   }
 
   function setValue(input, value) {
@@ -149,12 +209,16 @@
 
   function refreshPrompt() {
     clearTimeout(timer);
-    timer = setTimeout(() => {
+    timer = setTimeout(async () => {
       if (!pageState().isSignedOut) {
         removePrompt();
+        await fillApprovedCredentialsIfAvailable();
+        await fillTotpIfAvailable();
         return;
       }
       showPrompt();
+      await fillApprovedCredentialsIfAvailable();
+      await fillTotpIfAvailable();
     }, 300);
   }
 
@@ -162,10 +226,12 @@
     chrome.runtime.sendMessage({ type: 'CHECK_ORIGIN', origin }, (response) => {
       if (chrome.runtime.lastError || !response?.matched) {
         site = null;
+        mobileApproved = false;
         removePrompt();
         return;
       }
       site = response.site;
+      mobileApproved = response.approved === true;
       signedIn = Boolean(response.signedIn);
       refreshPrompt();
     });

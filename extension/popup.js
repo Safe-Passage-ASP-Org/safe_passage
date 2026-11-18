@@ -58,7 +58,7 @@ async function refresh() {
       name.textContent = s.name;
       const details = document.createElement('span');
       details.style.cssText = 'display:block;color:#939aa3;font-size:11px;';
-      details.textContent = s.url || s.origin;
+      details.textContent = [s.url || s.origin, s.category, s.verificationStatus, s.hasTotpSecret ? '2FA saved' : ''].filter(Boolean).join(' · ');
       info.append(name, details);
       const del = document.createElement('button');
       del.className = 'danger';
@@ -115,18 +115,24 @@ document.getElementById('saveSiteBtn').addEventListener('click', async () => {
     type: 'SAVE_CUSTOM_SITE',
     name,
     url,
+    category: document.getElementById('siteCategory').value,
+    description: document.getElementById('siteDescription').value.trim(),
     siteUsername: document.getElementById('siteUser').value.trim(),
     sitePassword: document.getElementById('sitePass').value,
+    totpSecret: document.getElementById('siteTotpSecret').value,
   });
-  statusMsg.textContent = res?.ok ? `Saved credentials for ${name}` : (res?.error || 'Failed to save site');
   document.getElementById('sitePass').value = '';
+  document.getElementById('siteTotpSecret').value = '';
   if (res?.ok) {
     const tab = await getActiveTab();
     if (tab?.id && tab.url?.startsWith('http') && new URL(tab.url).origin === res.origin) {
       chrome.tabs.sendMessage(tab.id, { type: 'START_SITE_GATE', signedIn: true, siteName: document.getElementById('siteName').value.trim() }, () => void chrome.runtime.lastError);
     }
   }
-  refresh();
+  await refresh();
+  statusMsg.textContent = res?.ok
+    ? `Saved ${name}. Site verification status: ${res.verificationStatus || 'Pending'}.`
+    : (res?.error || 'Failed to save site');
 });
 
 document.getElementById('autofillTabBtn').addEventListener('click', async () => {
@@ -143,7 +149,7 @@ document.getElementById('autofillTabBtn').addEventListener('click', async () => 
     statusMsg.textContent = creds?.error || 'Access denied';
     return;
   }
-  chrome.tabs.sendMessage(tab.id, { type: 'AUTOFILL_NOW', username: creds.username, password: creds.password }, (fillRes) => {
+  chrome.tabs.sendMessage(tab.id, { type: 'AUTOFILL_NOW', username: creds.username, password: creds.password, totpCode: creds.totpCode }, (fillRes) => {
     statusMsg.textContent = fillRes?.ok ? 'Autofilled current tab.' : (fillRes?.error || 'Could not autofill page.');
   });
 });
