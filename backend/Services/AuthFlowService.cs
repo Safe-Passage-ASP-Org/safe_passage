@@ -250,7 +250,7 @@ public sealed class AuthFlowService(
         {
             Id = Guid.NewGuid(), UserId = user.Id, DeviceId = device.Id,
             SessionToken = HashSessionToken(sessionToken), Status = MfaSessionStatus.Pending,
-            CreatedAt = now, ExpiresAt = expiresAt
+            Purpose = "AdminEmailLogin", CreatedAt = now, ExpiresAt = expiresAt
         };
         dbContext.MfaSessions.Add(session);
         AddActivity(user.Id, "Login", $"{provider} accepted; MFA pending", ActivityLogStatus.Success);
@@ -377,6 +377,8 @@ public sealed class AuthFlowService(
         }
 
         session.Status = MfaSessionStatus.Approved;
+        if (string.Equals(session.Purpose, "BrowserAppAccess", StringComparison.Ordinal))
+            session.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(5);
         device.LastActiveDate = DateTimeOffset.UtcNow;
         AddActivity(session.UserId, "MFA", "MFA approval", ActivityLogStatus.Success);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -509,6 +511,7 @@ public sealed class AuthFlowService(
             DeviceId = device.Id,
             SessionToken = HashSessionToken(sessionToken),
             Status = MfaSessionStatus.Pending,
+            Purpose = "BrowserAppAccess",
             CreatedAt = now,
             ExpiresAt = expiresAt
         };
@@ -572,6 +575,11 @@ public sealed class AuthFlowService(
                 continue;
             }
 
+            if (session.Status == MfaSessionStatus.Approved
+                && string.Equals(session.Purpose, "BrowserAppAccess", StringComparison.Ordinal)
+                && session.ExpiresAt <= DateTimeOffset.UtcNow)
+                return AuthFlowResult<MfaStatusResponse>.Failed(AuthFlowFailure.SessionExpired);
+
             if (session.Status == MfaSessionStatus.Approved)
             {
                 var user = await dbContext.Users.AsNoTracking().SingleOrDefaultAsync(
@@ -590,7 +598,9 @@ public sealed class AuthFlowService(
                 return AuthFlowResult<MfaStatusResponse>.Success(new(
                     MfaSessionStatus.Approved,
                     session.ExpiresAt,
-                    jwtTokenService.CreateAccessToken(user, deviceId),
+                    session.Purpose == "BrowserAppAccess"
+                        ? jwtTokenService.CreateAccessToken(user, deviceId, "BrowserAppAccess", session.ExpiresAt)
+                        : jwtTokenService.CreateAccessToken(user, deviceId),
                     "Bearer",
                     deviceId));
             }

@@ -15,7 +15,7 @@ else
     <div class="apps-grid">
     @foreach (var app in SortedApplications)
     {
-        <article class="sp-card app-card"><div class="app-card-top"><span class="app-mark">@Mark(app.Name)</span><span class="app-state"><i></i>OIDC</span></div><h2>@app.Name</h2><p class="app-description">@(string.IsNullOrWhiteSpace(app.Description) ? "No description" : app.Description)</p><p class="app-description">Client ID: <code>@app.ClientId</code></p>
+        <article class="sp-card app-card"><div class="app-card-top"><span class="app-mark">@Mark(app.Name)</span><span class="app-state"><i></i>@(string.IsNullOrWhiteSpace(app.ClientId) ? "Web app" : "OIDC")</span></div><h2>@app.Name</h2><p class="app-description">@app.Category</p><p class="app-description">@(string.IsNullOrWhiteSpace(app.Description) ? "No description" : app.Description)</p>@if (!string.IsNullOrWhiteSpace(app.ClientId)) { <p class="app-description">Client ID: <code>@app.ClientId</code></p> }
             @if (!string.IsNullOrWhiteSpace(app.LaunchUrl))
             {
                 <p class="app-launch-preview">Launch URL: <a href="@app.LaunchUrl" target="_blank" rel="noopener noreferrer">@app.LaunchUrl ↗</a></p>
@@ -31,16 +31,13 @@ else
 {
     <div class="apps-backdrop" @onclick="CloseModals"><section class="apps-modal" role="dialog" aria-modal="true" aria-labelledby="app-title" @onclick:stopPropagation="true">
         <header><div><small>APPLICATION REGISTRY</small><h2 id="app-title">@(Editing is null ? "Add application" : "Edit application")</h2></div><button aria-label="Close" @onclick="CloseModals">×</button></header>
-        <form @onsubmit="SaveAppAsync" @onsubmit:preventDefault="true"><label>Application name<input required maxlength="200" @bind="Draft.Name" /></label><label>Description<textarea rows="3" maxlength="2000" @bind="Draft.Description"></textarea></label>
-            <label>Launch URL (where users go after selecting the app)<input type="url" maxlength="2048" @bind="Draft.LaunchUrl" placeholder="https://your-app.example.com" /><small>Optional. This adds a Launch button to My Applications. To enable single sign-on, configure the app to use Safe Passage OIDC.</small></label>
-            <label class="apps-check"><input type="checkbox" @bind="Draft.IsPublished" /> Show this app in users' application catalog</label>
-            <label class="apps-check"><input type="checkbox" @bind="Draft.AllowAccessRequests" disabled="@(!Draft.IsPublished)" /> Allow users to request access (admin approval required)</label>
-            <label>Client type<select @bind="Draft.ClientType"><option value="confidential">Server app (can securely store a client secret)</option><option value="public">Browser or mobile app (uses PKCE; no client secret)</option></select></label>
-            <label>OIDC callback URLs (one exact URL per line)<textarea required rows="2" @bind="Draft.RedirectUris" placeholder="https://your-app.example.com/auth/callback"></textarea><small>Copy these from your app's OIDC settings. Each URL must match exactly. Use HTTPS; HTTP is allowed only for localhost development.</small></label>
-            <label>Post-logout redirect URLs (optional)<textarea rows="2" @bind="Draft.PostLogoutRedirectUris" placeholder="https://your-app.example.com/"></textarea></label>
-            <label>Allowed scopes<input required @bind="Draft.AllowedScopes" /><small>Scopes control which profile details the app can request. The default is openid profile email.</small></label>
-            @if (Editing is not null && Draft.ClientType == "confidential") { <p class="apps-state">Saving changes creates a new client secret. Update the connected server app with it after saving; the old secret will stop working.</p> }
-            @if (Editing is not null && Draft.ClientType == "public") { <p class="apps-state">Public clients use PKCE and do not have a client secret. Make sure the callback URLs here match the app's OIDC settings.</p> }
+        <form @onsubmit="SaveAppAsync" @onsubmit:preventDefault="true">
+            <label>Application Name<input required maxlength="200" @bind="Draft.Name" /></label>
+            <label>Login/Web URL<input required type="url" maxlength="2048" @bind="Draft.LaunchUrl" placeholder="https://example.com/login" /><small>Users open this address from My Applications. Use an HTTPS URL.</small></label>
+            <label>Category<select required @bind="Draft.Category"><option value="">Choose a category</option>@foreach (var category in ApplicationCategories) { <option value="@category">@category</option> }</select></label>
+            <label>Description (Optional)<textarea rows="3" maxlength="2000" @bind="Draft.Description"></textarea></label>
+            <label>Auto Fill Username/Email (Optional)<input maxlength="320" autocomplete="off" @bind="Draft.AutoFillUsername" /></label>
+            <label>Auto Fill Password (Optional)<input type="password" maxlength="1024" autocomplete="new-password" @bind="Draft.AutoFillPassword" /><small>@(Editing is not null && Draft.HasAutoFillPassword ? "A password is saved encrypted. Leave blank to keep the saved password; enter a new one to replace it." : "The password is stored encrypted.")</small></label>
             @if (!string.IsNullOrWhiteSpace(FormError)) { <div class="apps-alert" role="alert">@FormError</div> }
             <footer>
                 @if (Editing is not null) { <button type="button" class="apps-delete" @onclick="DeleteAppAsync" disabled="@Saving">Delete</button> }
@@ -93,6 +90,7 @@ else
     private bool Loading = true, LoadingAccess, Saving, EditModal;
     private string Error = "", FormError = "", Notice = "", NewClientSecret = "";
     private string SortOrder = "name-asc";
+    private static readonly string[] ApplicationCategories = ["Work", "Social", "Finance", "Education", "Shopping", "Entertainment", "Health", "Other"];
     private IEnumerable<AdminApplication> SortedApplications => SortOrder switch
     {
         "name-desc" => RegisteredApplications.OrderByDescending(app => app.Name, StringComparer.OrdinalIgnoreCase),
@@ -104,7 +102,7 @@ else
     private async Task LoadAsync() { Loading = true; Error = ""; try { RegisteredApplications = await Api.GetApplicationsAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
     private static string Mark(string name) => string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
     private void OpenCreate() { Editing = null; Draft = new(); FormError = ""; EditModal = true; }
-    private void OpenEdit(AdminApplication app) { Editing = app; Draft = new() { Name = app.Name, Description = app.Description, LaunchUrl = app.LaunchUrl, ClientType = app.ClientType, RedirectUris = app.RedirectUris, PostLogoutRedirectUris = app.PostLogoutRedirectUris, AllowedScopes = app.AllowedScopes, IsPublished = app.IsPublished, AllowAccessRequests = app.AllowAccessRequests }; FormError = ""; EditModal = true; }
+    private void OpenEdit(AdminApplication app) { Editing = app; Draft = new() { Name = app.Name, Description = app.Description, LaunchUrl = app.LaunchUrl, Category = app.Category, AutoFillUsername = app.AutoFillUsername, HasAutoFillPassword = app.HasAutoFillPassword }; FormError = ""; EditModal = true; }
     private void CloseModals() { if (!Saving) { EditModal = false; AccessApp = null; } }
     private async Task SaveAppAsync()
     {
@@ -116,7 +114,7 @@ else
             NewClientSecret = await Api.SaveApplicationAsync(Draft, Editing?.Id) ?? "";
             EditModal = false;
             Notice = string.IsNullOrWhiteSpace(NewClientSecret)
-                ? "Application saved. Use its Client ID and callback URL in your app's OIDC settings."
+                ? "Application saved. Assign users or groups with Manage access."
                 : "Application saved. Copy the client secret now; it is shown only once. Update the connected app with this secret.";
             await LoadAsync();
         }

@@ -55,6 +55,7 @@ builder.Services.AddScoped<PendingDeviceRegistrationService>();
 builder.Services.AddHttpClient<IActivationEmailSender, HttpApiActivationEmailSender>();
 builder.Services.AddScoped<IAccountActivationService, AccountActivationService>();
 builder.Services.AddScoped<IAdminEmailLoginService, AdminEmailLoginService>();
+builder.Services.AddSingleton<ApplicationCredentialProtector>();
 builder.Services.AddScoped<IAccountRegistrationService, AccountRegistrationService>();
 builder.Services.AddScoped<DeviceBootstrapService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
@@ -515,6 +516,12 @@ using (var scope = app.Services.CreateScope())
                     ON "AdminLoginTokens" ("TokenHash");
                 CREATE INDEX IF NOT EXISTS "IX_AdminLoginTokens_UserId_ExpiresAt"
                     ON "AdminLoginTokens" ("UserId", "ExpiresAt");
+                ALTER TABLE "Applications"
+                    ADD COLUMN IF NOT EXISTS "Category" character varying(64) NOT NULL DEFAULT 'Other',
+                    ADD COLUMN IF NOT EXISTS "AutoFillUsername" character varying(320) NOT NULL DEFAULT '',
+                    ADD COLUMN IF NOT EXISTS "EncryptedAutoFillPassword" character varying(2048) NOT NULL DEFAULT '';
+                ALTER TABLE "MfaSessions"
+                    ADD COLUMN IF NOT EXISTS "Purpose" character varying(64) NOT NULL DEFAULT 'Login';
                 """;
             adminLoginTokenCmd.ExecuteNonQuery();
         }

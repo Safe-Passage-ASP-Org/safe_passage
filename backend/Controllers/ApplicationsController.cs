@@ -4,13 +4,17 @@ using Microsoft.EntityFrameworkCore;
 using OpenIddict.Abstractions;
 using SafePassage.Api.Data;
 using SafePassage.Api.Models;
+using SafePassage.Api.Services;
 
 namespace SafePassage.Api.Controllers;
 
 [Authorize(Roles = "Admin,Administrator,Super Admin")]
 [ApiController]
 [Route("api/admin/applications")]
-public sealed class ApplicationsController(ApplicationDbContext dbContext, IOpenIddictApplicationManager oidcApplications) : ControllerBase
+public sealed class ApplicationsController(
+    ApplicationDbContext dbContext,
+    IOpenIddictApplicationManager oidcApplications,
+    ApplicationCredentialProtector credentialProtector) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<ApplicationSummary>>> GetAll(CancellationToken cancellationToken)
@@ -31,7 +35,10 @@ public sealed class ApplicationsController(ApplicationDbContext dbContext, IOpen
                 application.PostLogoutRedirectUris,
                 application.AllowedScopes,
                 application.IsPublished,
-                application.AllowAccessRequests))
+                application.AllowAccessRequests,
+                application.Category,
+                application.AutoFillUsername,
+                application.EncryptedAutoFillPassword != ""))
             .ToListAsync(cancellationToken);
 
         return Ok(applications);
@@ -56,7 +63,10 @@ public sealed class ApplicationsController(ApplicationDbContext dbContext, IOpen
                 candidate.PostLogoutRedirectUris,
                 candidate.AllowedScopes,
                 candidate.IsPublished,
-                candidate.AllowAccessRequests))
+                candidate.AllowAccessRequests,
+                candidate.Category,
+                candidate.AutoFillUsername,
+                candidate.EncryptedAutoFillPassword != ""))
             .SingleOrDefaultAsync(cancellationToken);
 
         return application is null ? NotFound() : Ok(application);
@@ -101,30 +111,37 @@ public sealed class ApplicationsController(ApplicationDbContext dbContext, IOpen
     [HttpPost]
     public async Task<ActionResult<ApplicationSummary>> Create([FromBody] ApplicationRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { message = "Application name is required." });
+        if (!ValidApplicationDetails(request, out var detailsError))
+            return BadRequest(new { message = detailsError });
 
         var application = new Application
         {
             Id = Guid.NewGuid(),
-            Name = request.Name.Trim(),
+            Name = request.Name!.Trim(),
             Description = request.Description?.Trim() ?? string.Empty,
-            LaunchUrl = NormalizeLaunchUrl(request.LaunchUrl),
-            ClientId = Guid.NewGuid().ToString("N"),
+            LaunchUrl = NormalizeLaunchUrl(request.LoginUrl ?? request.LaunchUrl),
+            Category = request.Category!.Trim(),
+            AutoFillUsername = request.AutoFillUsername?.Trim() ?? string.Empty,
+            EncryptedAutoFillPassword = credentialProtector.Protect(request.AutoFillPassword),
             ClientType = request.ClientType == "public" ? "public" : "confidential",
             RedirectUris = NormalizeUris(request.RedirectUris),
             PostLogoutRedirectUris = NormalizeUris(request.PostLogoutRedirectUris),
             AllowedScopes = NormalizeScopes(request.AllowedScopes),
-            IsPublished = request.IsPublished,
-            AllowAccessRequests = request.IsPublished && request.AllowAccessRequests
+            IsPublished = request.IsPublished ?? false,
+            AllowAccessRequests = request.IsPublished == true && request.AllowAccessRequests == true
         };
 
-        if (!ValidOidcConfiguration(application, out var validationError))
-            return BadRequest(new { message = validationError });
+        if (!ValidOidcConfiguration(application, out var oidcError))
+            return BadRequest(new { message = oidcError });
+
+        if (HasOidcConfiguration(application))
+            application.ClientId = Guid.NewGuid().ToString("N");
 
         dbContext.Applications.Add(application);
         await dbContext.SaveChangesAsync(cancellationToken);
-        var secret = await RegisterClientAsync(application, cancellationToken);
+        var secret = HasOidcConfiguration(application)
+            ? await RegisterClientAsync(application, cancellationToken)
+            : null;
 
         return CreatedAtAction(nameof(GetById), new { id = application.Id }, ToSummary(application, 0, 0, secret));
     }
@@ -136,23 +153,36 @@ public sealed class ApplicationsController(ApplicationDbContext dbContext, IOpen
         if (application is null)
             return NotFound();
 
-        if (string.IsNullOrWhiteSpace(request.Name))
-            return BadRequest(new { message = "Application name is required." });
+        if (!ValidApplicationDetails(request, out var detailsError))
+            return BadRequest(new { message = detailsError });
 
-        application.Name = request.Name.Trim();
+        application.Name = request.Name!.Trim();
         application.Description = request.Description?.Trim() ?? string.Empty;
-        application.LaunchUrl = NormalizeLaunchUrl(request.LaunchUrl);
-        application.ClientId ??= Guid.NewGuid().ToString("N");
-        application.ClientType = request.ClientType == "public" ? "public" : "confidential";
-        application.RedirectUris = NormalizeUris(request.RedirectUris);
-        application.PostLogoutRedirectUris = NormalizeUris(request.PostLogoutRedirectUris);
-        application.AllowedScopes = NormalizeScopes(request.AllowedScopes);
-        application.IsPublished = request.IsPublished;
-        application.AllowAccessRequests = request.IsPublished && request.AllowAccessRequests;
-        if (!ValidOidcConfiguration(application, out var validationError))
-            return BadRequest(new { message = validationError });
+        application.LaunchUrl = NormalizeLaunchUrl(request.LoginUrl ?? request.LaunchUrl ?? application.LaunchUrl);
+        application.Category = request.Category!.Trim();
+        application.AutoFillUsername = request.AutoFillUsername?.Trim() ?? string.Empty;
+        if (!string.IsNullOrEmpty(request.AutoFillPassword))
+            application.EncryptedAutoFillPassword = credentialProtector.Protect(request.AutoFillPassword);
+        if (request.ClientType is not null)
+            application.ClientType = request.ClientType == "public" ? "public" : "confidential";
+        if (request.RedirectUris is not null)
+            application.RedirectUris = NormalizeUris(request.RedirectUris);
+        if (request.PostLogoutRedirectUris is not null)
+            application.PostLogoutRedirectUris = NormalizeUris(request.PostLogoutRedirectUris);
+        if (request.AllowedScopes is not null)
+            application.AllowedScopes = NormalizeScopes(request.AllowedScopes);
+        if (request.IsPublished.HasValue)
+            application.IsPublished = request.IsPublished.Value;
+        if (request.AllowAccessRequests.HasValue)
+            application.AllowAccessRequests = application.IsPublished && request.AllowAccessRequests.Value;
+        if (HasOidcConfiguration(application))
+            application.ClientId ??= Guid.NewGuid().ToString("N");
+        if (!ValidOidcConfiguration(application, out var oidcError))
+            return BadRequest(new { message = oidcError });
         await dbContext.SaveChangesAsync(cancellationToken);
-        var secret = await RegisterClientAsync(application, cancellationToken);
+        var secret = HasOidcConfiguration(application)
+            ? await RegisterClientAsync(application, cancellationToken)
+            : null;
         return Ok(ToSummary(application, application.UserAccess.Count, application.GroupAccess.Count, secret));
     }
 
@@ -178,15 +208,36 @@ public sealed class ApplicationsController(ApplicationDbContext dbContext, IOpen
     private static string NormalizeUris(string? value) => string.Join('\n', (value ?? "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal));
     private static string NormalizeScopes(string? value) => string.Join(' ', (value ?? "openid profile email").Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct(StringComparer.Ordinal));
     private static string NormalizeLaunchUrl(string? value) => value?.Trim() ?? string.Empty;
+    private static bool HasOidcConfiguration(Application app) =>
+        !string.IsNullOrWhiteSpace(app.RedirectUris);
+
+    private static bool ValidApplicationDetails(ApplicationRequest request, out string error)
+    {
+        var loginUrl = NormalizeLaunchUrl(request.LoginUrl ?? request.LaunchUrl);
+        if (string.IsNullOrWhiteSpace(request.Name) || request.Name.Trim().Length > 200)
+        { error = "Application name is required and must be 200 characters or fewer."; return false; }
+        if (string.IsNullOrWhiteSpace(request.Category) || request.Category.Trim().Length > 64)
+        { error = "Choose an application category."; return false; }
+        if (!Uri.TryCreate(loginUrl, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttps && !(uri.IsLoopback && uri.Scheme == Uri.UriSchemeHttp)))
+        { error = "Login/Web URL must use HTTPS. HTTP is allowed only for localhost development."; return false; }
+        if ((request.Description?.Length ?? 0) > 2000)
+        { error = "Description must be 2000 characters or fewer."; return false; }
+        if ((request.AutoFillUsername?.Length ?? 0) > 320 || (request.AutoFillPassword?.Length ?? 0) > 1024)
+        { error = "Autofill username and password exceed the allowed length."; return false; }
+        error = string.Empty;
+        return true;
+    }
+
     private static bool ValidOidcConfiguration(Application app, out string error)
     {
         var scopes = app.AllowedScopes.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         if (!scopes.Contains("openid") || scopes.Except(new[] { "openid", "profile", "email", "roles" }).Any())
         { error = "Allowed scopes must include openid and may only contain profile, email, and roles."; return false; }
         var uris = app.RedirectUris.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (uris.Length == 0 || uris.Any(value => !Uri.TryCreate(value, UriKind.Absolute, out var uri)
+        if (uris.Any(value => !Uri.TryCreate(value, UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttps && !(uri.IsLoopback && uri.Scheme == Uri.UriSchemeHttp))))
-        { error = "Add at least one exact HTTPS callback URL. HTTP is allowed only for localhost development."; return false; }
+        { error = "OIDC callback URLs must use HTTPS. HTTP is allowed only for localhost development."; return false; }
         var logoutUris = app.PostLogoutRedirectUris.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         if (logoutUris.Any(value => !Uri.TryCreate(value, UriKind.Absolute, out var uri)
             || (uri.Scheme != Uri.UriSchemeHttps && !(uri.IsLoopback && uri.Scheme == Uri.UriSchemeHttp))))
@@ -222,9 +273,9 @@ public sealed class ApplicationsController(ApplicationDbContext dbContext, IOpen
         else await oidcApplications.UpdateAsync(old, descriptor, ct);
         return secret;
     }
-    private static ApplicationSummary ToSummary(Application app, int users, int groups, string? secret = null) => new(app.Id, app.Name, app.Description, app.LaunchUrl, users, groups, app.ClientId, app.ClientType, app.RedirectUris, app.PostLogoutRedirectUris, app.AllowedScopes, app.IsPublished, app.AllowAccessRequests, secret);
-    public sealed record ApplicationRequest(string? Name, string? Description, string? ClientType, string? RedirectUris, string? PostLogoutRedirectUris, string? AllowedScopes, string? LaunchUrl = null, bool IsPublished = false, bool AllowAccessRequests = false);
-    public sealed record ApplicationSummary(Guid Id, string Name, string Description, string LaunchUrl, int UserAccessCount, int GroupAccessCount, string? ClientId, string ClientType, string RedirectUris, string PostLogoutRedirectUris, string AllowedScopes, bool IsPublished = false, bool AllowAccessRequests = false, string? ClientSecret = null);
+    private static ApplicationSummary ToSummary(Application app, int users, int groups, string? secret = null) => new(app.Id, app.Name, app.Description, app.LaunchUrl, users, groups, app.ClientId, app.ClientType, app.RedirectUris, app.PostLogoutRedirectUris, app.AllowedScopes, app.IsPublished, app.AllowAccessRequests, app.Category, app.AutoFillUsername, !string.IsNullOrEmpty(app.EncryptedAutoFillPassword), secret);
+    public sealed record ApplicationRequest(string? Name, string? Description, string? ClientType = null, string? RedirectUris = null, string? PostLogoutRedirectUris = null, string? AllowedScopes = null, string? LaunchUrl = null, bool? IsPublished = null, bool? AllowAccessRequests = null, string? LoginUrl = null, string? Category = null, string? AutoFillUsername = null, string? AutoFillPassword = null);
+    public sealed record ApplicationSummary(Guid Id, string Name, string Description, string LaunchUrl, int UserAccessCount, int GroupAccessCount, string? ClientId, string ClientType, string RedirectUris, string PostLogoutRedirectUris, string AllowedScopes, bool IsPublished = false, bool AllowAccessRequests = false, string Category = "Other", string AutoFillUsername = "", bool HasAutoFillPassword = false, string? ClientSecret = null);
     public sealed record ApplicationAccessRequest(List<Guid>? UserIds, List<Guid>? GroupIds);
     public sealed record ApplicationAccessSummary(List<Guid> UserIds, List<Guid> GroupIds);
 }

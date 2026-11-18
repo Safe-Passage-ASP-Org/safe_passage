@@ -3,6 +3,9 @@ import { encryptSecret, decryptSecret } from './crypto.js';
 const DEFAULT_API_URL = 'https://safe-passage-api.onrender.com';
 const pendingApprovals = new Map();
 const approvalFlows = new Map();
+let assignedAppsCache = [];
+let assignedAppsCacheToken = '';
+let assignedAppsCacheAt = 0;
 
 async function getState() {
   const data = await chrome.storage.local.get([
@@ -65,12 +68,67 @@ async function requestSiteApproval(apiUrl, accessToken, origin, tabId) {
     chrome.tabs.sendMessage(tabId, { type: 'APPROVAL_PENDING' }, () => void chrome.runtime.lastError);
   }
   try {
-    const approvedToken = await waitForMfaApproval(apiUrl, body.sessionToken);
-    await chrome.storage.local.set({ accessToken: approvedToken });
-    return approvedToken;
+    return await waitForMfaApproval(apiUrl, body.sessionToken);
   } finally {
     pendingApprovals.delete(origin);
   }
+}
+
+async function getAssignedApplications(apiUrl, accessToken) {
+  if (!accessToken) return [];
+  if (assignedAppsCacheToken === accessToken && Date.now() - assignedAppsCacheAt < 60_000)
+    return assignedAppsCache;
+
+  const res = await fetch(`${apiUrl}/api/applications/mine`, {
+    headers: { 'Authorization': `Bearer ${accessToken}` },
+  });
+  if (res.status === 401) {
+    await chrome.storage.local.remove('accessToken');
+    assignedAppsCache = [];
+    assignedAppsCacheToken = '';
+    throw new Error('Safe Passage session expired. Sign in again from the extension menu.');
+  }
+  if (!res.ok) return [];
+  assignedAppsCache = await res.json();
+  assignedAppsCacheToken = accessToken;
+  assignedAppsCacheAt = Date.now();
+  return assignedAppsCache;
+}
+
+function findAssignedApplication(applications, origin) {
+  return applications.find((app) => {
+    try { return new URL(app.launchUrl).origin === origin; }
+    catch { return false; }
+  }) || null;
+}
+
+async function getSiteForOrigin(state, origin) {
+  const localSite = state.customSites.find((site) => site.origin === origin) || null;
+  if (!state.accessToken) return localSite;
+  const apps = await getAssignedApplications(state.apiUrl, state.accessToken);
+  const app = findAssignedApplication(apps, origin);
+  if (app) {
+    return {
+      ...(localSite || {}),
+      id: localSite?.id || app.id,
+      name: app.name,
+      origin,
+      applicationId: app.id,
+      siteUsername: app.autoFillUsername || '',
+      remoteCredentials: true,
+      hasAutoFillPassword: app.hasAutoFillPassword,
+    };
+  }
+  return localSite;
+}
+
+async function getRegisteredApplicationCredentials(apiUrl, approvedToken, applicationId) {
+  const res = await fetch(`${apiUrl}/api/integrations/access/${encodeURIComponent(applicationId)}/credentials`, {
+    headers: { 'Authorization': `Bearer ${approvedToken}` },
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || body.title || `Could not retrieve application credentials (${res.status})`);
+  return { username: body.username || '', password: body.password || '' };
 }
 
 async function resendSiteApproval(apiUrl, origin) {
@@ -204,12 +262,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === 'CHECK_ORIGIN') {
-      const site = state.customSites.find((s) => s.origin === msg.origin);
+      const site = await getSiteForOrigin(state, msg.origin);
       if (!site) return { matched: false };
       return {
         matched: true,
         signedIn: Boolean(state.accessToken),
-        site: { id: site.id, name: site.name, origin: site.origin },
+        site: { id: site.id, name: site.name, origin: site.origin, applicationId: site.applicationId || null },
       };
     }
 
@@ -217,31 +275,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!state.accessToken) {
         throw new Error('Sign in via the Safe Passage extension popup first.');
       }
-      const site = state.customSites.find((s) => s.origin === msg.origin);
+      const site = await getSiteForOrigin(state, msg.origin);
       if (!site) throw new Error('Site is not registered in Safe Passage.');
-
-      const verification = await verifyAccess(state.apiUrl, state.accessToken, site.applicationId);
-      if (verification && verification.allowed === false) {
-        throw new Error(`Access denied by Safe Passage (${verification.reason || 'policy'}).`);
-      }
 
       if (!approvalFlows.has(site.origin)) {
         const approvalFlow = requestSiteApproval(state.apiUrl, state.accessToken, site.origin, sender.tab?.id);
         approvalFlows.set(site.origin, approvalFlow);
         try {
-          await approvalFlow;
+          var approvedToken = await approvalFlow;
         } finally {
           approvalFlows.delete(site.origin);
         }
       } else {
-        await approvalFlows.get(site.origin);
+        var approvedToken = await approvalFlows.get(site.origin);
       }
 
-      const sitePassword = await decryptSecret(site.encryptedPassword);
+      let username = site.siteUsername || '';
+      let password = '';
+      if (site.remoteCredentials && site.applicationId) {
+        const verification = await verifyAccess(state.apiUrl, approvedToken, site.applicationId);
+        if (verification && verification.allowed === false)
+          throw new Error(`Access denied by Safe Passage (${verification.reason || 'policy'}).`);
+        ({ username, password } = await getRegisteredApplicationCredentials(state.apiUrl, approvedToken, site.applicationId));
+      } else {
+        if (site.applicationId) {
+          const verification = await verifyAccess(state.apiUrl, approvedToken, site.applicationId);
+          if (verification && verification.allowed === false)
+            throw new Error(`Access denied by Safe Passage (${verification.reason || 'policy'}).`);
+        }
+        password = await decryptSecret(site.encryptedPassword);
+      }
       return {
         ok: true,
-        username: site.siteUsername,
-        password: sitePassword,
+        username,
+        password,
       };
     }
 

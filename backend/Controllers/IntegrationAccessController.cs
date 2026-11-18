@@ -3,7 +3,10 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.EntityFrameworkCore;
 using SafePassage.Api.Contracts.Auth;
+using SafePassage.Api.Data;
+using SafePassage.Api.Models;
 using SafePassage.Api.Services;
 
 namespace SafePassage.Api.Controllers;
@@ -14,8 +17,37 @@ namespace SafePassage.Api.Controllers;
 public sealed class IntegrationAccessController(
     IApplicationAccessVerificationService accessVerificationService,
     IAuthFlowService authFlow,
+    ApplicationDbContext dbContext,
+    ApplicationCredentialProtector credentialProtector,
     IMemoryCache cache) : ControllerBase
 {
+    [HttpGet("{applicationId:guid}/credentials")]
+    [ProducesResponseType<ApplicationCredentials>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    public async Task<ActionResult<ApplicationCredentials>> GetApplicationCredentials(
+        Guid applicationId,
+        CancellationToken cancellationToken)
+    {
+        var userClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        var deviceId = User.FindFirstValue("device_id");
+        if (!Guid.TryParse(userClaim, out var userId)
+            || !string.Equals(User.FindFirstValue("auth_context"), "BrowserAppAccess", StringComparison.Ordinal)
+            || !long.TryParse(User.FindFirstValue("auth_context_expires_at"), out var contextExpiry)
+            || contextExpiry <= DateTimeOffset.UtcNow.ToUnixTimeSeconds())
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Mobile approval required", detail: "Approve this application sign-in on your trusted mobile device first.");
+
+        var access = await accessVerificationService.VerifyAsync(userId, deviceId, applicationId, cancellationToken);
+        if (!access.Allowed)
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Application access denied", detail: "Your account is not currently allowed to access this application.");
+
+        var application = await dbContext.Applications.AsNoTracking()
+            .SingleOrDefaultAsync(candidate => candidate.Id == applicationId, cancellationToken);
+        if (application is null) return NotFound();
+        return Ok(new ApplicationCredentials(
+            application.AutoFillUsername,
+            credentialProtector.Unprotect(application.EncryptedAutoFillPassword)));
+    }
+
     [HttpPost("verify")]
     [ProducesResponseType<ApplicationAccessVerificationResult>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
@@ -107,5 +139,6 @@ public sealed class IntegrationAccessController(
     }
 
     public sealed record AccessVerificationRequest(Guid ApplicationId);
+    public sealed record ApplicationCredentials(string Username, string Password);
     public sealed record BrowserAccessRequest([Required, StringLength(512, MinimumLength = 1)] string Origin);
 }

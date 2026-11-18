@@ -311,7 +311,7 @@ public sealed class AdminApiClient(HttpClient http)
 
     public async Task<string?> SaveApplicationAsync(AdminApplicationForm application, Guid? id, CancellationToken cancellationToken = default)
     {
-        var payload = new { application.Name, application.Description, application.LaunchUrl, application.ClientType, application.RedirectUris, application.PostLogoutRedirectUris, application.AllowedScopes, application.IsPublished, application.AllowAccessRequests };
+        var payload = new { application.Name, application.Description, LoginUrl = application.LaunchUrl, application.Category, application.AutoFillUsername, application.AutoFillPassword };
         using var response = id is null
             ? await http.PostAsJsonAsync("api/admin/applications", payload, cancellationToken)
             : await http.PutAsJsonAsync($"api/admin/applications/{id}", payload, cancellationToken);
@@ -494,12 +494,12 @@ public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, st
     DateTimeOffset RegistrationDate, DateTimeOffset? LastActiveDate, string Status, string TrustStatus, Guid UserId,
     bool HasSigningKey = false, bool HasPendingSigningKey = false, DevicePostureInfo? Posture = null);
 public sealed record AdminApplication(Guid Id, string Name, string Description, int UserAccessCount, int GroupAccessCount,
-    string LaunchUrl = "", string? ClientId = null, string ClientType = "confidential", string RedirectUris = "", string PostLogoutRedirectUris = "", string AllowedScopes = "openid profile email", bool IsPublished = false, bool AllowAccessRequests = false, string? ClientSecret = null);
-public sealed record AccessibleApplication(Guid Id, string Name, string Description, string LaunchUrl);
+    string LaunchUrl = "", string? ClientId = null, string ClientType = "confidential", string RedirectUris = "", string PostLogoutRedirectUris = "", string AllowedScopes = "openid profile email", bool IsPublished = false, bool AllowAccessRequests = false, string Category = "Other", string AutoFillUsername = "", bool HasAutoFillPassword = false, string? ClientSecret = null);
+public sealed record AccessibleApplication(Guid Id, string Name, string Description, string LaunchUrl, string Category = "Other", string AutoFillUsername = "", bool HasAutoFillPassword = false);
 public sealed record CatalogApplication(Guid Id, string Name, string Description, string LaunchUrl, bool IsAssigned, bool AllowAccessRequests, string? RequestStatus);
 public sealed record MyApplicationAccessRequest(Guid Id, Guid ApplicationId, string ApplicationName, string Status, string Reason, DateTimeOffset RequestedAt, DateTimeOffset? ReviewedAt, string? DecisionNote);
 public sealed record AdminAccessRequest(Guid Id, Guid ApplicationId, string ApplicationName, Guid UserId, string Username, string Email, string Status, string Reason, DateTimeOffset RequestedAt, DateTimeOffset? ReviewedAt, string? DecisionNote);
-public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; public string LaunchUrl { get; set; } = ""; public string ClientType { get; set; } = "confidential"; public string RedirectUris { get; set; } = ""; public string PostLogoutRedirectUris { get; set; } = ""; public string AllowedScopes { get; set; } = "openid profile email"; public bool IsPublished { get; set; } public bool AllowAccessRequests { get; set; } }
+public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; public string LaunchUrl { get; set; } = ""; public string Category { get; set; } = ""; public string AutoFillUsername { get; set; } = ""; public string AutoFillPassword { get; set; } = ""; public bool HasAutoFillPassword { get; set; } }
 public sealed record AdminApplicationAccess(List<Guid> UserIds, List<Guid> GroupIds);
 public sealed record AdminActivity(Guid Id, DateTimeOffset Timestamp, string Username, string Action, string Resource, string Status);
 public sealed record AdminActivitySummary(int TotalCount, int MfaLast24h, int DeniedCount, int DeniedLast24h);

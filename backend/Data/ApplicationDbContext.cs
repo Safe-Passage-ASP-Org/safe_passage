@@ -113,6 +113,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(application => application.Name).HasMaxLength(200).IsRequired();
             entity.Property(application => application.Description).HasMaxLength(2000);
             entity.Property(application => application.LaunchUrl).HasMaxLength(2048);
+            entity.Property(application => application.Category).HasMaxLength(64).IsRequired();
+            entity.Property(application => application.AutoFillUsername).HasMaxLength(320).IsRequired();
+            entity.Property(application => application.EncryptedAutoFillPassword).HasMaxLength(2048).IsRequired();
             entity.HasIndex(application => application.ClientId).IsUnique();
             entity.Property(application => application.ClientId).HasMaxLength(200);
             entity.Property(application => application.ClientType).HasMaxLength(50).IsRequired();
@@ -181,6 +184,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasIndex(session => session.SessionToken).IsUnique();
             entity.HasIndex(session => session.ExpiresAt);
             entity.Property(session => session.SessionToken).HasMaxLength(512).IsRequired();
+            entity.Property(session => session.Purpose).HasMaxLength(64).IsRequired();
             entity.Property(session => session.Status).HasConversion<string>().HasMaxLength(32);
             entity.HasOne(session => session.User).WithMany(user => user.MfaSessions)
                 .HasForeignKey(session => session.UserId).OnDelete(DeleteBehavior.Restrict);

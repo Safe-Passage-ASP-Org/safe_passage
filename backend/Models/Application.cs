@@ -6,6 +6,9 @@ public sealed class Application
     public string Name { get; set; } = string.Empty;
     public string Description { get; set; } = string.Empty;
     public string LaunchUrl { get; set; } = string.Empty;
+    public string Category { get; set; } = "Other";
+    public string AutoFillUsername { get; set; } = string.Empty;
+    public string EncryptedAutoFillPassword { get; set; } = string.Empty;
     public string? ClientId { get; set; }
     public string ClientType { get; set; } = "confidential";
     public string RedirectUris { get; set; } = string.Empty;

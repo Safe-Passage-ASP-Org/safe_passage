@@ -8,7 +8,7 @@ namespace SafePassage.Api.Services;
 
 public sealed class JwtTokenService(JwtSettings settings) : IJwtTokenService
 {
-    public string CreateAccessToken(User user, string? deviceId = null)
+    public string CreateAccessToken(User user, string? deviceId = null, string? authContext = null, DateTimeOffset? authContextExpiresAt = null)
     {
         var now = DateTime.UtcNow;
         var credentials = new SigningCredentials(
@@ -17,7 +17,7 @@ public sealed class JwtTokenService(JwtSettings settings) : IJwtTokenService
         var token = new JwtSecurityToken(
             issuer: settings.Issuer,
             audience: settings.Audience,
-            claims: BuildClaims(user, deviceId),
+            claims: BuildClaims(user, deviceId, authContext, authContextExpiresAt),
             notBefore: now,
             expires: now.AddMinutes(settings.AccessTokenMinutes),
             signingCredentials: credentials);
@@ -25,7 +25,7 @@ public sealed class JwtTokenService(JwtSettings settings) : IJwtTokenService
         return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
-    private static IEnumerable<Claim> BuildClaims(User user, string? deviceId)
+    private static IEnumerable<Claim> BuildClaims(User user, string? deviceId, string? authContext, DateTimeOffset? authContextExpiresAt)
     {
         var claims = new List<Claim>
         {
@@ -39,6 +39,10 @@ public sealed class JwtTokenService(JwtSettings settings) : IJwtTokenService
 
         if (!string.IsNullOrWhiteSpace(deviceId))
             claims.Add(new Claim("device_id", deviceId));
+        if (!string.IsNullOrWhiteSpace(authContext))
+            claims.Add(new Claim("auth_context", authContext));
+        if (authContextExpiresAt.HasValue)
+            claims.Add(new Claim("auth_context_expires_at", authContextExpiresAt.Value.ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture)));
 
         return claims;
     }

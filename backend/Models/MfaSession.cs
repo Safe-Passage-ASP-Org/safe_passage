@@ -14,6 +14,7 @@ public sealed class MfaSession
     public Guid UserId { get; set; }
     public Guid DeviceId { get; set; }
     public string SessionToken { get; set; } = string.Empty;
+    public string Purpose { get; set; } = "Login";
     public MfaSessionStatus Status { get; set; } = MfaSessionStatus.Pending;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset ExpiresAt { get; set; }
