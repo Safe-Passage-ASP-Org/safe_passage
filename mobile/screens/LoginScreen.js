@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   ActivityIndicator,
+  Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { login } from '../services/AuthService';
@@ -56,7 +57,7 @@ export default function LoginScreen({ navigation }) {
       style={styles.container}
     >
       <View style={styles.logoContainer}>
-        <Ionicons name="shield" size={80} color="#0ea5e9" />
+        <Image source={require('../assets/favicon.png')} style={styles.logo} accessibilityLabel="Safe Passage icon" />
         <Text style={styles.title}>Safe Passage</Text>
         <Text style={styles.subtitle}>Identity Security Platform</Text>
       </View>
@@ -141,6 +142,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 48,
   },
+  logo: { width: 80, height: 80, borderRadius: 20 },
   title: {
     fontSize: 32,
     fontWeight: 'bold',
