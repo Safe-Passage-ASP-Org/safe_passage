@@ -57,7 +57,6 @@
                 <p class="signup-subtitle" role="status">@ResendNotice</p>
             }
             <button class="signup-button" @onclick="ResendApprovalAsync" disabled="@Resending">@(Resending ? "Resending…" : "Resend approval request")</button>
-            <button class="signup-button" @onclick="CheckOnce" disabled="@Busy">@(Busy ? "Checking…" : "Check approval")</button>
             <button class="login-link" @onclick="CancelMfa">Cancel sign-in</button>
         }
         else if (ExternalCompleting)
@@ -364,25 +363,6 @@
             try { await Task.Delay(1500, cancellationToken); }
             catch (OperationCanceledException) { return; }
         }
-    }
-
-    private async Task CheckOnce()
-    {
-        if (SessionToken is null) return;
-        Busy = true;
-        Error = "";
-        try
-        {
-            if (await Api.CompleteMfaAsync(SessionToken))
-            {
-                await ClearPendingMfaAsync();
-                MfaPending = false;
-                PollCancellation?.Cancel();
-                await ContinueAfterAuthenticationAsync();
-            }
-        }
-        catch (Exception exception) { await ClearPendingMfaAsync(); Error = exception.Message; MfaPending = false; PollCancellation?.Cancel(); }
-        finally { Busy = false; }
     }
 
     private async Task ResendApprovalAsync()
