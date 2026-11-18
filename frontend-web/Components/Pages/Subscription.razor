@@ -75,21 +75,22 @@ else
                 <div class="sub-details">
                     <p class="mb-2">A PayMongo checkout is awaiting your payment confirmation.</p>
                     <div class="d-flex flex-wrap gap-2">
-                        @if (!string.IsNullOrWhiteSpace(Current.PendingApprovalUrl))
+                        @if (Current?.PendingApprovalUrl is { } pendingApprovalUrl &&
+                             Current?.PayPalSubscriptionId is { } approvalSubscriptionId)
                         {
                             <button class="btn btn-primary btn-sm" type="button" disabled="@Busy"
-                                    @onclick="() => LaunchPopupAsync(Current.PendingApprovalUrl!, Current.PayPalSubscriptionId!)">
+                                    @onclick="() => LaunchPopupAsync(pendingApprovalUrl, approvalSubscriptionId)">
                                 Resume PayMongo Checkout
                             </button>
                         }
-                        @if (!string.IsNullOrWhiteSpace(Current.PayPalSubscriptionId))
+                        @if (Current?.PayPalSubscriptionId is { } pendingSubscriptionId)
                         {
                             <button class="btn btn-outline-secondary btn-sm" type="button" disabled="@Busy"
-                                    @onclick="() => ConfirmManuallyAsync(Current.PayPalSubscriptionId!)">
+                                    @onclick="() => ConfirmManuallyAsync(pendingSubscriptionId)">
                                 Check / Confirm Status
                             </button>
                             <button class="btn btn-outline-danger btn-sm" type="button" disabled="@Busy"
-                                    @onclick="() => AbandonPendingAsync(Current.PayPalSubscriptionId!)">
+                                    @onclick="() => AbandonPendingAsync(pendingSubscriptionId)">
                                 Discard Pending
                             </button>
                         }
