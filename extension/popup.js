@@ -36,9 +36,12 @@ async function refresh() {
   if (tab?.url && tab.url.startsWith('http')) {
     const parsed = new URL(tab.url);
     document.getElementById('siteOrigin').value = parsed.origin;
+    document.getElementById('currentSiteLabel').textContent = parsed.hostname;
     if (!document.getElementById('siteName').value) {
       document.getElementById('siteName').value = parsed.hostname;
     }
+  } else {
+    document.getElementById('currentSiteLabel').textContent = 'Open an http/https website to continue';
   }
 
   const list = document.getElementById('sitesList');
@@ -102,15 +105,20 @@ document.getElementById('logoutBtn').addEventListener('click', async () => {
 
 document.getElementById('saveSiteBtn').addEventListener('click', async () => {
   const statusMsg = document.getElementById('statusMsg');
+  const name = document.getElementById('siteName').value.trim();
+  const url = document.getElementById('siteOrigin').value.trim();
+  if (!name || !url) {
+    statusMsg.textContent = 'Enter a label and login/web URL for this site.';
+    return;
+  }
   const res = await send({
     type: 'SAVE_CUSTOM_SITE',
-    name: document.getElementById('siteName').value.trim(),
-    url: document.getElementById('siteOrigin').value.trim(),
+    name,
+    url,
     siteUsername: document.getElementById('siteUser').value.trim(),
     sitePassword: document.getElementById('sitePass').value,
-    applicationId: document.getElementById('siteAppId').value.trim() || null,
   });
-  statusMsg.textContent = res?.ok ? `Saved ${res.origin}` : (res?.error || 'Failed to save site');
+  statusMsg.textContent = res?.ok ? `Saved credentials for ${name}` : (res?.error || 'Failed to save site');
   document.getElementById('sitePass').value = '';
   if (res?.ok) {
     const tab = await getActiveTab();
@@ -141,3 +149,12 @@ document.getElementById('autofillTabBtn').addEventListener('click', async () => 
 });
 
 refresh();
+
+document.getElementById('togglePassword').addEventListener('click', () => {
+  const input = document.getElementById('sitePass');
+  const button = document.getElementById('togglePassword');
+  const reveal = input.type === 'password';
+  input.type = reveal ? 'text' : 'password';
+  button.textContent = reveal ? 'Hide' : 'Show';
+  button.setAttribute('aria-label', reveal ? 'Hide password' : 'Show password');
+});
