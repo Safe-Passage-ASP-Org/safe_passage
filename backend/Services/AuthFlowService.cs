@@ -348,6 +348,60 @@ public sealed class AuthFlowService(
         return AuthFlowResult<MfaActionResponse>.Success(new(session.Status, session.ExpiresAt));
     }
 
+    public async Task<AuthFlowResult<MfaActionResponse>> ResendMfaApprovalAsync(
+        string sessionToken,
+        CancellationToken cancellationToken)
+    {
+        var session = await FindSessionAsync(sessionToken, cancellationToken);
+        if (session is null)
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.SessionNotFound);
+
+        if (await ExpireIfNeededAsync(session, cancellationToken))
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.SessionExpired);
+
+        if (session.Status != MfaSessionStatus.Pending)
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.InvalidSessionState);
+
+        var user = await dbContext.Users.SingleOrDefaultAsync(
+            candidate => candidate.Id == session.UserId && candidate.IsActive,
+            cancellationToken);
+        if (user is null)
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.UserUnavailable);
+
+        var device = await dbContext.Devices.SingleOrDefaultAsync(
+            candidate => candidate.Id == session.DeviceId
+                && candidate.Status == DeviceStatus.Active
+                && candidate.TrustStatus == DeviceTrustStatus.Trusted,
+            cancellationToken);
+        if (device is null)
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
+        if (string.IsNullOrWhiteSpace(device.SigningPublicKey))
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceSigningKeyNotRegistered);
+
+        try
+        {
+            await notificationService.SendMfaApprovalRequestAsync(
+                user,
+                device,
+                sessionToken,
+                BuildMfaRequestContext(),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "MFA approval request resend failed for user {UserId}.", user.Id);
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.NotificationFailed);
+        }
+
+        AddActivity(user.Id, "MFA Approval Request Resent", device.DeviceName, ActivityLogStatus.Success);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return AuthFlowResult<MfaActionResponse>.Success(new(session.Status, session.ExpiresAt));
+    }
+
     public async Task<AuthFlowResult<MfaStatusResponse>> GetMfaStatusAsync(
         string sessionToken,
         CancellationToken cancellationToken)

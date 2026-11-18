@@ -51,6 +51,12 @@
                 <span class="pending-indicator"></span>
                 <strong>Waiting for mobile approval</strong>
             </div>
+            <p class="signup-subtitle">If you signed in to Safe Passage Mobile after starting this sign-in, resend the request to notify it.</p>
+            @if (!string.IsNullOrWhiteSpace(ResendNotice))
+            {
+                <p class="signup-subtitle" role="status">@ResendNotice</p>
+            }
+            <button class="signup-button" @onclick="ResendApprovalAsync" disabled="@Resending">@(Resending ? "Resending…" : "Resend approval request")</button>
             <button class="signup-button" @onclick="CheckOnce" disabled="@Busy">@(Busy ? "Checking…" : "Check approval")</button>
             <button class="login-link" @onclick="CancelMfa">Cancel sign-in</button>
         }
@@ -146,7 +152,9 @@
     private string? SessionToken;
     private string Error = "";
     private bool Busy;
+    private bool Resending;
     private bool MfaPending;
+    private string ResendNotice = "";
     private bool ExternalCompleting;
     private string ExternalProviderName = "External";
     private string? OidcReturnUrl;
@@ -377,6 +385,21 @@
         finally { Busy = false; }
     }
 
+    private async Task ResendApprovalAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SessionToken) || Resending) return;
+        Resending = true;
+        Error = "";
+        ResendNotice = "";
+        try
+        {
+            await Api.ResendMfaApprovalAsync(SessionToken);
+            ResendNotice = "Request resent. Your signed-in mobile app should receive the approval prompt.";
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Resending = false; }
+    }
+
     private async Task ContinueAfterAuthenticationAsync()
     {
         if (IsAdminLogin && !Api.IsAdministrator)
@@ -401,6 +424,7 @@
         SessionToken = null;
         MfaPending = false;
         Error = "";
+        ResendNotice = "";
     }
 
     private void StartMfaPolling()

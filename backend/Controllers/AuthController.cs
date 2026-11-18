@@ -438,6 +438,37 @@ public sealed class AuthController(
         return ToProblem(result.Failure);
     }
 
+    /// <summary>Resends a notification for an existing pending MFA sign-in.</summary>
+    [AllowAnonymous]
+    [HttpPost("mfa/resend")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status409Conflict)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status410Gone)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status503ServiceUnavailable)]
+    public async Task<IActionResult> ResendMfaApproval(
+        [FromBody] MfaResendRequest request,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = "mfa-resend:" + Convert.ToHexString(
+            SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request.SessionToken)));
+        if (cache.TryGetValue(cacheKey, out _))
+        {
+            return Problem(
+                statusCode: StatusCodes.Status429TooManyRequests,
+                title: "Please wait before resending",
+                detail: "You can resend the approval request every 15 seconds.");
+        }
+
+        var result = await authFlow.ResendMfaApprovalAsync(request.SessionToken, cancellationToken);
+        if (result.Failure != AuthFlowFailure.None)
+            return ToProblem(result.Failure);
+
+        cache.Set(cacheKey, true, TimeSpan.FromSeconds(15));
+        return Ok(new { message = "Approval request resent to your registered device." });
+    }
+
     /// <summary>Long-polls an MFA challenge and returns a JWT after approval.</summary>
     [HttpGet("mfa/status/{sessionToken}")]
     [ProducesResponseType<MfaStatusResponse>(StatusCodes.Status200OK)]

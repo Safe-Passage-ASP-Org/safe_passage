@@ -77,3 +77,10 @@ public sealed record MfaDenialRequest
     [Required, StringLength(128, MinimumLength = 80)]
     public required string Signature { get; init; }
 }
+
+/// <summary>Identifies a pending MFA sign-in whose approval request should be resent.</summary>
+public sealed record MfaResendRequest
+{
+    [Required, StringLength(512, MinimumLength = 32)]
+    public required string SessionToken { get; init; }
+}

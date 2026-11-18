@@ -134,6 +134,20 @@ public sealed class AdminApiClient(HttpClient http)
         throw new InvalidOperationException($"The MFA request is {status?.Status ?? "unavailable"}. Please sign in again.");
     }
 
+    public async Task ResendMfaApprovalAsync(string sessionToken, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync(
+            "api/auth/mfa/resend",
+            new { sessionToken },
+            cancellationToken);
+        if (response.IsSuccessStatusCode)
+            return;
+
+        var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+        throw new InvalidOperationException(
+            problem?.Detail ?? problem?.Title ?? "Could not resend the approval request. Please try again.");
+    }
+
     public async Task ActivateAccountAsync(string token, string? password = null, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync(
