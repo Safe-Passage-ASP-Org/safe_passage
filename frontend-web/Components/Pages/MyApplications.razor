@@ -44,7 +44,8 @@
         @foreach (var application in SortedApplications)
         {
             <article class="my-apps-row">
-                <span class="my-apps-mark">@Mark(application.Name)</span>
+                @if (!FailedIconIds.Contains(application.Id) && IconUrl(application.LaunchUrl) is { } iconUrl) { <img class="my-apps-mark my-apps-site-icon" src="@iconUrl" alt="" @onerror="() => IconFailed(application.Id)" /> }
+                else { <span class="my-apps-mark">@Mark(application.Name)</span> }
                 <div><h2>@application.Name</h2><p>@(string.IsNullOrWhiteSpace(application.Description) ? "No description provided." : application.Description)</p></div>
                 @if (!string.IsNullOrWhiteSpace(application.LaunchUrl))
                 {
@@ -75,7 +76,8 @@ else
         @foreach (var application in Catalog)
         {
             <article class="catalog-row">
-                <span class="my-apps-mark">@Mark(application.Name)</span>
+                @if (!FailedIconIds.Contains(application.Id) && IconUrl(application.LaunchUrl) is { } iconUrl) { <img class="my-apps-mark my-apps-site-icon" src="@iconUrl" alt="" @onerror="() => IconFailed(application.Id)" /> }
+                else { <span class="my-apps-mark">@Mark(application.Name)</span> }
                 <div class="catalog-copy"><h2>@application.Name</h2><p>@(string.IsNullOrWhiteSpace(application.Description) ? "No description provided." : application.Description)</p></div>
                 @if (application.IsAssigned)
                 {
@@ -121,7 +123,7 @@ else
 </section>
 
 <style>
-    .my-apps-sort{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:0 0 12px;color:#64748b;font-size:12px}.my-apps-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}.my-apps-card{padding:4px 20px}.my-apps-row,.catalog-row,.history-row{display:flex;align-items:center;gap:14px;padding:17px 0;border-bottom:1px solid #edf0f2}.my-apps-row:last-of-type,.catalog-row:last-child,.history-row:last-child{border-bottom:0}.my-apps-mark{width:40px;height:40px;flex:0 0 auto;display:grid;place-items:center;border-radius:7px;background:#e5f2ed;color:#087f75;font-weight:800}.my-apps-row div,.catalog-copy,.history-row>div{min-width:0;flex:1}.my-apps-row h2,.catalog-row h2,.history-row h3{margin:0 0 4px;font-size:15px}.my-apps-row p,.catalog-row p,.history-row p{margin:0;color:#64748b;font-size:12px}.catalog-header{margin-top:27px}.catalog-request{display:flex;align-items:center;gap:8px;flex:0 0 min(45%,360px)}.catalog-request textarea{min-width:0;flex:1;border:1px solid #cbd5dc;border-radius:5px;padding:7px;font:inherit;font-size:11px}.catalog-request-button{border:0;border-radius:5px;background:#087f75;color:#fff;padding:9px 11px;font-size:10px;font-weight:700;white-space:nowrap}.catalog-request-button:disabled{opacity:.6}.catalog-status{padding:6px 9px;border-radius:12px;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:700;white-space:nowrap}.catalog-status.available,.catalog-status.approved{background:#e5f5ed;color:#087f5b}.catalog-status.pending{background:#fff5df;color:#946200}.catalog-status.denied{background:#fcecea;color:#9d332b}.history-row small{display:block;margin-top:6px;color:#64748b;font-size:11px}.my-apps-badge{padding:5px 8px;border-radius:12px;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:650;white-space:nowrap}.my-apps-launch{flex:0 0 auto;padding:8px 12px;border-radius:5px;background:#087f75;color:#fff;text-decoration:none;font-size:11px;font-weight:700;white-space:nowrap}.my-apps-launch:hover{background:#066d65}.my-apps-launch:focus-visible{outline:3px solid #9de2d1;outline-offset:2px}.my-apps-state,.my-apps-note{padding:20px 0;color:#64748b;font-size:13px}.my-apps-note{border-top:1px solid #edf0f2;margin:0;font-size:11px}.my-apps-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.my-apps-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#e5f5ed;color:#087f5b;font-size:13px}
+    .my-apps-sort{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:0 0 12px;color:#64748b;font-size:12px}.my-apps-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}.my-apps-card{padding:4px 20px}.my-apps-row,.catalog-row,.history-row{display:flex;align-items:center;gap:14px;padding:17px 0;border-bottom:1px solid #edf0f2}.my-apps-row:last-of-type,.catalog-row:last-child,.history-row:last-child{border-bottom:0}.my-apps-mark{width:40px;height:40px;flex:0 0 auto;display:grid;place-items:center;border-radius:7px;background:#e5f2ed;color:#087f75;font-weight:800}.my-apps-mark.my-apps-site-icon{object-fit:contain;padding:3px}.my-apps-row div,.catalog-copy,.history-row>div{min-width:0;flex:1}.my-apps-row h2,.catalog-row h2,.history-row h3{margin:0 0 4px;font-size:15px}.my-apps-row p,.catalog-row p,.history-row p{margin:0;color:#64748b;font-size:12px}.catalog-header{margin-top:27px}.catalog-request{display:flex;align-items:center;gap:8px;flex:0 0 min(45%,360px)}.catalog-request textarea{min-width:0;flex:1;border:1px solid #cbd5dc;border-radius:5px;padding:7px;font:inherit;font-size:11px}.catalog-request-button{border:0;border-radius:5px;background:#087f75;color:#fff;padding:9px 11px;font-size:10px;font-weight:700;white-space:nowrap}.catalog-request-button:disabled{opacity:.6}.catalog-status{padding:6px 9px;border-radius:12px;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:700;white-space:nowrap}.catalog-status.available,.catalog-status.approved{background:#e5f5ed;color:#087f5b}.catalog-status.pending{background:#fff5df;color:#946200}.catalog-status.denied{background:#fcecea;color:#9d332b}.history-row small{display:block;margin-top:6px;color:#64748b;font-size:11px}.my-apps-badge{padding:5px 8px;border-radius:12px;background:#f1f5f9;color:#64748b;font-size:10px;font-weight:650;white-space:nowrap}.my-apps-launch{flex:0 0 auto;padding:8px 12px;border-radius:5px;background:#087f75;color:#fff;text-decoration:none;font-size:11px;font-weight:700;white-space:nowrap}.my-apps-launch:hover{background:#066d65}.my-apps-launch:focus-visible{outline:3px solid #9de2d1;outline-offset:2px}.my-apps-state,.my-apps-note{padding:20px 0;color:#64748b;font-size:13px}.my-apps-note{border-top:1px solid #edf0f2;margin:0;font-size:11px}.my-apps-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.my-apps-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#e5f5ed;color:#087f5b;font-size:13px}
     @@media(max-width:700px){.catalog-row{align-items:flex-start;flex-wrap:wrap}.catalog-copy{flex-basis:calc(100% - 60px)}.catalog-request{flex-basis:100%;margin-left:54px}.history-row{align-items:flex-start}}
     @@media(max-width:520px){.my-apps-card{padding:4px 14px}.my-apps-row{gap:10px}.my-apps-row h2{font-size:13px}.my-apps-row p{font-size:11px}}
 </style>
@@ -137,6 +139,7 @@ else
     private string Error = "";
     private string Notice = "";
     private string SortOrder = "name-asc";
+    private readonly HashSet<Guid> FailedIconIds = [];
     private IEnumerable<AccessibleApplication> SortedApplications => SortOrder == "name-desc"
         ? Applications.OrderByDescending(application => application.Name, StringComparer.OrdinalIgnoreCase)
         : Applications.OrderBy(application => application.Name, StringComparer.OrdinalIgnoreCase);
@@ -183,4 +186,6 @@ else
 
     private static string Mark(string name) =>
         string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
+    private static string? IconUrl(string? launchUrl) => Uri.TryCreate(launchUrl, UriKind.Absolute, out var uri) && (uri.Scheme == Uri.UriSchemeHttps || uri.Scheme == Uri.UriSchemeHttp) ? new Uri(uri.GetLeftPart(UriPartial.Authority) + "/favicon.ico").AbsoluteUri : null;
+    private void IconFailed(Guid id) => FailedIconIds.Add(id);
 }
