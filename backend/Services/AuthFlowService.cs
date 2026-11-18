@@ -402,6 +402,83 @@ public sealed class AuthFlowService(
         return AuthFlowResult<MfaActionResponse>.Success(new(session.Status, session.ExpiresAt));
     }
 
+    public async Task<AuthFlowResult<LoginResponse>> RequestBrowserAccessApprovalAsync(
+        Guid userId,
+        string? approvalDeviceId,
+        string origin,
+        CancellationToken cancellationToken)
+    {
+        var user = await dbContext.Users.SingleOrDefaultAsync(
+            candidate => candidate.Id == userId && candidate.IsActive,
+            cancellationToken);
+        if (user is null)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.UserUnavailable);
+
+        if (string.IsNullOrWhiteSpace(approvalDeviceId))
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.NoActiveMobileDevice);
+
+        var device = await dbContext.Devices.SingleOrDefaultAsync(candidate =>
+            candidate.UserId == userId
+            && candidate.DeviceId == approvalDeviceId
+            && candidate.Status == DeviceStatus.Active
+            && candidate.TrustStatus == DeviceTrustStatus.Trusted,
+            cancellationToken);
+        if (device is null)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
+
+        if (string.IsNullOrWhiteSpace(device.SigningPublicKey))
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.DeviceSigningKeyNotRegistered);
+
+        var now = DateTimeOffset.UtcNow;
+        var expiresAt = now.Add(MfaLifetime);
+        var sessionToken = Base64UrlEncoder.Encode(RandomNumberGenerator.GetBytes(32));
+        var session = new MfaSession
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            DeviceId = device.Id,
+            SessionToken = HashSessionToken(sessionToken),
+            Status = MfaSessionStatus.Pending,
+            CreatedAt = now,
+            ExpiresAt = expiresAt
+        };
+        dbContext.MfaSessions.Add(session);
+        AddActivity(user.Id, "Browser App Access Request", origin, ActivityLogStatus.Success);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        try
+        {
+            await notificationService.SendMfaApprovalRequestAsync(
+                user,
+                device,
+                sessionToken,
+                BuildMfaRequestContext(),
+                cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            logger.LogError(exception, "Browser app MFA notification failed for user {UserId}.", user.Id);
+            session.Status = MfaSessionStatus.Denied;
+            AddActivity(user.Id, "Browser App Access Notification", origin, ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.NotificationFailed);
+        }
+
+        return AuthFlowResult<LoginResponse>.Success(new(
+            true,
+            sessionToken,
+            device.DeviceId,
+            session.Status,
+            expiresAt,
+            null,
+            null,
+            $"Approve access to {origin} on your registered Safe Passage device."));
+    }
+
     public async Task<AuthFlowResult<MfaStatusResponse>> GetMfaStatusAsync(
         string sessionToken,
         CancellationToken cancellationToken)

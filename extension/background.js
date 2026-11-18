@@ -1,6 +1,8 @@
 import { encryptSecret, decryptSecret } from './crypto.js';
 
 const DEFAULT_API_URL = 'https://safe-passage-api.onrender.com';
+const pendingApprovals = new Map();
+const approvalFlows = new Map();
 
 async function getState() {
   const data = await chrome.storage.local.get([
@@ -18,7 +20,8 @@ async function getState() {
 }
 
 async function waitForMfaApproval(apiUrl, sessionToken) {
-  for (let i = 0; i < 45; i++) {
+  const deadline = Date.now() + 5 * 60 * 1000;
+  while (Date.now() < deadline) {
     const res = await fetch(`${apiUrl}/api/auth/mfa/status/${encodeURIComponent(sessionToken)}`);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -34,6 +37,57 @@ async function waitForMfaApproval(apiUrl, sessionToken) {
     await new Promise((r) => setTimeout(r, 2000));
   }
   throw new Error('MFA approval timed out.');
+}
+
+async function requestSiteApproval(apiUrl, accessToken, origin, tabId) {
+  const res = await fetch(`${apiUrl}/api/integrations/access/request-approval`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({ origin }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (res.status === 401) {
+      await chrome.storage.local.remove('accessToken');
+      throw new Error('Safe Passage session expired. Sign in again from the extension menu.');
+    }
+    throw new Error(body.detail || body.title || `Could not request approval (${res.status})`);
+  }
+  if (!body.mfaRequired || !body.sessionToken) {
+    throw new Error('Safe Passage did not create an approval request.');
+  }
+
+  pendingApprovals.set(origin, body.sessionToken);
+  if (Number.isInteger(tabId)) {
+    chrome.tabs.sendMessage(tabId, { type: 'APPROVAL_PENDING' }, () => void chrome.runtime.lastError);
+  }
+  try {
+    const approvedToken = await waitForMfaApproval(apiUrl, body.sessionToken);
+    await chrome.storage.local.set({ accessToken: approvedToken });
+    return approvedToken;
+  } finally {
+    pendingApprovals.delete(origin);
+  }
+}
+
+async function resendSiteApproval(apiUrl, origin) {
+  const sessionToken = pendingApprovals.get(origin);
+  if (!sessionToken) throw new Error('There is no pending approval request for this site.');
+  const state = await getState();
+  const res = await fetch(`${apiUrl}/api/auth/mfa/resend`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${state.accessToken}`,
+    },
+    body: JSON.stringify({ sessionToken }),
+  });
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.detail || body.title || `Could not resend approval (${res.status})`);
+  return { message: body.message || 'Approval request resent.' };
 }
 
 async function loginToSafePassage({ apiUrl, username, password, deviceId }) {
@@ -163,12 +217,28 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         throw new Error(`Access denied by Safe Passage (${verification.reason || 'policy'}).`);
       }
 
+      if (!approvalFlows.has(site.origin)) {
+        const approvalFlow = requestSiteApproval(state.apiUrl, state.accessToken, site.origin, sender.tab?.id);
+        approvalFlows.set(site.origin, approvalFlow);
+        try {
+          await approvalFlow;
+        } finally {
+          approvalFlows.delete(site.origin);
+        }
+      } else {
+        await approvalFlows.get(site.origin);
+      }
+
       const sitePassword = await decryptSecret(site.encryptedPassword);
       return {
         ok: true,
         username: site.siteUsername,
         password: sitePassword,
       };
+    }
+
+    if (msg.type === 'RESEND_SITE_APPROVAL') {
+      return await resendSiteApproval(state.apiUrl, msg.origin);
     }
 
     return { error: 'Unknown message type' };

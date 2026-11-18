@@ -35,14 +35,14 @@
       <button id="logoutBtn" type="button" class="secondary" style="width:auto;padding:4px 10px;">Sign out</button>
     </div>
 
-    <button id="autofillTabBtn" type="button">Authenticate &amp; Autofill Current Tab</button>
+    <button id="autofillTabBtn" type="button">Request Approval &amp; Unlock Current Site</button>
 
     <h2>Add Custom Site (Current Tab)</h2>
     <input id="siteName" type="text" placeholder="Site name (e.g. Campus Portal)" />
     <input id="siteOrigin" type="text" placeholder="https://example.com" />
-    <input id="siteUser" type="text" placeholder="Site username or email" />
-    <input id="sitePass" type="password" placeholder="Site password (encrypted locally)" />
-    <input id="siteAppId" type="text" placeholder="Optional Safe Passage Application GUID" />
+    <input id="siteUser" type="text" placeholder="Site username or email (optional)" />
+    <input id="sitePass" type="password" placeholder="Site password for autofill (optional; encrypted locally)" />
+    <input id="siteAppId" type="text" placeholder="Optional Safe Passage app ID for access checks (OIDC not required)" />
     <button id="saveSiteBtn" type="button" class="secondary">Save Custom Site</button>
 
     <h2>Saved Custom Sites</h2>

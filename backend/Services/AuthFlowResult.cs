@@ -32,5 +32,6 @@ public interface IAuthFlowService
     Task<AuthFlowResult<MfaActionResponse>> ApproveMfaAsync(MfaApprovalRequest request, CancellationToken cancellationToken);
     Task<AuthFlowResult<MfaActionResponse>> DenyMfaAsync(MfaDenialRequest request, CancellationToken cancellationToken);
     Task<AuthFlowResult<MfaActionResponse>> ResendMfaApprovalAsync(string sessionToken, CancellationToken cancellationToken);
+    Task<AuthFlowResult<LoginResponse>> RequestBrowserAccessApprovalAsync(Guid userId, string? approvalDeviceId, string origin, CancellationToken cancellationToken);
     Task<AuthFlowResult<MfaStatusResponse>> GetMfaStatusAsync(string sessionToken, CancellationToken cancellationToken);
 }

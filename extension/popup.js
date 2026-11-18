@@ -82,6 +82,10 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
     return;
   }
   refresh();
+  const tab = await getActiveTab();
+  if (tab?.id && tab.url?.startsWith('http')) {
+    chrome.tabs.sendMessage(tab.id, { type: 'SITE_ACCESS_RETRY', signedIn: true }, () => void chrome.runtime.lastError);
+  }
 });
 
 document.getElementById('logoutBtn').addEventListener('click', async () => {
@@ -101,6 +105,12 @@ document.getElementById('saveSiteBtn').addEventListener('click', async () => {
   });
   statusMsg.textContent = res?.ok ? `Saved ${res.origin}` : (res?.error || 'Failed to save site');
   document.getElementById('sitePass').value = '';
+  if (res?.ok) {
+    const tab = await getActiveTab();
+    if (tab?.id && tab.url?.startsWith('http') && new URL(tab.url).origin === res.origin) {
+      chrome.tabs.sendMessage(tab.id, { type: 'START_SITE_GATE', signedIn: true, siteName: document.getElementById('siteName').value.trim() }, () => void chrome.runtime.lastError);
+    }
+  }
   refresh();
 });
 
