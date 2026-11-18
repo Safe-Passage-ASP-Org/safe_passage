@@ -1,165 +1,191 @@
-(() => {
-  if (window.top !== window || !/^https?:$/.test(location.protocol)) return;
-
-  const origin = location.origin;
-  let site = null;
+(function () {
+  const GATE_ID = 'safepassage-extension-gate';
+  let currentOrigin = window.location.origin;
+  let currentSite = null;
   let signedIn = false;
-  let promptRoot = null;
+  let flowRunning = false;
+  let approvalPending = false;
+  let gateRoot = null;
   let statusElement = null;
-  let busy = false;
-  let dismissed = false;
-  let debounceId;
+  let primaryButton = null;
   let resendButton = null;
 
-  function loginFormPresent() {
-    return [...document.querySelectorAll('input[type="password"]')].some((input) => {
-      if (!input.isConnected || input.disabled || input.getAttribute('aria-hidden') === 'true') return false;
-      const form = input.closest('form');
-      return !form || getComputedStyle(input).display !== 'none';
-    });
+  function findLoginInputs() {
+    const passwordInput = document.querySelector('input[type="password"]:not([disabled])');
+    if (!passwordInput) return null;
+
+    const form = passwordInput.closest('form') || document;
+    const userInput = form.querySelector(
+      'input[autocomplete="username"], input[type="email"], input[name*="user" i], input[name*="email" i], input[type="text"]',
+    );
+    return { userInput, passwordInput };
   }
 
-  function removePrompt() {
-    promptRoot?.remove();
-    promptRoot = null;
+  function setInputValue(element, value) {
+    if (!element || !value) return;
+    const descriptor = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value');
+    if (descriptor?.set) descriptor.set.call(element, value);
+    else element.value = value;
+    element.dispatchEvent(new Event('input', { bubbles: true }));
+    element.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  function showGate(siteName) {
+    let host = document.getElementById(GATE_ID);
+    if (!host) {
+      host = document.createElement('div');
+      host.id = GATE_ID;
+      gateRoot = host.attachShadow({ mode: 'closed' });
+      gateRoot.innerHTML = `
+        <style>
+          :host { all: initial; }
+          .backdrop { position: fixed; inset: 0; z-index: 2147483647; display: grid; place-items: center; padding: 24px; background: rgba(3, 7, 18, .88); color: #e5e7eb; font: 14px/1.5 Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+          .card { width: min(100%, 390px); box-sizing: border-box; padding: 26px; border: 1px solid #334155; border-radius: 14px; background: #0f172a; box-shadow: 0 24px 80px rgba(0,0,0,.55); }
+          .brand { margin: 0 0 8px; color: #38bdf8; font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+          h1 { margin: 0 0 10px; color: #f8fafc; font-size: 21px; }
+          p { margin: 0 0 16px; color: #cbd5e1; }
+          .status { min-height: 22px; color: #7dd3fc; }
+          .status.error { color: #fca5a5; }
+          button { width: 100%; margin-top: 10px; border: 1px solid #0284c7; border-radius: 8px; padding: 11px 14px; background: #0369a1; color: white; font: inherit; font-weight: 700; cursor: pointer; }
+          button.secondary { border-color: #475569; background: #1e293b; }
+          button:disabled { opacity: .55; cursor: wait; }
+          .hint { margin: 14px 0 0; color: #94a3b8; font-size: 12px; }
+        </style>
+        <div class="backdrop" role="dialog" aria-modal="true" aria-labelledby="sp-gate-title">
+          <section class="card">
+            <p class="brand">Safe Passage</p>
+            <h1 id="sp-gate-title">Approve access to this app</h1>
+            <p id="sp-gate-description"></p>
+            <p class="status" role="status" aria-live="polite"></p>
+            <button id="sp-gate-primary" type="button">Try again</button>
+            <button id="sp-gate-resend" class="secondary" type="button" hidden>Resend approval request</button>
+            <p class="hint">Approve the request in the Safe Passage mobile app. This page stays locked until approval.</p>
+          </section>
+        </div>`;
+      document.documentElement.appendChild(host);
+      statusElement = gateRoot.querySelector('.status');
+      primaryButton = gateRoot.getElementById('sp-gate-primary');
+      resendButton = gateRoot.getElementById('sp-gate-resend');
+      primaryButton.addEventListener('click', startApprovalFlow);
+      resendButton.addEventListener('click', resendApproval);
+    }
+
+    gateRoot.getElementById('sp-gate-description').textContent =
+      signedIn
+        ? `Safe Passage is checking your access to ${siteName}. Approve the request on your trusted device.`
+        : 'Sign in to Safe Passage from the extension menu, then return here to request approval.';
+    setStatus(signedIn ? 'Preparing approval request…' : 'Extension sign-in required.');
+    primaryButton.textContent = signedIn ? 'Request approval again' : 'Retry after signing in';
+    resendButton.hidden = true;
+    return host;
+  }
+
+  function setStatus(message, isError = false) {
+    if (!statusElement) return;
+    statusElement.textContent = message;
+    statusElement.classList.toggle('error', isError);
+  }
+
+  function unlockPage(credentials) {
+    if (credentials) {
+      const inputs = findLoginInputs();
+      if (inputs) {
+        setInputValue(inputs.userInput, credentials.username);
+        setInputValue(inputs.passwordInput, credentials.password);
+      }
+    }
+    document.getElementById(GATE_ID)?.remove();
+    gateRoot = null;
     statusElement = null;
-    dismissed = false;
+    primaryButton = null;
+    resendButton = null;
+    approvalPending = false;
   }
 
-  function setMessage(message) {
-    if (statusElement) statusElement.textContent = message;
-  }
-
-  function showPrompt() {
-    if (!site || !loginFormPresent() || dismissed || promptRoot) return;
-
-    promptRoot = document.createElement('div');
-    promptRoot.id = 'safe-passage-login-prompt';
-    promptRoot.style.cssText = 'all:initial;position:fixed;top:16px;right:16px;z-index:2147483647;font:14px/1.4 system-ui,sans-serif;color:#172033;';
-    const shadow = promptRoot.attachShadow({ mode: 'closed' });
-    const card = document.createElement('div');
-    card.style.cssText = 'box-sizing:border-box;width:320px;padding:16px;border:1px solid #d7deea;border-radius:12px;background:#fff;box-shadow:0 8px 28px #10213b33;';
-    card.innerHTML = `<div style="display:flex;align-items:flex-start;gap:10px"><div style="flex:1"><strong style="font-size:15px">Authenticate with Safe Passage?</strong><div style="margin-top:4px;color:#526078">Approve this ${escapeHtml(site.name)} login on your trusted Safe Passage device.</div></div><button data-sp-close aria-label="Dismiss" style="border:0;background:transparent;font-size:20px;cursor:pointer;color:#526078">×</button></div><div data-sp-status style="margin-top:10px;color:#526078"></div><div style="display:flex;gap:8px;margin-top:12px"><button data-sp-approve style="border:0;border-radius:7px;padding:9px 12px;background:#3457d5;color:white;font-weight:600;cursor:pointer">Request approval</button><button data-sp-resend hidden style="border:1px solid #ccd4e2;border-radius:7px;padding:8px 10px;background:white;cursor:pointer">Resend request</button></div>`;
-    shadow.append(card);
-    resendButton = card.querySelector('[data-sp-resend]');
-    statusElement = card.querySelector('[data-sp-status]');
-    if (!signedIn) setMessage('Sign in from the Safe Passage extension menu to request approval.');
-    (document.body || document.documentElement).append(promptRoot);
-
-    card.querySelector('[data-sp-close]').addEventListener('click', () => {
-      dismissed = true;
-      promptRoot?.remove();
-      promptRoot = null;
-    });
-    card.querySelector('[data-sp-approve]').addEventListener('click', async () => {
-      if (busy) return;
-      busy = true;
-      const button = card.querySelector('[data-sp-approve]');
-      button.disabled = true;
-      button.textContent = 'Waiting for approval…';
-      setMessage('Check Safe Passage on your trusted device.');
-      try {
-        const result = await sendMessage({ type: 'AUTHENTICATE_AND_GET_CREDENTIALS', origin });
-        const credentials = result || {};
-        if (credentials.username || credentials.password) fillLogin(credentials);
-        setMessage(credentials.username || credentials.password
-          ? 'Approved. Your saved credentials were filled in.'
-          : 'Approved. Continue signing in to this site.');
-        button.textContent = 'Approved';
-        card.querySelector('[data-sp-resend]').hidden = true;
-      } catch (error) {
-        setMessage(error.message || 'Could not request approval.');
-        button.disabled = false;
-        button.textContent = 'Try again';
-      } finally {
-        busy = false;
-      }
-    });
-    card.querySelector('[data-sp-resend]').addEventListener('click', async (event) => {
-      const button = event.currentTarget;
-      button.disabled = true;
-      try {
-        const result = await sendMessage({ type: 'RESEND_SITE_APPROVAL', origin });
-        setMessage(result.message || 'Approval request resent.');
-      } catch (error) {
-        setMessage(error.message || 'Could not resend the request.');
-      } finally {
-        button.disabled = false;
-      }
-    });
-  }
-
-  function fillLogin({ username, password }) {
-    const passwordInput = [...document.querySelectorAll('input[type="password"]')].find((input) => input.isConnected);
-    if (passwordInput && password) setInputValue(passwordInput, password);
-    if (username) {
-      const candidates = [...document.querySelectorAll('input')].filter((input) => {
-        if (!input.isConnected || input.type === 'password' || input.type === 'hidden' || input.disabled) return false;
-        const hint = `${input.type} ${input.name} ${input.id} ${input.autocomplete} ${input.placeholder}`.toLowerCase();
-        return /email|user|login|identifier/.test(hint) || input.type === 'email';
-      });
-      const usernameInput = candidates.find((input) => !passwordInput || input.form === passwordInput.form) || candidates[0];
-      if (usernameInput) setInputValue(usernameInput, username);
+  function startApprovalFlow() {
+    if (flowRunning) return;
+    if (!signedIn) {
+      setStatus('Open the Safe Passage extension menu and sign in first.', true);
+      return;
     }
+
+    flowRunning = true;
+    approvalPending = false;
+    primaryButton.disabled = true;
+    resendButton.hidden = true;
+    setStatus('Sending an approval request to your trusted device…');
+
+    chrome.runtime.sendMessage(
+      { type: 'AUTHENTICATE_AND_GET_CREDENTIALS', origin: currentOrigin },
+      (response) => {
+        flowRunning = false;
+        if (chrome.runtime.lastError) {
+          primaryButton.disabled = false;
+          setStatus(chrome.runtime.lastError.message, true);
+          return;
+        }
+        if (!response?.ok) {
+          primaryButton.disabled = false;
+          approvalPending = false;
+          resendButton.hidden = true;
+          if (response?.error?.toLowerCase().includes('session expired')) {
+            signedIn = false;
+            primaryButton.textContent = 'Retry after signing in';
+          }
+          setStatus(response?.error || 'Approval failed. Try again.', true);
+          return;
+        }
+        unlockPage(response);
+      },
+    );
   }
 
-  function setInputValue(input, value) {
-    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
-    setter?.call(input, value);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-  }
-
-  function escapeHtml(value) {
-    return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]);
-  }
-
-  function sendMessage(message) {
-    return new Promise((resolve, reject) => {
-      chrome.runtime.sendMessage(message, (response) => {
-        if (chrome.runtime.lastError) return reject(new Error('Could not reach Safe Passage extension. Refresh this page and try again.'));
-        if (!response?.ok) return reject(new Error(response?.error || 'Safe Passage request failed.'));
-        resolve(response);
-      });
+  function resendApproval() {
+    if (!approvalPending) return;
+    resendButton.disabled = true;
+    setStatus('Resending the approval request…');
+    chrome.runtime.sendMessage({ type: 'RESEND_SITE_APPROVAL', origin: currentOrigin }, (response) => {
+      resendButton.disabled = false;
+      if (chrome.runtime.lastError || !response?.ok) {
+        setStatus(response?.error || chrome.runtime.lastError?.message || 'Could not resend the request.', true);
+        return;
+      }
+      setStatus(response.message || 'Approval request resent.');
     });
   }
 
-  function syncPrompt() {
-    clearTimeout(debounceId);
-    debounceId = setTimeout(() => {
-      if (!loginFormPresent()) {
-        removePrompt();
-        return;
-      }
-      showPrompt();
-    }, 250);
-  }
-
-  function checkOrigin() {
-    chrome.runtime.sendMessage({ type: 'CHECK_ORIGIN', origin }, (response) => {
-      if (chrome.runtime.lastError || !response?.matched) {
-        site = null;
-        removePrompt();
-        return;
-      }
-      site = response.site;
-      signedIn = Boolean(response.signedIn);
-      syncPrompt();
+  function initializeGate() {
+    chrome.runtime.sendMessage({ type: 'CHECK_ORIGIN', origin: currentOrigin }, (response) => {
+      if (chrome.runtime.lastError || !response?.ok || !response.matched) return;
+      currentSite = response.site;
+      signedIn = response.signedIn;
+      showGate(currentSite.name);
+      if (signedIn) startApprovalFlow();
     });
   }
 
-  checkOrigin();
-  new MutationObserver(syncPrompt).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['type', 'style', 'hidden'] });
-
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message.type === 'APPROVAL_PENDING' && promptRoot) {
-      setMessage('Approval request sent. Open Safe Passage on your trusted device.');
+  chrome.runtime.onMessage.addListener((message) => {
+    if (message.type === 'APPROVAL_PENDING') {
+      approvalPending = true;
+      if (primaryButton) primaryButton.disabled = true;
       if (resendButton) resendButton.hidden = false;
+      setStatus('Waiting for approval in Safe Passage Mobile…');
     }
-    if (message.type === 'SITE_ACCESS_RETRY' || message.type === 'START_SITE_GATE') checkOrigin();
-    if (message.type === 'AUTOFILL_NOW') {
-      fillLogin(message);
-      sendResponse({ ok: true });
+
+    if (message.type === 'SITE_ACCESS_RETRY') {
+      if (!currentSite) return;
+      signedIn = message.signedIn !== false;
+      showGate(currentSite.name);
+      startApprovalFlow();
+    }
+
+    if (message.type === 'START_SITE_GATE') {
+      signedIn = message.signedIn !== false;
+      currentSite = { ...(currentSite || {}), name: message.siteName || window.location.hostname };
+      showGate(currentSite.name);
+      startApprovalFlow();
     }
   });
+
+  initializeGate();
 })();
