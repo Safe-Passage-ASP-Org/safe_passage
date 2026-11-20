@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Xunit;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 using SafePassage.Api.Contracts.Auth;
 using SafePassage.Api.Data;
@@ -272,6 +273,161 @@ public sealed class AuthFlowServiceTests
         Assert.Contains("GitLab", result.Response.Message);
     }
 
+    [Fact]
+    public async Task LoginWithExternalProviderAsync_RejectsAdministratorWithAdminEmailLoginRequired()
+    {
+        await using var dbContext = CreateDbContext();
+        var admin = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "adminoauth",
+            Email = "adminoauth@example.com",
+            Role = "Admin",
+            IsActive = true,
+            IsEmailVerified = true
+        };
+        dbContext.Users.Add(admin);
+        await dbContext.SaveChangesAsync();
+
+        var service = new AuthFlowService(
+            dbContext,
+            new PasswordHasher<User>(),
+            new TestNotificationService(),
+            new JwtTokenService(new JwtSettings
+            {
+                Issuer = "SafePassage.Api",
+                Audience = "SafePassage.Clients",
+                SigningKey = new string('x', 64)
+            }),
+            new SecurityPolicyEvaluator(dbContext),
+            NullLogger<AuthFlowService>.Instance);
+
+        var result = await service.LoginWithExternalProviderAsync(admin, "GitHub", CancellationToken.None);
+
+        Assert.Equal(AuthFlowFailure.AdminEmailLoginRequired, result.Failure);
+        Assert.Null(result.Response);
+    }
+
+    [Fact]
+    public async Task GetPendingMfaAsync_ReturnsUnexpiredPendingSessionsForUser()
+    {
+        await using var dbContext = CreateDbContext();
+        using var signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "pulluser",
+            Email = "pulluser@example.com",
+            IsActive = true,
+            IsEmailVerified = true
+        };
+        var device = new Device
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            DeviceId = "phone-pull-1",
+            DeviceName = "Pixel 9",
+            DeviceType = "Mobile",
+            OS = "Android 15",
+            Status = DeviceStatus.Active,
+            TrustStatus = DeviceTrustStatus.Trusted,
+            SigningPublicKey = ExportPublicKey(signingKey)
+        };
+        var passwordHasher = new PasswordHasher<User>();
+        user.PasswordHash = passwordHasher.HashPassword(user, "Password123!");
+        dbContext.Users.Add(user);
+        dbContext.Devices.Add(device);
+        await dbContext.SaveChangesAsync();
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var service = new AuthFlowService(
+            dbContext,
+            passwordHasher,
+            new TestNotificationService(),
+            new JwtTokenService(new JwtSettings
+            {
+                Issuer = "SafePassage.Api",
+                Audience = "SafePassage.Clients",
+                SigningKey = new string('x', 64)
+            }),
+            new SecurityPolicyEvaluator(dbContext),
+            NullLogger<AuthFlowService>.Instance,
+            cache: cache);
+
+        var loginResult = await service.LoginAsync(new LoginRequest { Username = "pulluser", Password = "Password123!" }, CancellationToken.None);
+        Assert.Equal(AuthFlowFailure.None, loginResult.Failure);
+        Assert.True(loginResult.Response!.MfaRequired);
+
+        var pending = await service.GetPendingMfaAsync(user.Id, "phone-pull-1", CancellationToken.None);
+        Assert.Single(pending);
+        Assert.Equal(loginResult.Response.SessionToken, pending[0].SessionToken);
+        Assert.Equal("phone-pull-1", pending[0].DeviceId);
+    }
+
+    [Fact]
+    public async Task SendMfaEmailOtpAsync_AndVerify_ApprovesSessionAndIssuesToken()
+    {
+        await using var dbContext = CreateDbContext();
+        using var signingKey = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "otpuser",
+            Email = "otpuser@example.com",
+            IsActive = true,
+            IsEmailVerified = true
+        };
+        var device = new Device
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            DeviceId = "phone-otp-1",
+            DeviceName = "Pixel 9",
+            DeviceType = "Mobile",
+            OS = "Android 15",
+            Status = DeviceStatus.Active,
+            TrustStatus = DeviceTrustStatus.Trusted,
+            SigningPublicKey = ExportPublicKey(signingKey)
+        };
+        var passwordHasher = new PasswordHasher<User>();
+        user.PasswordHash = passwordHasher.HashPassword(user, "Password123!");
+        dbContext.Users.Add(user);
+        dbContext.Devices.Add(device);
+        await dbContext.SaveChangesAsync();
+
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var emailSender = new CapturingOtpEmailSender();
+        var service = new AuthFlowService(
+            dbContext,
+            passwordHasher,
+            new TestNotificationService(),
+            new JwtTokenService(new JwtSettings
+            {
+                Issuer = "SafePassage.Api",
+                Audience = "SafePassage.Clients",
+                SigningKey = new string('x', 64)
+            }),
+            new SecurityPolicyEvaluator(dbContext),
+            NullLogger<AuthFlowService>.Instance,
+            cache: cache,
+            emailSender: emailSender);
+
+        var loginResult = await service.LoginAsync(new LoginRequest { Username = "otpuser", Password = "Password123!" }, CancellationToken.None);
+        Assert.True(loginResult.Response!.MfaRequired);
+
+        var sendResult = await service.SendMfaEmailOtpAsync(loginResult.Response.SessionToken!, CancellationToken.None);
+        Assert.Equal(AuthFlowFailure.None, sendResult.Failure);
+        Assert.NotNull(emailSender.LastOtpCode);
+
+        var wrongResult = await service.VerifyMfaEmailOtpAsync(loginResult.Response.SessionToken!, "000000", CancellationToken.None);
+        Assert.Equal(AuthFlowFailure.InvalidApprovalSignature, wrongResult.Failure);
+
+        var okResult = await service.VerifyMfaEmailOtpAsync(loginResult.Response.SessionToken!, emailSender.LastOtpCode!, CancellationToken.None);
+        Assert.Equal(AuthFlowFailure.None, okResult.Failure);
+        Assert.Equal(MfaSessionStatus.Approved, okResult.Response!.Status);
+        Assert.False(string.IsNullOrWhiteSpace(okResult.Response.AccessToken));
+    }
+
     private static ApplicationDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
@@ -298,6 +454,20 @@ public sealed class AuthFlowServiceTests
         public Task SendMfaApprovalRequestAsync(User user, Device device, string sessionToken, CancellationToken cancellationToken)
         {
             RequestCount++;
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class CapturingOtpEmailSender : IActivationEmailSender
+    {
+        public string? LastOtpCode { get; private set; }
+
+        public Task SendActivationEmailAsync(string email, string username, string activationUrl, bool requiresPasswordSetup, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SendAdminLoginLinkAsync(string email, string username, string loginUrl, int tokenLifetimeMinutes, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SendSubscriptionReceiptAsync(SubscriptionReceiptEmail receipt, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SendSignInOtpAsync(string email, string username, string otpCode, int lifetimeMinutes, bool isAdminLogin, CancellationToken cancellationToken)
+        {
+            LastOtpCode = otpCode;
             return Task.CompletedTask;
         }
     }

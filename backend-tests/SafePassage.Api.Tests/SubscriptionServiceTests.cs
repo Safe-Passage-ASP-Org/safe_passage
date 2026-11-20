@@ -395,5 +395,13 @@ public sealed class SubscriptionServiceTests
             SentReceipts.Add(receipt);
             return Task.CompletedTask;
         }
+
+        public Task SendSignInOtpAsync(
+            string email,
+            string username,
+            string otpCode,
+            int lifetimeMinutes,
+            bool isAdminLogin,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

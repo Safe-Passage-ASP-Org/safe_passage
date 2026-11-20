@@ -55,6 +55,24 @@
                 <p class="signup-subtitle" role="status">@ResendNotice</p>
             }
             <button class="signup-button" @onclick="ResendApprovalAsync" disabled="@Resending">@(Resending ? "Resending…" : "Resend approval request")</button>
+            @if (!IsAdminLogin)
+            {
+                <button class="login-link" type="button" @onclick="SendMfaOtpAsync" disabled="@SendingOtp">
+                    @(SendingOtp ? "Sending OTP…" : "Send 6-digit OTP to email instead")
+                </button>
+                @if (MfaOtpSent)
+                {
+                    <div style="margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0;">
+                        <label for="mfa-otp-code">Enter 6-digit Email OTP</label>
+                        <div style="display:flex;gap:8px;margin-top:6px;">
+                            <InputText id="mfa-otp-code" @bind-Value="MfaOtpCode" maxlength="6" placeholder="123456" disabled="@VerifyingOtp" />
+                            <button type="button" class="signup-button" style="width:auto;margin:0;padding:0 16px;" @onclick="VerifyMfaOtpAsync" disabled="@VerifyingOtp">
+                                @(VerifyingOtp ? "Verifying…" : "Verify")
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
             <button class="login-link" @onclick="CancelMfa">Cancel sign-in</button>
         }
         else if (ExternalCompleting)
@@ -72,6 +90,13 @@
             <p class="signup-eyebrow">ADMINISTRATOR ACCESS</p>
             <h1 id="login-title">Verify your email.</h1>
             <p class="signup-subtitle">Enter the verified email address for your administrator account. We’ll send a one-time sign-in link. You’ll still need to approve the sign-in on your trusted mobile device.</p>
+            @if (AdminLinkVerifying)
+            {
+                <div class="login-pending" role="status" aria-live="polite" style="margin-bottom:14px;">
+                    <span class="pending-indicator"></span>
+                    <strong>Verifying your email link and starting mobile approval…</strong>
+                </div>
+            }
             @if (!string.IsNullOrWhiteSpace(Error))
             {
                 <div class="signup-error" role="alert">@Error</div>
@@ -83,10 +108,25 @@
             <EditForm Model="AdminEmailForm" OnValidSubmit="RequestAdminEmailLinkAsync">
                 <DataAnnotationsValidator />
                 <label for="admin-email">Administrator email address</label>
-                <InputText id="admin-email" type="email" @bind-Value="AdminEmailForm.Email" autocomplete="email" disabled="@AdminEmailRequestBusy" placeholder="you@gmail.com" />
+                <InputText id="admin-email" type="email" @bind-Value="AdminEmailForm.Email" autocomplete="email" disabled="@(AdminEmailRequestBusy || AdminOtpBusy)" placeholder="you@gmail.com" />
                 <ValidationMessage For="() => AdminEmailForm.Email" />
                 <InteractiveSubmitButton Busy="@AdminEmailRequestBusy" BusyText="Sending link…">Send verification link <span aria-hidden="true">→</span></InteractiveSubmitButton>
             </EditForm>
+            <button class="login-link" type="button" @onclick="RequestAdminEmailOtpAsync" disabled="@(AdminEmailRequestBusy || AdminOtpBusy)">
+                @(AdminOtpBusy ? "Sending OTP…" : "Send 6-digit OTP instead")
+            </button>
+            @if (AdminOtpSent)
+            {
+                <div style="margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0;">
+                    <label for="admin-otp-code">Enter 6-digit Administrator OTP</label>
+                    <div style="display:flex;gap:8px;margin-top:6px;">
+                        <InputText id="admin-otp-code" @bind-Value="AdminOtpCode" maxlength="6" placeholder="123456" disabled="@AdminOtpVerifying" />
+                        <button type="button" class="signup-button" style="width:auto;margin:0;padding:0 16px;" @onclick="VerifyAdminEmailOtpAsync" disabled="@AdminOtpVerifying">
+                            @(AdminOtpVerifying ? "Verifying…" : "Verify OTP")
+                        </button>
+                    </div>
+                </div>
+            }
             <p class="signup-switch"><a href="/login">← User Login</a></p>
         }
         else
@@ -181,6 +221,15 @@
     private readonly AdminEmailLoginForm AdminEmailForm = new();
     private bool AdminEmailSent;
     private bool AdminEmailRequestBusy;
+    private bool AdminOtpSent;
+    private bool AdminOtpBusy;
+    private bool AdminOtpVerifying;
+    private string AdminOtpCode = "";
+    private bool SendingOtp;
+    private bool MfaOtpSent;
+    private bool VerifyingOtp;
+    private string MfaOtpCode = "";
+    private bool AdminLinkVerifying;
     private bool AdminEmailLinkExchangeStarted;
     private bool IsAdminLogin => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin-login", StringComparison.OrdinalIgnoreCase);
 
@@ -193,6 +242,7 @@
         if (query.TryGetValue("facebookError", out var error))
             Error = error.ToString() switch
             {
+                "admin_email_required" => "Administrator accounts must use Admin Login, verify their email, then approve on a trusted mobile device.",
                 "email_required" => "Facebook did not provide an email address. Allow email access and try again.",
                 "account_unavailable" => "No active Safe Passage account matched this Facebook account. Sign in with your account first or contact an administrator.",
                 "mfa_device_required" => "Enroll a trusted mobile device before using Facebook sign-in.",
@@ -204,6 +254,7 @@
         else if (query.TryGetValue("githubError", out var githubError))
             Error = githubError.ToString() switch
             {
+                "admin_email_required" => "Administrator accounts must use Admin Login, verify their email, then approve on a trusted mobile device.",
                 "email_required" => "GitHub did not return a verified primary email. Verify an email address in GitHub settings, then try again.",
                 "account_unavailable" => "No active Safe Passage account matched this GitHub email. Sign in with your account first or contact an administrator.",
                 "mfa_device_required" => "Enroll a trusted mobile device before using GitHub sign-in.",
@@ -216,6 +267,7 @@
         else if (query.TryGetValue("gitlabError", out var gitlabError))
             Error = gitlabError.ToString() switch
             {
+                "admin_email_required" => "Administrator accounts must use Admin Login, verify their email, then approve on a trusted mobile device.",
                 "email_required" => "GitLab did not provide an email address. Check your GitLab profile email visibility and try again.",
                 "account_unavailable" => "No active Safe Passage account matched this GitLab account. Sign in with your account first or contact an administrator.",
                 "mfa_device_required" => "Enroll a trusted mobile device before using GitLab sign-in.",
@@ -279,7 +331,8 @@
                 catch (JSException) { }
                 await ClearPendingMfaAsync();
                 Busy = true;
-                Error = "Verifying your email link and starting mobile approval…";
+                AdminLinkVerifying = true;
+                Error = "";
                 await InvokeAsync(StateHasChanged);
                 try
                 {
@@ -292,6 +345,7 @@
                 finally
                 {
                     Busy = false;
+                    AdminLinkVerifying = false;
                     await InvokeAsync(StateHasChanged);
                 }
                 return;
@@ -380,6 +434,81 @@
         finally { AdminEmailRequestBusy = false; }
     }
 
+    private async Task RequestAdminEmailOtpAsync()
+    {
+        if (string.IsNullOrWhiteSpace(AdminEmailForm.Email))
+        {
+            Error = "Enter your administrator email address first.";
+            return;
+        }
+        AdminOtpBusy = true;
+        Error = "";
+        AdminOtpSent = false;
+        try
+        {
+            await Api.RequestAdminEmailOtpAsync(AdminEmailForm.Email.Trim());
+            AdminOtpSent = true;
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { AdminOtpBusy = false; }
+    }
+
+    private async Task VerifyAdminEmailOtpAsync()
+    {
+        if (string.IsNullOrWhiteSpace(AdminOtpCode))
+        {
+            Error = "Enter the 6-digit verification code from your email.";
+            return;
+        }
+        AdminOtpVerifying = true;
+        Error = "";
+        try
+        {
+            var result = await Api.VerifyAdminEmailOtpAsync(AdminEmailForm.Email.Trim(), AdminOtpCode.Trim());
+            await SavePendingMfaAsync(result.SessionToken!);
+            await ContinueLoginAsync(result);
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { AdminOtpVerifying = false; }
+    }
+
+    private async Task SendMfaOtpAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SessionToken) || SendingOtp) return;
+        SendingOtp = true;
+        Error = "";
+        ResendNotice = "";
+        try
+        {
+            await Api.SendMfaOtpAsync(SessionToken);
+            MfaOtpSent = true;
+            ResendNotice = "A 6-digit verification code was sent to your verified email.";
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { SendingOtp = false; }
+    }
+
+    private async Task VerifyMfaOtpAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SessionToken) || string.IsNullOrWhiteSpace(MfaOtpCode))
+        {
+            Error = "Enter the 6-digit verification code from your email.";
+            return;
+        }
+        VerifyingOtp = true;
+        Error = "";
+        try
+        {
+            await Api.VerifyMfaOtpAsync(SessionToken, MfaOtpCode.Trim());
+            PollCancellation?.Cancel();
+            await ClearPendingMfaAsync();
+            MfaPending = false;
+            await ContinueAfterAuthenticationAsync();
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { VerifyingOtp = false; }
+    }
+
     private async Task ContinueLoginAsync(LoginResult result)
     {
         if (result.MfaRequired)
@@ -398,6 +527,7 @@
 
     private async Task PollForApprovalAsync(CancellationToken cancellationToken)
     {
+        var transientFailures = 0;
         while (!cancellationToken.IsCancellationRequested && MfaPending)
         {
             try
@@ -409,9 +539,23 @@
                     await InvokeAsync(ContinueAfterAuthenticationAsync);
                     return;
                 }
+                if (transientFailures > 0)
+                {
+                    transientFailures = 0;
+                    ResendNotice = "";
+                }
                 await InvokeAsync(StateHasChanged);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+            catch (Exception exception) when (IsTransientPollingError(exception) && transientFailures < 3)
+            {
+                transientFailures++;
+                ResendNotice = $"Reconnecting to server ({transientFailures}/3)…";
+                await InvokeAsync(StateHasChanged);
+                try { await Task.Delay(2000, cancellationToken); }
+                catch (OperationCanceledException) { return; }
+                continue;
+            }
             catch (Exception exception)
             {
                 await ClearPendingMfaAsync();
@@ -426,6 +570,11 @@
             catch (OperationCanceledException) { return; }
         }
     }
+
+    private static bool IsTransientPollingError(Exception exception) =>
+        exception is HttpRequestException or TaskCanceledException
+        || exception.Message.Contains("waking up", StringComparison.OrdinalIgnoreCase)
+        || exception.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase);
 
     private async Task ResendApprovalAsync()
     {
@@ -500,21 +649,23 @@
         }
     }
 
+    private string MfaStorageMode => IsAdminLogin ? "admin" : "user";
+
     private async Task<string?> GetPendingMfaAsync()
     {
-        try { return await JS.InvokeAsync<string?>("safePassageAuthSession.getPendingMfa"); }
+        try { return await JS.InvokeAsync<string?>("safePassageAuthSession.getPendingMfa", MfaStorageMode); }
         catch (JSException) { return null; }
     }
 
     private async Task SavePendingMfaAsync(string token)
     {
-        try { await JS.InvokeVoidAsync("safePassageAuthSession.savePendingMfa", token); }
+        try { await JS.InvokeVoidAsync("safePassageAuthSession.savePendingMfa", token, MfaStorageMode); }
         catch (JSException) { }
     }
 
     private async Task ClearPendingMfaAsync()
     {
-        try { await JS.InvokeVoidAsync("safePassageAuthSession.clearPendingMfa"); }
+        try { await JS.InvokeVoidAsync("safePassageAuthSession.clearPendingMfa", MfaStorageMode); }
         catch (JSException) { }
     }
 

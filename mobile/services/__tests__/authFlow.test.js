@@ -22,7 +22,7 @@ jest.mock('expo-crypto', () => ({
 
 const SecureStore = require('expo-secure-store');
 const { createPublicKey, verify } = require('node:crypto');
-const { login, getMfaStatus } = require('../AuthService');
+const { login, getMfaStatus, fetchPendingMfaRequests } = require('../AuthService');
 const {
   bindSigningKeyToAccount,
   getDeviceSigningPublicKey,
@@ -119,5 +119,23 @@ describe('mobile auth flow', () => {
 
     const token = `header.${Buffer.from(JSON.stringify({ sub: aliceId })).toString('base64url')}.signature`;
     expect(getUserIdFromToken(token)).toBe(aliceId);
+  });
+
+  it('fetches pending MFA challenges when a token is stored', async () => {
+    await SecureStore.setItemAsync('auth_token', 'jwt-token');
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ([{ sessionToken: 'sess-1', deviceId: 'device-123' }]),
+    });
+
+    const pending = await fetchPendingMfaRequests('device-123');
+    expect(pending).toHaveLength(1);
+    expect(pending[0].sessionToken).toBe('sess-1');
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/auth/mfa/pending'),
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: 'Bearer jwt-token' }),
+      }),
+    );
   });
 });

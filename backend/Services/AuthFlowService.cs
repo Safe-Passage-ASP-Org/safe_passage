@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.IdentityModel.Tokens;
 using SafePassage.Api.Contracts.Auth;
 using SafePassage.Api.Data;
@@ -17,7 +18,9 @@ public sealed class AuthFlowService(
     IJwtTokenService jwtTokenService,
     ISecurityPolicyEvaluator securityPolicyEvaluator,
     ILogger<AuthFlowService> logger,
-    IHttpContextAccessor? httpContextAccessor = null) : IAuthFlowService
+    IHttpContextAccessor? httpContextAccessor = null,
+    IMemoryCache? cache = null,
+    IActivationEmailSender? emailSender = null) : IAuthFlowService
 {
     private static readonly TimeSpan MfaLifetime = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan LongPollDuration = TimeSpan.FromSeconds(25);
@@ -178,9 +181,10 @@ public sealed class AuthFlowService(
         AddActivity(user.Id, "Login", "Primary credentials accepted; MFA pending", ActivityLogStatus.Success);
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        var mfaContext = BuildMfaRequestContext();
+        CachePendingMfaChallenge(session.Id, sessionToken, mfaContext, expiresAt);
         try
         {
-            var mfaContext = BuildMfaRequestContext();
             await notificationService.SendMfaApprovalRequestAsync(user, device, sessionToken, mfaContext, cancellationToken);
         }
         catch (OperationCanceledException)
@@ -214,6 +218,13 @@ public sealed class AuthFlowService(
     {
         if (!user.IsActive || !user.IsEmailVerified)
             return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.UserUnavailable);
+
+        if (IsAdministrator(user.Role))
+        {
+            AddActivity(user.Id, "Login", $"Administrator {provider} sign-in directed to email verification", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.AdminEmailLoginRequired);
+        }
 
         var policy = await securityPolicyEvaluator.EvaluateAsync(cancellationToken);
         if (!policy.IsValid)
@@ -255,9 +266,10 @@ public sealed class AuthFlowService(
         dbContext.MfaSessions.Add(session);
         AddActivity(user.Id, "Login", $"{provider} accepted; MFA pending", ActivityLogStatus.Success);
         await dbContext.SaveChangesAsync(cancellationToken);
+        var mfaContext = BuildMfaRequestContext();
+        CachePendingMfaChallenge(session.Id, sessionToken, mfaContext, expiresAt);
         try
         {
-            var mfaContext = BuildMfaRequestContext();
             await notificationService.SendMfaApprovalRequestAsync(user, device, sessionToken, mfaContext, cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
@@ -319,9 +331,11 @@ public sealed class AuthFlowService(
         AddActivity(user.Id, "Admin Login", "Email link accepted; mobile approval pending", ActivityLogStatus.Success);
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        var mfaContext = BuildMfaRequestContext();
+        CachePendingMfaChallenge(session.Id, sessionToken, mfaContext, expiresAt);
         try
         {
-            await notificationService.SendMfaApprovalRequestAsync(user, device, sessionToken, cancellationToken);
+            await notificationService.SendMfaApprovalRequestAsync(user, device, sessionToken, mfaContext, cancellationToken);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception exception)
@@ -610,6 +624,175 @@ public sealed class AuthFlowService(
 
             await Task.Delay(PollInterval, cancellationToken);
         }
+    }
+
+    public async Task<IReadOnlyList<PendingMfaChallengeResponse>> GetPendingMfaAsync(
+        Guid userId,
+        string? deviceId,
+        CancellationToken cancellationToken)
+    {
+        if (cache is null)
+            return [];
+
+        var now = DateTimeOffset.UtcNow;
+        var sessions = await dbContext.MfaSessions
+            .AsNoTracking()
+            .Include(session => session.Device)
+            .Where(session => session.UserId == userId
+                && session.Status == MfaSessionStatus.Pending
+                && session.ExpiresAt > now
+                && session.Device.Status == DeviceStatus.Active
+                && session.Device.TrustStatus == DeviceTrustStatus.Trusted)
+            .ToListAsync(cancellationToken);
+
+        var ordered = sessions
+            .OrderByDescending(s => !string.IsNullOrWhiteSpace(deviceId) && string.Equals(s.Device.DeviceId, deviceId, StringComparison.Ordinal))
+            .ThenByDescending(s => s.CreatedAt)
+            .ToList();
+
+        var results = new List<PendingMfaChallengeResponse>();
+        foreach (var session in ordered)
+        {
+            if (cache.TryGetValue(PendingMfaCacheKey(session.Id), out CachedPendingMfa? cached) && cached is not null)
+            {
+                results.Add(new PendingMfaChallengeResponse(
+                    cached.SessionToken,
+                    session.Device.DeviceId,
+                    session.Purpose,
+                    session.CreatedAt,
+                    session.ExpiresAt,
+                    cached.Context.IpAddress,
+                    cached.Context.OperatingSystem,
+                    cached.Context.Location));
+            }
+        }
+
+        return results;
+    }
+
+    private sealed record CachedPendingMfa(string SessionToken, MfaRequestContext Context);
+
+    private static string PendingMfaCacheKey(Guid sessionId) => $"pending-mfa-raw:{sessionId:N}";
+
+    private void CachePendingMfaChallenge(Guid sessionId, string sessionToken, MfaRequestContext context, DateTimeOffset expiresAt)
+    {
+        if (cache is null)
+            return;
+        cache.Set(PendingMfaCacheKey(sessionId), new CachedPendingMfa(sessionToken, context), expiresAt);
+    }
+
+    private sealed record CachedEmailOtp(byte[] CodeHash, int Attempts, DateTimeOffset ExpiresAt);
+
+    public async Task<AuthFlowResult<MfaActionResponse>> SendMfaEmailOtpAsync(
+        string sessionToken,
+        CancellationToken cancellationToken)
+    {
+        if (cache is null || emailSender is null)
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.NotificationFailed);
+
+        var session = await FindSessionAsync(sessionToken, cancellationToken);
+        if (session is null)
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.SessionNotFound);
+
+        if (await ExpireIfNeededAsync(session, cancellationToken))
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.SessionExpired);
+
+        if (session.Status != MfaSessionStatus.Pending)
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.InvalidSessionState);
+
+        var user = await dbContext.Users.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.Id == session.UserId && candidate.IsActive,
+            cancellationToken);
+        if (user is null || string.IsNullOrWhiteSpace(user.Email) || IsAdministrator(user.Role))
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.UserUnavailable);
+
+        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(code));
+        cache.Set(
+            $"mfa-email-otp:{session.Id:N}",
+            new CachedEmailOtp(hash, 0, session.ExpiresAt),
+            session.ExpiresAt);
+
+        try
+        {
+            await emailSender.SendSignInOtpAsync(
+                user.Email,
+                user.FullName ?? user.Username,
+                code,
+                5,
+                isAdminLogin: false,
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is EmailDeliveryException or InvalidOperationException)
+        {
+            logger.LogError(ex, "Failed to send MFA Email OTP for user {UserId}.", user.Id);
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.NotificationFailed);
+        }
+
+        AddActivity(user.Id, "MFA Email OTP", "Sent 6-digit sign-in OTP to verified email", ActivityLogStatus.Success);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return AuthFlowResult<MfaActionResponse>.Success(new(session.Status, session.ExpiresAt));
+    }
+
+    public async Task<AuthFlowResult<MfaStatusResponse>> VerifyMfaEmailOtpAsync(
+        string sessionToken,
+        string code,
+        CancellationToken cancellationToken)
+    {
+        if (cache is null)
+            return AuthFlowResult<MfaStatusResponse>.Failed(AuthFlowFailure.InvalidApprovalSignature);
+
+        var session = await FindSessionAsync(sessionToken, cancellationToken);
+        if (session is null)
+            return AuthFlowResult<MfaStatusResponse>.Failed(AuthFlowFailure.SessionNotFound);
+
+        if (await ExpireIfNeededAsync(session, cancellationToken))
+            return AuthFlowResult<MfaStatusResponse>.Failed(AuthFlowFailure.SessionExpired);
+
+        if (session.Status != MfaSessionStatus.Pending)
+            return AuthFlowResult<MfaStatusResponse>.Failed(AuthFlowFailure.InvalidSessionState);
+
+        var user = await dbContext.Users.AsNoTracking().SingleOrDefaultAsync(
+            candidate => candidate.Id == session.UserId && candidate.IsActive,
+            cancellationToken);
+        if (user is null || IsAdministrator(user.Role))
+            return AuthFlowResult<MfaStatusResponse>.Failed(AuthFlowFailure.UserUnavailable);
+
+        var otpKey = $"mfa-email-otp:{session.Id:N}";
+        if (!cache.TryGetValue(otpKey, out CachedEmailOtp? cached) || cached is null || cached.ExpiresAt <= DateTimeOffset.UtcNow)
+            return AuthFlowResult<MfaStatusResponse>.Failed(AuthFlowFailure.InvalidApprovalSignature);
+
+        var normalizedCode = (code ?? string.Empty).Trim();
+        var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(normalizedCode));
+        if (!CryptographicOperations.FixedTimeEquals(suppliedHash, cached.CodeHash))
+        {
+            var nextAttempts = cached.Attempts + 1;
+            if (nextAttempts >= 5)
+                cache.Remove(otpKey);
+            else
+                cache.Set(otpKey, cached with { Attempts = nextAttempts }, cached.ExpiresAt);
+
+            AddActivity(session.UserId, "MFA Email OTP Rejected", "Invalid 6-digit OTP code", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<MfaStatusResponse>.Failed(AuthFlowFailure.InvalidApprovalSignature);
+        }
+
+        cache.Remove(otpKey);
+        session.Status = MfaSessionStatus.Approved;
+        AddActivity(session.UserId, "MFA", "Email OTP verification", ActivityLogStatus.Success);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var deviceId = await dbContext.Devices.AsNoTracking()
+            .Where(candidate => candidate.Id == session.DeviceId && candidate.Status == DeviceStatus.Active)
+            .Select(candidate => candidate.DeviceId)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return AuthFlowResult<MfaStatusResponse>.Success(new(
+            MfaSessionStatus.Approved,
+            session.ExpiresAt,
+            jwtTokenService.CreateAccessToken(user, deviceId),
+            "Bearer",
+            deviceId));
     }
 
     private Task<MfaSession?> FindSessionAsync(string sessionToken, CancellationToken cancellationToken) =>
