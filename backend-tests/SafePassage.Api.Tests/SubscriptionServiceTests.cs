@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using SafePassage.Api.Data;
 using SafePassage.Api.Models;
@@ -150,6 +151,120 @@ public sealed class SubscriptionServiceTests
         Assert.Equal("Active", updated.Status);
     }
 
+    [Fact]
+    public async Task CreateCheckoutAsync_UsesDemoCheckout_WhenDemoModeEnabled()
+    {
+        await using var db = CreateDbContext();
+        var user = SeedUser(db, "demouser");
+        var payMongo = new FakePayMongoClient();
+        var service = CreateDemoService(db, payMongo);
+
+        var plans = service.GetPlans();
+        Assert.All(plans, p =>
+        {
+            Assert.True(p.IsConfigured);
+            Assert.Equal("demo", p.Mode);
+        });
+
+        var checkout = await service.CreateCheckoutAsync(user.Id, "pro-monthly");
+        Assert.Equal(SubscriptionFailure.None, checkout.Failure);
+        Assert.StartsWith("cs_demo_", checkout.Data!.PayPalSubscriptionId);
+        Assert.Contains("/subscription/demo-checkout", checkout.Data.ApprovalUrl);
+        Assert.Equal(0, payMongo.CreateCalls);
+    }
+
+    [Fact]
+    public async Task CompleteDemoCheckoutAsync_AndConfirm_ActivatesAndSendsReceiptEmail()
+    {
+        await using var db = CreateDbContext();
+        var user = SeedUser(db, "demopayer");
+        var payMongo = new FakePayMongoClient();
+        var emailSender = new FakeReceiptEmailSender();
+        var demoStore = new DemoCheckoutStateStore(new MemoryCache(new MemoryCacheOptions()));
+        var service = CreateDemoService(db, payMongo, emailSender, demoStore);
+
+        var checkout = await service.CreateCheckoutAsync(user.Id, "pro-monthly");
+        Assert.Equal(SubscriptionFailure.None, checkout.Failure);
+
+        var completed = await service.CompleteDemoCheckoutAsync(
+            user.Id,
+            checkout.Data!.PayPalSubscriptionId,
+            "GCash (Sandbox)",
+            "paid");
+        Assert.Equal(SubscriptionFailure.None, completed.Failure);
+
+        var confirmed = await service.ConfirmSubscriptionAsync(user.Id, checkout.Data.PayPalSubscriptionId);
+        Assert.Equal(SubscriptionFailure.None, confirmed.Failure);
+        Assert.True(confirmed.Data!.HasActiveEntitlement);
+        Assert.Equal("Active", confirmed.Data.Status);
+
+        Assert.Single(emailSender.SentReceipts);
+        Assert.Equal(user.Email, emailSender.SentReceipts[0].RecipientEmail);
+        Assert.Equal("GCash (Sandbox)", emailSender.SentReceipts[0].PaymentMethod);
+        Assert.Equal(checkout.Data.PayPalSubscriptionId, emailSender.SentReceipts[0].ReferenceId);
+    }
+
+    [Fact]
+    public async Task CompleteDemoCheckoutAsync_RejectsCrossUserOwnershipMismatch()
+    {
+        await using var db = CreateDbContext();
+        var userA = SeedUser(db, "demoownera");
+        var userB = SeedUser(db, "demoownerb");
+        var service = CreateDemoService(db, new FakePayMongoClient());
+
+        var checkout = await service.CreateCheckoutAsync(userA.Id, "pro-monthly");
+        Assert.Equal(SubscriptionFailure.None, checkout.Failure);
+
+        var mismatch = await service.CompleteDemoCheckoutAsync(
+            userB.Id,
+            checkout.Data!.PayPalSubscriptionId,
+            "Demo Card •••• 4242",
+            "paid");
+        Assert.Equal(SubscriptionFailure.OwnershipMismatch, mismatch.Failure);
+    }
+
+    [Fact]
+    public async Task GetBillingHistoryAsync_ReturnsUserSubscriptionsOrderedNewestFirst()
+    {
+        await using var db = CreateDbContext();
+        var user = SeedUser(db, "historyuser");
+        var service = CreateDemoService(db, new FakePayMongoClient());
+
+        var now = DateTimeOffset.UtcNow;
+        db.UserSubscriptions.AddRange(
+            new UserSubscription
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                PayPalSubscriptionId = "cs_demo_older",
+                PayPalPlanId = "demo:pro-monthly",
+                PlanCode = "pro-monthly",
+                Status = SubscriptionStatus.Expired,
+                CreatedAt = now.AddDays(-2),
+                UpdatedAt = now.AddDays(-2)
+            },
+            new UserSubscription
+            {
+                Id = Guid.NewGuid(),
+                UserId = user.Id,
+                PayPalSubscriptionId = "cs_demo_newer",
+                PayPalPlanId = "demo:pro-annual",
+                PlanCode = "pro-annual",
+                Status = SubscriptionStatus.Active,
+                CreatedAt = now.AddHours(-1),
+                UpdatedAt = now.AddHours(-1),
+                CurrentPeriodStart = now.AddHours(-1),
+                CurrentPeriodEnd = now.AddYears(1)
+            });
+        await db.SaveChangesAsync();
+
+        var history = await service.GetBillingHistoryAsync(user.Id);
+        Assert.Equal(2, history.Count);
+        Assert.Equal("cs_demo_newer", history[0].SubscriptionId);
+        Assert.Equal("Sandbox Simulator", history[0].PaymentMode);
+        Assert.Equal("cs_demo_older", history[1].SubscriptionId);
+    }
+
     private static User SeedUser(ApplicationDbContext db, string username = "subuser")
     {
         var user = new User
@@ -177,6 +292,29 @@ public sealed class SubscriptionServiceTests
             }
         });
         return new SubscriptionService(db, payMongo, options);
+    }
+
+    private static SubscriptionService CreateDemoService(
+        ApplicationDbContext db,
+        FakePayMongoClient payMongo,
+        FakeReceiptEmailSender? emailSender = null,
+        DemoCheckoutStateStore? demoStore = null)
+    {
+        var options = Options.Create(new PayMongoOptions
+        {
+            DemoMode = true,
+            Plans = new Dictionary<string, PayMongoPlanOption>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["pro-monthly"] = new() { AmountCentavos = 29900, Currency = "PHP", Name = "Pro Monthly", PriceDisplay = "PHP 299 / month", Interval = "Month" },
+                ["pro-annual"] = new() { AmountCentavos = 299000, Currency = "PHP", Name = "Pro Annual", PriceDisplay = "PHP 2,990 / year", Interval = "Year" }
+            }
+        });
+        return new SubscriptionService(
+            db,
+            payMongo,
+            options,
+            emailSender: emailSender,
+            demoStore: demoStore ?? new DemoCheckoutStateStore(new MemoryCache(new MemoryCacheOptions())));
     }
 
     private static ApplicationDbContext CreateDbContext()
@@ -230,5 +368,32 @@ public sealed class SubscriptionServiceTests
 
         public bool VerifyWebhookSignature(string signatureHeader, string rawBody, string webhookSecret) =>
             WebhookVerified;
+    }
+
+    private sealed class FakeReceiptEmailSender : IActivationEmailSender
+    {
+        public List<SubscriptionReceiptEmail> SentReceipts { get; } = [];
+
+        public Task SendActivationEmailAsync(
+            string email,
+            string username,
+            string activationUrl,
+            bool requiresPasswordSetup,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task SendAdminLoginLinkAsync(
+            string email,
+            string username,
+            string loginUrl,
+            int tokenLifetimeMinutes,
+            CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task SendSubscriptionReceiptAsync(
+            SubscriptionReceiptEmail receipt,
+            CancellationToken cancellationToken)
+        {
+            SentReceipts.Add(receipt);
+            return Task.CompletedTask;
+        }
     }
 }

@@ -6,7 +6,8 @@ public sealed record SubscriptionPlanResponse(
     string Description,
     string PriceDisplay,
     string Interval,
-    bool IsConfigured);
+    bool IsConfigured,
+    string Mode = "paymongo");
 
 public sealed record UserSubscriptionResponse(
     bool HasActiveEntitlement,
@@ -33,3 +34,24 @@ public sealed record ConfirmSubscriptionRequest(string SubscriptionId);
 public sealed record AbandonSubscriptionRequest(string SubscriptionId);
 
 public sealed record CancelSubscriptionRequest(string? Reason = null);
+
+public sealed record CompleteDemoCheckoutRequest(
+    string SessionId,
+    string PaymentMethod,
+    string Outcome);
+
+public sealed record SubscriptionHistoryItemResponse(
+    string SubscriptionId,
+    string PlanCode,
+    string PlanName,
+    string Status,
+    string PriceDisplay,
+    string PaymentMode,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? CurrentPeriodStart,
+    DateTimeOffset? CurrentPeriodEnd,
+    DateTimeOffset? CancelledAt);
+
+public sealed record ResendReceiptResponse(
+    bool Sent,
+    string Message);

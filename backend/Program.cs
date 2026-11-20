@@ -66,6 +66,7 @@ builder.Services.Configure<PayPalOptions>(builder.Configuration.GetSection(PayPa
 builder.Services.Configure<PayMongoOptions>(builder.Configuration.GetSection(PayMongoOptions.SectionName));
 builder.Services.AddHttpClient<IPayPalClient, PayPalHttpClient>();
 builder.Services.AddHttpClient<IPayMongoClient, PayMongoHttpClient>();
+builder.Services.AddSingleton<DemoCheckoutStateStore>();
 builder.Services.AddScoped<ISubscriptionService, SubscriptionService>();
 
 var oidcIssuer = builder.Configuration["OpenIddict:Issuer"] ?? "http://localhost:5143";

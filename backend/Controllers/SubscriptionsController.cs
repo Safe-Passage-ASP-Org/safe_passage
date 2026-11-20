@@ -94,6 +94,58 @@ public sealed class SubscriptionsController(ISubscriptionService subscriptionSer
             : ToProblem(result.Failure, result.ErrorDetail);
     }
 
+    [HttpPost("demo/complete")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> CompleteDemoCheckout(
+        [FromBody] CompleteDemoCheckoutRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var result = await subscriptionService.CompleteDemoCheckoutAsync(
+            userId,
+            request.SessionId,
+            request.PaymentMethod,
+            request.Outcome,
+            cancellationToken);
+
+        return result.Failure == SubscriptionFailure.None
+            ? NoContent()
+            : ToProblem(result.Failure, result.ErrorDetail);
+    }
+
+    [HttpGet("history")]
+    [ProducesResponseType<IReadOnlyList<SubscriptionHistoryItemResponse>>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<IReadOnlyList<SubscriptionHistoryItemResponse>>> GetHistory(CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var history = await subscriptionService.GetBillingHistoryAsync(userId, cancellationToken);
+        return Ok(history);
+    }
+
+    [HttpPost("receipt/resend")]
+    [ProducesResponseType<ResendReceiptResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status502BadGateway)]
+    public async Task<ActionResult<ResendReceiptResponse>> ResendReceipt(
+        [FromQuery] string? subscriptionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        var result = await subscriptionService.ResendReceiptAsync(userId, subscriptionId, cancellationToken);
+        return result.Failure == SubscriptionFailure.None
+            ? Ok(result.Data)
+            : ToProblem(result.Failure, result.ErrorDetail);
+    }
+
     [AllowAnonymous]
     [HttpPost("webhook")]
     public async Task<IActionResult> Webhook(CancellationToken cancellationToken)

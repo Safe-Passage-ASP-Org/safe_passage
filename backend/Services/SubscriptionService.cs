@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SafePassage.Api.Contracts.Subscriptions;
 using SafePassage.Api.Data;
@@ -36,17 +37,33 @@ public interface ISubscriptionService
     Task<SubscriptionResult<bool>> AbandonPendingAsync(Guid userId, string subscriptionId, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<UserSubscriptionResponse>> CancelSubscriptionAsync(Guid userId, string? reason, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<bool>> ProcessWebhookAsync(string signatureHeader, string rawBody, CancellationToken cancellationToken = default);
+    Task<SubscriptionResult<bool>> CompleteDemoCheckoutAsync(Guid userId, string sessionId, string paymentMethod, string outcome, CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<SubscriptionHistoryItemResponse>> GetBillingHistoryAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<SubscriptionResult<ResendReceiptResponse>> ResendReceiptAsync(Guid userId, string? subscriptionId = null, CancellationToken cancellationToken = default);
 }
 
 public sealed class SubscriptionService(
     ApplicationDbContext dbContext,
     IPayMongoClient payMongoClient,
     IOptions<PayMongoOptions> optionsAccessor,
-    IConfiguration? configuration = null) : ISubscriptionService
+    IConfiguration? configuration = null,
+    IHostEnvironment? environment = null,
+    IActivationEmailSender? emailSender = null,
+    DemoCheckoutStateStore? demoStore = null) : ISubscriptionService
 {
+    private bool IsDemoModeActive(PayMongoOptions options) =>
+        !options.HasCredentials && (options.DemoMode || environment?.IsDevelopment() == true);
+
     public IReadOnlyList<SubscriptionPlanResponse> GetPlans()
     {
         var options = optionsAccessor.Value;
+        var isDevelopment = environment?.IsDevelopment() == true;
+        var mode = options.HasCredentials
+            ? "paymongo"
+            : IsDemoModeActive(options)
+                ? "demo"
+                : "unconfigured";
+
         return options.Plans
             .Select(kvp => new SubscriptionPlanResponse(
                 kvp.Key,
@@ -54,7 +71,8 @@ public sealed class SubscriptionService(
                 kvp.Value.Description,
                 kvp.Value.PriceDisplay,
                 kvp.Value.Interval,
-                options.HasCredentials && kvp.Value.AmountCentavos >= 2000))
+                options.IsConfigured(isDevelopment) && kvp.Value.AmountCentavos >= 2000,
+                mode))
             .ToList();
     }
 
@@ -95,8 +113,9 @@ public sealed class SubscriptionService(
         if (string.IsNullOrWhiteSpace(planCode) || !options.Plans.TryGetValue(planCode.Trim(), out var plan))
             return new(SubscriptionFailure.InvalidPlan, ErrorDetail: "The requested subscription plan does not exist.");
 
-        if (!options.HasCredentials || plan.AmountCentavos < 2000)
-            return new(SubscriptionFailure.PlanNotConfigured, ErrorDetail: "PayMongo Test Mode secret key is not configured on the server.");
+        var isDevelopment = environment?.IsDevelopment() == true;
+        if (!options.IsConfigured(isDevelopment) || plan.AmountCentavos < 2000)
+            return new(SubscriptionFailure.PlanNotConfigured, ErrorDetail: "Payment checkout is not configured on the server.");
 
         var normalizedPlanCode = options.Plans.Keys.First(k => string.Equals(k, planCode.Trim(), StringComparison.OrdinalIgnoreCase));
         var now = DateTimeOffset.UtcNow;
@@ -130,6 +149,41 @@ public sealed class SubscriptionService(
         {
             stale.Status = SubscriptionStatus.Expired;
             stale.UpdatedAt = now;
+        }
+
+        if (IsDemoModeActive(options))
+        {
+            var demoSessionId = $"cs_demo_{Guid.NewGuid():N}";
+            var planName = string.IsNullOrWhiteSpace(plan.Name) ? normalizedPlanCode : plan.Name;
+            var frontendBase = ResolveFrontendBaseUrl(options);
+            var demoUrl = $"{frontendBase}/subscription/demo-checkout"
+                + $"?sessionId={Uri.EscapeDataString(demoSessionId)}"
+                + $"&plan={Uri.EscapeDataString(normalizedPlanCode)}"
+                + $"&amount={Uri.EscapeDataString(plan.PriceDisplay)}"
+                + $"&name={Uri.EscapeDataString(planName)}";
+
+            var demoRecord = new UserSubscription
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                PayPalSubscriptionId = demoSessionId,
+                PayPalPlanId = $"demo:{normalizedPlanCode}",
+                PlanCode = normalizedPlanCode,
+                Status = SubscriptionStatus.ApprovalPending,
+                ApprovalUrl = demoUrl,
+                CreatedAt = now,
+                UpdatedAt = now
+            };
+
+            dbContext.UserSubscriptions.Add(demoRecord);
+            AddActivity(userId, "Subscription Checkout", $"Created Sandbox checkout session {demoSessionId} ({normalizedPlanCode})", ActivityLogStatus.Success);
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            return new(SubscriptionFailure.None, new CreateCheckoutResponse(
+                demoSessionId,
+                demoUrl,
+                normalizedPlanCode,
+                ReusedPending: false));
         }
 
         PayMongoCreateCheckoutResult created;
@@ -199,6 +253,45 @@ public sealed class SubscriptionService(
         if (record.UserId != userId)
             return new(SubscriptionFailure.OwnershipMismatch, ErrorDetail: "This subscription belongs to a different account.");
 
+        var now = DateTimeOffset.UtcNow;
+        var wasPending = record.Status == SubscriptionStatus.ApprovalPending;
+        if (normalizedId.StartsWith("cs_demo_", StringComparison.OrdinalIgnoreCase)
+            || record.PayPalPlanId.StartsWith("demo:", StringComparison.OrdinalIgnoreCase))
+        {
+            DemoCheckoutOutcome? demoOutcome = null;
+            var hasOutcome = demoStore?.TryGetOutcome(normalizedId, out demoOutcome) == true && demoOutcome is not null;
+
+            if (hasOutcome && string.Equals(demoOutcome!.Outcome, "paid", StringComparison.OrdinalIgnoreCase))
+            {
+                var periodStart = demoOutcome.RecordedAt;
+                var plan = optionsAccessor.Value.Plans.TryGetValue(record.PlanCode, out var opt) ? opt : null;
+                var isAnnual = string.Equals(plan?.Interval, "Year", StringComparison.OrdinalIgnoreCase);
+                record.Status = SubscriptionStatus.Active;
+                record.CurrentPeriodStart ??= periodStart;
+                record.CurrentPeriodEnd ??= isAnnual ? periodStart.AddYears(1) : periodStart.AddMonths(1);
+                record.ApprovalUrl = null;
+                record.UpdatedAt = now;
+                if (wasPending)
+                {
+                    AddActivity(userId, "Subscription Activated", $"Confirmed Sandbox payment {normalizedId} via {demoOutcome.PaymentMethod}", ActivityLogStatus.Success);
+                }
+                await dbContext.SaveChangesAsync(cancellationToken);
+
+                if (wasPending)
+                    await TrySendReceiptBestEffortAsync(record, demoOutcome.PaymentMethod, cancellationToken);
+            }
+            else if (hasOutcome && (string.Equals(demoOutcome!.Outcome, "cancelled", StringComparison.OrdinalIgnoreCase)
+                                    || string.Equals(demoOutcome.Outcome, "failed", StringComparison.OrdinalIgnoreCase)))
+            {
+                record.Status = SubscriptionStatus.Expired;
+                record.ApprovalUrl = null;
+                record.UpdatedAt = now;
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+
+            return new(SubscriptionFailure.None, ToResponse(record, now));
+        }
+
         PayMongoCheckoutSessionDetails details;
         try
         {
@@ -215,7 +308,6 @@ public sealed class SubscriptionService(
             return new(SubscriptionFailure.OwnershipMismatch, ErrorDetail: "Checkout session user mismatch.");
         }
 
-        var now = DateTimeOffset.UtcNow;
         if (details.IsPaid)
         {
             var periodStart = details.PaidAt ?? now;
@@ -235,6 +327,9 @@ public sealed class SubscriptionService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        if (wasPending && record.Status == SubscriptionStatus.Active)
+            await TrySendReceiptBestEffortAsync(record, "PayMongo", cancellationToken);
+
         return new(SubscriptionFailure.None, ToResponse(record, now));
     }
 
@@ -350,6 +445,220 @@ public sealed class SubscriptionService(
         }
 
         return new(SubscriptionFailure.None, true);
+    }
+
+    public async Task<SubscriptionResult<bool>> CompleteDemoCheckoutAsync(
+        Guid userId,
+        string sessionId,
+        string paymentMethod,
+        string outcome,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId))
+            return new(SubscriptionFailure.NotFound, ErrorDetail: "Sandbox session ID is required.");
+
+        var normalizedId = sessionId.Trim();
+        var record = await dbContext.UserSubscriptions
+            .FirstOrDefaultAsync(sub => sub.PayPalSubscriptionId == normalizedId, cancellationToken);
+
+        if (record is null)
+            return new(SubscriptionFailure.NotFound, ErrorDetail: "No matching sandbox checkout session was found.");
+
+        if (record.UserId != userId)
+            return new(SubscriptionFailure.OwnershipMismatch, ErrorDetail: "This checkout session belongs to a different account.");
+
+        if (!record.PayPalPlanId.StartsWith("demo:", StringComparison.OrdinalIgnoreCase))
+            return new(SubscriptionFailure.InvalidState, ErrorDetail: "This session is not a sandbox checkout session.");
+
+        if (record.Status != SubscriptionStatus.ApprovalPending)
+            return new(SubscriptionFailure.InvalidState, ErrorDetail: "This sandbox checkout session is no longer pending.");
+
+        var normalizedOutcome = outcome?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (normalizedOutcome is not ("paid" or "failed" or "cancelled"))
+            return new(SubscriptionFailure.InvalidState, ErrorDetail: "Invalid sandbox checkout outcome.");
+
+        var method = string.IsNullOrWhiteSpace(paymentMethod) ? "Demo Card •••• 4242" : paymentMethod.Trim();
+        var now = DateTimeOffset.UtcNow;
+
+        demoStore?.SetOutcome(userId, normalizedId, normalizedOutcome, method, now);
+
+        if (normalizedOutcome is "cancelled" or "failed")
+        {
+            record.Status = SubscriptionStatus.Expired;
+            record.ApprovalUrl = null;
+            record.UpdatedAt = now;
+            AddActivity(userId, "Subscription Checkout", $"Sandbox checkout {normalizedId} {normalizedOutcome} ({method})", ActivityLogStatus.Failed);
+        }
+        else
+        {
+            AddActivity(userId, "Subscription Checkout", $"Sandbox payment approved for {normalizedId} via {method}", ActivityLogStatus.Success);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return new(SubscriptionFailure.None, true);
+    }
+
+    public async Task<IReadOnlyList<SubscriptionHistoryItemResponse>> GetBillingHistoryAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var subscriptions = await dbContext.UserSubscriptions
+            .Where(sub => sub.UserId == userId)
+            .ToListAsync(cancellationToken);
+
+        var plans = optionsAccessor.Value.Plans;
+        return subscriptions
+            .OrderByDescending(sub => sub.CreatedAt)
+            .Take(25)
+            .Select(sub =>
+            {
+                plans.TryGetValue(sub.PlanCode, out var planOption);
+                var paymentMode = sub.PayPalPlanId.StartsWith("demo:", StringComparison.OrdinalIgnoreCase)
+                    ? "Sandbox Simulator"
+                    : "PayMongo";
+                return new SubscriptionHistoryItemResponse(
+                    sub.PayPalSubscriptionId,
+                    sub.PlanCode,
+                    planOption?.Name ?? sub.PlanCode,
+                    sub.Status.ToString(),
+                    planOption?.PriceDisplay ?? "-",
+                    paymentMode,
+                    sub.CreatedAt,
+                    sub.CurrentPeriodStart,
+                    sub.CurrentPeriodEnd,
+                    sub.CancelledAt);
+            })
+            .ToList();
+    }
+
+    public async Task<SubscriptionResult<ResendReceiptResponse>> ResendReceiptAsync(
+        Guid userId,
+        string? subscriptionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (emailSender is null)
+            return new(SubscriptionFailure.ProviderError, ErrorDetail: "Email delivery is not configured on the server.");
+
+        var subscriptions = await dbContext.UserSubscriptions
+            .Where(sub => sub.UserId == userId)
+            .ToListAsync(cancellationToken);
+
+        UserSubscription? target = null;
+        if (!string.IsNullOrWhiteSpace(subscriptionId))
+        {
+            var normalizedId = subscriptionId.Trim();
+            target = subscriptions.FirstOrDefault(sub => sub.PayPalSubscriptionId == normalizedId);
+            if (target is null)
+                return new(SubscriptionFailure.NotFound, ErrorDetail: "No matching subscription record was found.");
+        }
+        else
+        {
+            target = subscriptions
+                .Where(sub => (sub.Status == SubscriptionStatus.Active || sub.Status == SubscriptionStatus.Cancelled)
+                              && sub.CurrentPeriodStart.HasValue)
+                .OrderByDescending(sub => sub.UpdatedAt)
+                .FirstOrDefault();
+            if (target is null)
+                return new(SubscriptionFailure.NotFound, ErrorDetail: "No paid subscription was found to send a receipt for.");
+        }
+
+        var paymentMode = target.PayPalPlanId.StartsWith("demo:", StringComparison.OrdinalIgnoreCase)
+            ? "Sandbox Simulator"
+            : "PayMongo";
+
+        try
+        {
+            var sent = await SendReceiptAsync(target, paymentMode, cancellationToken);
+            if (!sent)
+                return new(SubscriptionFailure.UserUnavailable, ErrorDetail: "No verified email address was found for your account.");
+
+            return new(SubscriptionFailure.None, new ResendReceiptResponse(true, $"Receipt email sent for {target.PayPalSubscriptionId}."));
+        }
+        catch (EmailDeliveryException ex)
+        {
+            return new(SubscriptionFailure.ProviderError, ErrorDetail: ex.Message);
+        }
+    }
+
+    private async Task TrySendReceiptBestEffortAsync(
+        UserSubscription record,
+        string paymentMethod,
+        CancellationToken cancellationToken)
+    {
+        if (emailSender is null)
+            return;
+
+        try
+        {
+            await SendReceiptAsync(record, paymentMethod, cancellationToken);
+        }
+        catch (Exception)
+        {
+            // Receipt delivery is best-effort and must never block subscription activation.
+        }
+    }
+
+    private async Task<bool> SendReceiptAsync(
+        UserSubscription record,
+        string paymentMethod,
+        CancellationToken cancellationToken)
+    {
+        if (emailSender is null)
+            return false;
+
+        var user = await dbContext.Users
+            .FirstOrDefaultAsync(u => u.Id == record.UserId, cancellationToken);
+        if (user is null || string.IsNullOrWhiteSpace(user.Email))
+            return false;
+
+        var options = optionsAccessor.Value;
+        options.Plans.TryGetValue(record.PlanCode, out var planOption);
+        var planName = planOption?.Name ?? record.PlanCode;
+        var amountDisplay = planOption?.PriceDisplay ?? "-";
+        var periodStart = record.CurrentPeriodStart ?? DateTimeOffset.UtcNow;
+        var periodEnd = record.CurrentPeriodEnd ?? periodStart.AddMonths(1);
+        var portalUrl = $"{ResolveFrontendBaseUrl(options)}/subscription";
+
+        await emailSender.SendSubscriptionReceiptAsync(
+            new SubscriptionReceiptEmail(
+                user.Email,
+                user.Username,
+                record.PayPalSubscriptionId,
+                planName,
+                amountDisplay,
+                paymentMethod,
+                periodStart,
+                periodEnd,
+                record.UpdatedAt,
+                portalUrl),
+            cancellationToken);
+
+        return true;
+    }
+
+    private string ResolveFrontendBaseUrl(PayMongoOptions options)
+    {
+        var configuredFrontend = configuration?["Frontend:BaseUrl"];
+        if (string.IsNullOrWhiteSpace(configuredFrontend))
+        {
+            var loginUrl = configuration?["OpenIddict:LoginUrl"];
+            if (Uri.TryCreate(loginUrl, UriKind.Absolute, out var loginUri)
+                && !loginUri.IsLoopback)
+            {
+                configuredFrontend = loginUri.GetLeftPart(UriPartial.Authority);
+            }
+        }
+
+        if (!string.IsNullOrWhiteSpace(configuredFrontend)
+            && Uri.TryCreate(configuredFrontend.TrimEnd('/'), UriKind.Absolute, out var frontendUri))
+        {
+            return frontendUri.ToString().TrimEnd('/');
+        }
+
+        if (Uri.TryCreate(options.SuccessUrl, UriKind.Absolute, out var successUri))
+            return successUri.GetLeftPart(UriPartial.Authority);
+
+        return "http://localhost:5092";
     }
 
     private (string SuccessUrl, string CancelUrl) ResolveCallbackUrls(PayMongoOptions options)

@@ -450,6 +450,43 @@ public sealed class AdminApiClient(HttpClient http)
             ?? throw new InvalidOperationException("The API returned an empty cancellation response.");
     }
 
+    public async Task CompleteDemoCheckoutAsync(
+        string sessionId,
+        string paymentMethod,
+        string outcome,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync(
+            "api/subscriptions/demo/complete",
+            new { sessionId, paymentMethod, outcome },
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Sandbox checkout failed ({(int)response.StatusCode}).");
+        }
+    }
+
+    public async Task<List<SubscriptionHistoryItemDto>> GetSubscriptionHistoryAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<SubscriptionHistoryItemDto>>("api/subscriptions/history", cancellationToken) ?? [];
+
+    public async Task<ResendReceiptDto> ResendSubscriptionReceiptAsync(
+        string? subscriptionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var url = string.IsNullOrWhiteSpace(subscriptionId)
+            ? "api/subscriptions/receipt/resend"
+            : $"api/subscriptions/receipt/resend?subscriptionId={Uri.EscapeDataString(subscriptionId)}";
+        using var response = await http.PostAsync(url, null, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Resend receipt failed ({(int)response.StatusCode}).");
+        }
+        return await response.Content.ReadFromJsonAsync<ResendReceiptDto>(cancellationToken: cancellationToken)
+            ?? new ResendReceiptDto(true, "Receipt email sent.");
+    }
+
     private void SetToken(string? token)
     {
         AccessToken = token;
@@ -563,7 +600,24 @@ public sealed record SubscriptionPlanDto(
     string Description,
     string PriceDisplay,
     string Interval,
-    bool IsConfigured);
+    bool IsConfigured,
+    string Mode = "paymongo");
+
+public sealed record SubscriptionHistoryItemDto(
+    string SubscriptionId,
+    string PlanCode,
+    string PlanName,
+    string Status,
+    string PriceDisplay,
+    string PaymentMode,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? CurrentPeriodStart,
+    DateTimeOffset? CurrentPeriodEnd,
+    DateTimeOffset? CancelledAt);
+
+public sealed record ResendReceiptDto(
+    bool Sent,
+    string Message);
 
 public sealed record UserSubscriptionDto(
     bool HasActiveEntitlement,

@@ -4,6 +4,18 @@ using Microsoft.Extensions.Options;
 
 namespace SafePassage.Api.Services;
 
+public sealed record SubscriptionReceiptEmail(
+    string RecipientEmail,
+    string Username,
+    string ReferenceId,
+    string PlanName,
+    string AmountDisplay,
+    string PaymentMethod,
+    DateTimeOffset PeriodStart,
+    DateTimeOffset PeriodEnd,
+    DateTimeOffset PaidAt,
+    string PortalUrl);
+
 public interface IActivationEmailSender
 {
     Task SendActivationEmailAsync(
@@ -17,6 +29,9 @@ public interface IActivationEmailSender
         string username,
         string loginUrl,
         int tokenLifetimeMinutes,
+        CancellationToken cancellationToken);
+    Task SendSubscriptionReceiptAsync(
+        SubscriptionReceiptEmail receipt,
         CancellationToken cancellationToken);
 }
 
@@ -130,4 +145,52 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
         catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the admin sign-in email.", exception); }
         catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
     }
+
+    public async Task SendSubscriptionReceiptAsync(
+        SubscriptionReceiptEmail receipt,
+        CancellationToken cancellationToken)
+    {
+        var settings = options.Value;
+        if (string.IsNullOrWhiteSpace(settings.Host)
+            || settings.Port is < 1 or > 65535
+            || string.IsNullOrWhiteSpace(settings.FromAddress))
+            throw new EmailDeliveryException("SMTP is not configured to send subscription receipt emails.");
+
+        try
+        {
+            using var message = new MailMessage
+            {
+                From = string.IsNullOrWhiteSpace(settings.FromName)
+                    ? new MailAddress(settings.FromAddress)
+                    : new MailAddress(settings.FromAddress, settings.FromName),
+                Subject = $"Safe Passage Subscription Receipt ({receipt.ReferenceId})",
+                Body = FormatReceiptBody(receipt),
+                IsBodyHtml = false
+            };
+            message.To.Add(new MailAddress(receipt.RecipientEmail));
+            using var client = new SmtpClient(settings.Host, settings.Port)
+            {
+                EnableSsl = settings.EnableSsl,
+                Timeout = 15000
+            };
+            if (!string.IsNullOrWhiteSpace(settings.Username))
+                client.Credentials = new NetworkCredential(settings.Username, settings.Password);
+            await client.SendMailAsync(message, cancellationToken);
+        }
+        catch (SmtpException exception) { throw new EmailDeliveryException("The SMTP server could not deliver the subscription receipt email.", exception); }
+        catch (FormatException exception) { throw new EmailDeliveryException("The subscription receipt email address is invalid.", exception); }
+        catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the subscription receipt email.", exception); }
+        catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
+    }
+
+    internal static string FormatReceiptBody(SubscriptionReceiptEmail receipt) =>
+        $"Hello {receipt.Username},\n\n"
+        + "Thank you for your Safe Passage subscription payment. Here is your receipt summary:\n\n"
+        + $"Receipt / Reference ID: {receipt.ReferenceId}\n"
+        + $"Plan: {receipt.PlanName}\n"
+        + $"Billing Period: {receipt.PeriodStart:MMM dd, yyyy} - {receipt.PeriodEnd:MMM dd, yyyy}\n"
+        + $"Amount: {receipt.AmountDisplay}\n"
+        + $"Payment Method: {receipt.PaymentMethod}\n"
+        + $"Paid At (UTC): {receipt.PaidAt:yyyy-MM-dd HH:mm:ss} UTC\n\n"
+        + $"Manage your subscription and billing history in the Safe Passage Portal:\n{receipt.PortalUrl}\n";
 }
