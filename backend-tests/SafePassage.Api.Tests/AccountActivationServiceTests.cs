@@ -231,5 +231,9 @@ public sealed class AccountActivationServiceTests
             string loginUrl,
             int tokenLifetimeMinutes,
             CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task SendSubscriptionReceiptAsync(
+            SubscriptionReceiptEmail receipt,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

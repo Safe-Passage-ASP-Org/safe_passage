@@ -10,9 +10,11 @@ public sealed class PayMongoOptions
     public string SuccessUrl { get; set; } = "http://localhost:5092/subscription/paymongo-callback?status=success";
     public string CancelUrl { get; set; } = "http://localhost:5092/subscription/paymongo-callback?status=cancel";
     public int PendingCheckoutTtlMinutes { get; set; } = 30;
+    public bool DemoMode { get; set; }
     public Dictionary<string, PayMongoPlanOption> Plans { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 
     public bool HasCredentials => !string.IsNullOrWhiteSpace(SecretKey);
+    public bool IsConfigured(bool isDevelopment) => HasCredentials || DemoMode || isDevelopment;
 }
 
 public sealed class PayMongoPlanOption

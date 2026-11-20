@@ -74,6 +74,30 @@ public sealed class HttpApiActivationEmailSender(
             email, username, loginUrl, tokenLifetimeMinutes, cancellationToken);
     }
 
+    public async Task SendSubscriptionReceiptAsync(
+        SubscriptionReceiptEmail receipt,
+        CancellationToken cancellationToken)
+    {
+        var subject = $"Safe Passage Subscription Receipt ({receipt.ReferenceId})";
+        var body = SmtpEmailSender.FormatReceiptBody(receipt);
+
+        var brevoApiKey = configuration["Brevo:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(brevoApiKey))
+        {
+            await SendViaBrevoAsync(brevoApiKey, receipt.RecipientEmail, receipt.Username, subject, body, cancellationToken);
+            return;
+        }
+
+        var resendApiKey = configuration["Resend:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(resendApiKey))
+        {
+            await SendViaResendAsync(resendApiKey, receipt.RecipientEmail, subject, body, cancellationToken);
+            return;
+        }
+
+        await new SmtpEmailSender(smtpOptions).SendSubscriptionReceiptAsync(receipt, cancellationToken);
+    }
+
     private async Task SendViaBrevoAsync(
         string apiKey,
         string recipientEmail,

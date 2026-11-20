@@ -22,31 +22,55 @@ public sealed class AdminApiClient(HttpClient http)
 
     public async Task<LoginResult> LoginAsync(string username, string password, CancellationToken cancellationToken = default)
     {
-        using var response = await http.PostAsJsonAsync("api/auth/login", new { username, password, webUserPortal = true }, cancellationToken);
-        if (!response.IsSuccessStatusCode)
+        HttpResponseMessage response;
+        try
         {
-            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
-            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Sign in failed. Check your credentials and try again.");
+            response = await http.PostAsJsonAsync("api/auth/login", new { username, password, webUserPortal = true }, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            throw new InvalidOperationException("Connecting to the server failed or timed out while waking up. Please wait a few seconds and try again.", ex);
         }
 
-        var body = await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken);
-        if (body is null)
-            throw new InvalidOperationException("The API returned an empty sign-in response.");
+        using (response)
+        {
+            if (!response.IsSuccessStatusCode)
+            {
+                var problem = await ReadProblemSafeAsync(response, cancellationToken);
+                throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Sign in failed. Check your credentials and try again.");
+            }
 
-        CurrentUsername = username;
+            var body = await ReadJsonSafeAsync<LoginResponse>(response, cancellationToken);
+            if (body is null)
+                throw new InvalidOperationException("The API returned an empty sign-in response.");
 
-        if (!body.MfaRequired && !string.IsNullOrWhiteSpace(body.AccessToken))
-            SetToken(body.AccessToken);
+            CurrentUsername = username;
 
-        return new(body.MfaRequired, body.SessionToken, body.Message ?? "Sign-in request submitted.");
+            if (!body.MfaRequired && !string.IsNullOrWhiteSpace(body.AccessToken))
+                SetToken(body.AccessToken);
+
+            return new(body.MfaRequired, body.SessionToken, body.Message ?? "Sign-in request submitted.");
+        }
     }
 
     public async Task RequestAdminEmailLinkAsync(string email, CancellationToken cancellationToken = default)
     {
-        using var response = await http.PostAsJsonAsync("api/auth/admin-login/request-link", new { email }, cancellationToken);
-        if (response.IsSuccessStatusCode) return;
-        var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
-        throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Could not request an admin sign-in link.");
+        HttpResponseMessage response;
+        try
+        {
+            response = await http.PostAsJsonAsync("api/auth/admin-login/request-link", new { email }, cancellationToken);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            throw new InvalidOperationException("Connecting to the server failed or timed out while waking up. Please wait a few seconds and try again.", ex);
+        }
+
+        using (response)
+        {
+            if (response.IsSuccessStatusCode) return;
+            var problem = await ReadProblemSafeAsync(response, cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Could not request an admin sign-in link.");
+        }
     }
 
     public async Task<LoginResult> CompleteAdminEmailLinkAsync(string token, CancellationToken cancellationToken = default)
@@ -55,10 +79,10 @@ public sealed class AdminApiClient(HttpClient http)
             "api/auth/admin-login/complete-link", new { token }, cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
-            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            var problem = await ReadProblemSafeAsync(response, cancellationToken);
             throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "This admin sign-in link is invalid or has expired. Request a new link.");
         }
-        var body = await response.Content.ReadFromJsonAsync<LoginResponse>(cancellationToken: cancellationToken);
+        var body = await ReadJsonSafeAsync<LoginResponse>(response, cancellationToken);
         if (body is null || !body.MfaRequired || string.IsNullOrWhiteSpace(body.SessionToken))
             throw new InvalidOperationException("Admin sign-in requires mobile approval. Request a new email link and try again.");
         return new(body.MfaRequired, body.SessionToken, body.Message ?? "Email verified. Approve this sign-in on your trusted mobile device.");
@@ -71,7 +95,7 @@ public sealed class AdminApiClient(HttpClient http)
             var settings = await http.GetFromJsonAsync<FacebookSignInSettings>("api/auth/facebook/enabled", cancellationToken);
             return settings?.Enabled == true;
         }
-        catch (HttpRequestException) { return false; }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException) { return false; }
     }
 
     public async Task<bool> IsGitHubSignInEnabledAsync(CancellationToken cancellationToken = default)
@@ -81,7 +105,7 @@ public sealed class AdminApiClient(HttpClient http)
             var settings = await http.GetFromJsonAsync<FacebookSignInSettings>("api/auth/github/enabled", cancellationToken);
             return settings?.Enabled == true;
         }
-        catch (HttpRequestException) { return false; }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException) { return false; }
     }
 
     public async Task<bool> IsGitLabSignInEnabledAsync(CancellationToken cancellationToken = default)
@@ -91,7 +115,49 @@ public sealed class AdminApiClient(HttpClient http)
             var settings = await http.GetFromJsonAsync<FacebookSignInSettings>("api/auth/gitlab/enabled", cancellationToken);
             return settings?.Enabled == true;
         }
-        catch (HttpRequestException) { return false; }
+        catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException) { return false; }
+    }
+
+    private static readonly JsonSerializerOptions SafeJsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static async Task<ApiProblem?> ReadProblemSafeAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(raw))
+            return null;
+
+        var trimmed = raw.TrimStart();
+        if (trimmed.StartsWith('<'))
+            throw new InvalidOperationException($"The server is waking up or temporarily unavailable (HTTP {(int)response.StatusCode}). Please wait a few seconds and try again.");
+
+        try
+        {
+            return JsonSerializer.Deserialize<ApiProblem>(raw, SafeJsonOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task<T?> ReadJsonSafeAsync<T>(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        var raw = await response.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(raw))
+            return default;
+
+        var trimmed = raw.TrimStart();
+        if (trimmed.StartsWith('<'))
+            throw new InvalidOperationException($"The server is waking up or returned an unexpected page (HTTP {(int)response.StatusCode}). Please wait a few seconds and try again.");
+
+        try
+        {
+            return JsonSerializer.Deserialize<T>(raw, SafeJsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException($"The server returned an unreadable response (HTTP {(int)response.StatusCode}). Please wait a moment and try again.", ex);
+        }
     }
 
     public async Task<LoginResult> ExchangeFacebookLoginAsync(string ticket, CancellationToken cancellationToken = default)
@@ -450,6 +516,43 @@ public sealed class AdminApiClient(HttpClient http)
             ?? throw new InvalidOperationException("The API returned an empty cancellation response.");
     }
 
+    public async Task CompleteDemoCheckoutAsync(
+        string sessionId,
+        string paymentMethod,
+        string outcome,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync(
+            "api/subscriptions/demo/complete",
+            new { sessionId, paymentMethod, outcome },
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Sandbox checkout failed ({(int)response.StatusCode}).");
+        }
+    }
+
+    public async Task<List<SubscriptionHistoryItemDto>> GetSubscriptionHistoryAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<SubscriptionHistoryItemDto>>("api/subscriptions/history", cancellationToken) ?? [];
+
+    public async Task<ResendReceiptDto> ResendSubscriptionReceiptAsync(
+        string? subscriptionId = null,
+        CancellationToken cancellationToken = default)
+    {
+        var url = string.IsNullOrWhiteSpace(subscriptionId)
+            ? "api/subscriptions/receipt/resend"
+            : $"api/subscriptions/receipt/resend?subscriptionId={Uri.EscapeDataString(subscriptionId)}";
+        using var response = await http.PostAsync(url, null, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Resend receipt failed ({(int)response.StatusCode}).");
+        }
+        return await response.Content.ReadFromJsonAsync<ResendReceiptDto>(cancellationToken: cancellationToken)
+            ?? new ResendReceiptDto(true, "Receipt email sent.");
+    }
+
     private void SetToken(string? token)
     {
         AccessToken = token;
@@ -563,7 +666,24 @@ public sealed record SubscriptionPlanDto(
     string Description,
     string PriceDisplay,
     string Interval,
-    bool IsConfigured);
+    bool IsConfigured,
+    string Mode = "paymongo");
+
+public sealed record SubscriptionHistoryItemDto(
+    string SubscriptionId,
+    string PlanCode,
+    string PlanName,
+    string Status,
+    string PriceDisplay,
+    string PaymentMode,
+    DateTimeOffset CreatedAt,
+    DateTimeOffset? CurrentPeriodStart,
+    DateTimeOffset? CurrentPeriodEnd,
+    DateTimeOffset? CancelledAt);
+
+public sealed record ResendReceiptDto(
+    bool Sent,
+    string Message);
 
 public sealed record UserSubscriptionDto(
     bool HasActiveEntitlement,

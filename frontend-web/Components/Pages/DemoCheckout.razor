@@ -1,0 +1,162 @@
+@page "/subscription/demo-checkout"
+@layout SafePassage.Web.Components.Layout.AuthLayout
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
+@inject NavigationManager Navigation
+
+<PageTitle>Sandbox Checkout – Safe Passage</PageTitle>
+
+<div class="auth-card" style="max-width:480px;margin:32px auto;padding:28px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:16px;">
+        <div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:.7px;text-transform:uppercase;color:#087f75;">Safe Passage</div>
+            <h1 style="font-size:20px;font-weight:700;color:#0f172a;margin:2px 0 0;">Sandbox Payment Gateway</h1>
+        </div>
+        <span style="padding:4px 10px;border-radius:12px;font-size:11px;font-weight:700;background:#fef9c3;color:#854d0e;text-transform:uppercase;">
+            Sandbox / Demo Mode
+        </span>
+    </div>
+
+    <div style="padding:14px 16px;border:1px solid #e2e8f0;border-radius:8px;background:#f8fafc;margin-bottom:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;">
+            <span style="font-size:14px;font-weight:600;color:#1e293b;">@(string.IsNullOrWhiteSpace(PlanName) ? "Safe Passage Pro" : PlanName)</span>
+            <span style="font-size:15px;font-weight:700;color:#087f75;">@(string.IsNullOrWhiteSpace(Amount) ? "PHP 299 / month" : Amount)</span>
+        </div>
+        @if (!string.IsNullOrWhiteSpace(SessionId))
+        {
+            <div style="font-size:11px;color:#64748b;margin-top:4px;">Session: <code>@SessionId</code></div>
+        }
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(ErrorMessage))
+    {
+        <div class="alert alert-danger" role="alert" style="font-size:13px;">@ErrorMessage</div>
+    }
+
+    @if (string.IsNullOrWhiteSpace(SessionId))
+    {
+        <div class="alert alert-warning" style="font-size:13px;">
+            Missing sandbox checkout session ID. Please return to the Subscription page and start checkout again.
+        </div>
+        <a href="/subscription" class="btn btn-primary w-100">Return to Subscription</a>
+    }
+    else
+    {
+        <div style="font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#64748b;margin-bottom:10px;">
+            Select Payment Method
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:18px;">
+            @foreach (var method in PaymentMethods)
+            {
+                var selected = SelectedMethodKey == method.Key;
+                <label style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 14px;border:1px solid @(selected ? "#087f75" : "#e2e8f0");border-radius:8px;background:@(selected ? "#f0fdfa" : "#fff");cursor:pointer;">
+                    <span style="display:flex;align-items:center;gap:10px;">
+                        <input type="radio" name="paymentMethod" value="@method.Key" checked="@selected"
+                               @onchange="() => SelectMethod(method.Key)" />
+                        <span>
+                            <strong style="display:block;font-size:13px;color:#0f172a;">@method.Title</strong>
+                            <span style="font-size:12px;color:#64748b;">@method.Subtitle</span>
+                        </span>
+                    </span>
+                </label>
+            }
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;">
+            <button type="button" class="btn btn-primary w-100" disabled="@Busy" @onclick="ApprovePaymentAsync">
+                @(Busy ? "Processing Sandbox Payment..." : "Approve & Pay")
+            </button>
+            <button type="button" class="btn btn-outline-warning w-100" disabled="@Busy" @onclick="SimulateDecline">
+                Simulate Declined Payment
+            </button>
+            <button type="button" class="btn btn-outline-secondary w-100" disabled="@Busy" @onclick="CancelPaymentAsync">
+                Cancel &amp; Return
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "sessionId")]
+    public string? SessionId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "plan")]
+    public string? PlanCode { get; set; }
+
+    [SupplyParameterFromQuery(Name = "amount")]
+    public string? Amount { get; set; }
+
+    [SupplyParameterFromQuery(Name = "name")]
+    public string? PlanName { get; set; }
+
+    private string SelectedMethodKey { get; set; } = "card";
+    private bool Busy { get; set; }
+    private string? ErrorMessage { get; set; }
+
+    private static readonly (string Key, string Title, string Subtitle, string Label)[] PaymentMethods =
+    [
+        ("card", "Credit / Debit Card", "Test Card 4242 •••• •••• 4242 (Exp 12/28, CVC 123)", "Demo Card •••• 4242"),
+        ("gcash", "GCash (Sandbox Wallet)", "+63 917 ••• 4242", "GCash (Sandbox)"),
+        ("maya", "Maya (Sandbox Wallet)", "+63 918 ••• 4242", "Maya (Sandbox)"),
+        ("grabpay", "GrabPay (Sandbox Wallet)", "GrabPay Test Account", "GrabPay (Sandbox)")
+    ];
+
+    private void SelectMethod(string key)
+    {
+        SelectedMethodKey = key;
+        ErrorMessage = null;
+    }
+
+    private string SelectedMethodLabel =>
+        PaymentMethods.FirstOrDefault(m => m.Key == SelectedMethodKey).Label ?? "Demo Card •••• 4242";
+
+    private async Task ApprovePaymentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SessionId))
+            return;
+
+        Busy = true;
+        ErrorMessage = null;
+        try
+        {
+            await Api.CompleteDemoCheckoutAsync(SessionId, SelectedMethodLabel, "paid");
+            Navigation.NavigateTo($"/subscription/paymongo-callback?status=success&subscription_id={Uri.EscapeDataString(SessionId)}");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+
+    private void SimulateDecline()
+    {
+        ErrorMessage = $"Payment declined by sandbox issuer for {SelectedMethodLabel}. Choose another method or click Approve & Pay to complete.";
+    }
+
+    private async Task CancelPaymentAsync()
+    {
+        if (string.IsNullOrWhiteSpace(SessionId))
+            return;
+
+        Busy = true;
+        ErrorMessage = null;
+        try
+        {
+            await Api.CompleteDemoCheckoutAsync(SessionId, SelectedMethodLabel, "cancelled");
+            Navigation.NavigateTo($"/subscription/paymongo-callback?status=cancel&subscription_id={Uri.EscapeDataString(SessionId)}");
+        }
+        catch (Exception ex)
+        {
+            ErrorMessage = ex.Message;
+        }
+        finally
+        {
+            Busy = false;
+        }
+    }
+}
