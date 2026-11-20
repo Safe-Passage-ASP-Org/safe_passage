@@ -487,7 +487,7 @@ public sealed class SubscriptionService(
             record.Status = SubscriptionStatus.Expired;
             record.ApprovalUrl = null;
             record.UpdatedAt = now;
-            AddActivity(userId, "Subscription Checkout", $"Sandbox checkout {normalizedId} {normalizedOutcome} ({method})", ActivityLogStatus.Failed);
+            AddActivity(userId, "Subscription Checkout", $"Sandbox checkout {normalizedId} {normalizedOutcome} ({method})", ActivityLogStatus.Denied);
         }
         else
         {
