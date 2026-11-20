@@ -15,21 +15,33 @@ export default function MfaApprovalScreen({ route, navigation }) {
   const [approving, setApproving] = useState(false);
   const [denying,   setDenying]   = useState(false);
   const [approved,  setApproved]  = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
 
   const details = route.params?.details ?? {};
+
+  const returnToDashboard = () => {
+    if (navigation.canGoBack()) {
+      navigation.goBack();
+    } else {
+      navigation.navigate('Main', { screen: 'Dashboard' });
+    }
+  };
 
   // ── Approve: Direct one-tap verification ──────────────────────────────────
   const handleApprove = async () => {
     setApproving(true);
+    setErrorMessage('');
     try {
       await submitMfaDecision(details.requestId, details.deviceId, 'APPROVE');
 
       // Show success screen for 1.5 seconds then go back
       setApproved(true);
       await new Promise((r) => setTimeout(r, 1500));
-      navigation.goBack();
+      returnToDashboard();
     } catch (err) {
-      Alert.alert('Error', 'Could not send approval. Please try again.');
+      const msg = err?.message || 'Could not send approval. Please try again.';
+      setErrorMessage(msg);
+      Alert.alert('Approval Failed', msg);
     } finally {
       setApproving(false);
     }
@@ -38,13 +50,14 @@ export default function MfaApprovalScreen({ route, navigation }) {
   // ── Deny ─────────────────────────────────────────────────────────────────
   const handleDeny = async () => {
     setDenying(true);
+    setErrorMessage('');
     try {
       await submitMfaDecision(details.requestId, details.deviceId, 'DENY');
     } catch (_) {
       // Best-effort; still dismiss
     } finally {
       setDenying(false);
-      navigation.goBack();
+      returnToDashboard();
     }
   };
 
@@ -84,6 +97,15 @@ export default function MfaApprovalScreen({ route, navigation }) {
           <DetailRow icon="desktop"   label="Operating System"  value={details.os ?? 'Not provided'} />
           <DetailRow icon="time"      label="Time"              value={details.time ?? 'Not provided'} last />
         </View>
+
+        {errorMessage ? (
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{errorMessage}</Text>
+            <TouchableOpacity style={styles.dismissButton} onPress={returnToDashboard}>
+              <Text style={styles.dismissButtonText}>Dismiss &amp; Return to Dashboard</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
 
         {/* ── Action Buttons ────────────────────────────────────── */}
         <View style={styles.actions}>
@@ -222,4 +244,22 @@ const styles = StyleSheet.create({
   buttonDisabled: { opacity: 0.6 },
   btnIcon:        { marginRight: 10 },
   buttonText:     { color: '#ffffff', fontSize: 20, fontWeight: 'bold' },
+  errorBox: {
+    backgroundColor: '#7f1d1d40',
+    borderWidth: 1,
+    borderColor: '#ef4444',
+    borderRadius: 12,
+    padding: 14,
+    marginBottom: 16,
+    gap: 10,
+  },
+  errorText: { color: '#fca5a5', fontSize: 14, textAlign: 'center' },
+  dismissButton: {
+    backgroundColor: '#334155',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  dismissButtonText: { color: '#f8fafc', fontSize: 14, fontWeight: '600' },
 });

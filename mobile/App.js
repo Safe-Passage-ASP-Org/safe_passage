@@ -70,7 +70,12 @@ export default function App() {
   useEffect(() => {
     let active = true;
     setMfaRequestHandler((details) => {
-      if (navigationRef.isReady()) navigationRef.navigate('MfaApproval', { details });
+      if (!navigationRef.isReady()) return;
+      const currentRoute = navigationRef.getCurrentRoute();
+      if (currentRoute?.name === 'MfaApproval' && currentRoute?.params?.details?.requestId === details?.requestId) {
+        return;
+      }
+      navigationRef.navigate('MfaApproval', { details });
     });
     (async () => {
       const token = await getToken();
