@@ -475,6 +475,105 @@ public sealed class AuthController(
 
     public sealed record AdminLoginLinkRequest(string? Email);
     public sealed record AdminLoginLinkCompletionRequest(string Token);
+    public sealed record AdminLoginOtpVerificationRequest(string Email, string Code);
+    public sealed record MfaOtpSendRequest(string SessionToken);
+    public sealed record MfaOtpVerifyRequest(string SessionToken, string Code);
+
+    /// <summary>Sends a 6-digit one-time verification code to an active, verified administrator.</summary>
+    [HttpPost("admin-login/send-otp")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> SendAdminLoginOtp(
+        [FromBody] AdminLoginLinkRequest request,
+        CancellationToken cancellationToken)
+    {
+        var ipKey = "admin-email-login-ip:" + (HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
+        cache.TryGetValue(ipKey, out int requestCount);
+        if (requestCount >= 10)
+            return Problem(statusCode: StatusCodes.Status429TooManyRequests, title: "Too many requests", detail: "Please wait before requesting another verification code.");
+        cache.Set(ipKey, requestCount + 1, TimeSpan.FromHours(1));
+
+        var email = request.Email?.Trim();
+        if (!string.IsNullOrWhiteSpace(email) && email.Length <= 320 && email.Contains('@'))
+        {
+            var emailKey = "admin-email-otp-throttle:" + Convert.ToHexString(
+                SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(email.ToUpperInvariant())));
+            if (!cache.TryGetValue(emailKey, out _))
+            {
+                cache.Set(emailKey, true, TimeSpan.FromSeconds(30));
+                try
+                {
+                    await adminEmailLoginService.RequestOtpAsync(email, cancellationToken);
+                }
+                catch (Exception exception) when (exception is EmailDeliveryException or InvalidOperationException)
+                {
+                    logger.LogError(exception, "Could not deliver an administrator OTP email.");
+                }
+            }
+        }
+
+        return Accepted(new { message = "If this address belongs to an active administrator, a 6-digit verification code will be sent." });
+    }
+
+    /// <summary>Verifies an administrator's 6-digit email OTP and starts mandatory trusted-device approval.</summary>
+    [HttpPost("admin-login/verify-otp")]
+    [AllowAnonymous]
+    [ProducesResponseType<LoginResponse>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<LoginResponse>> VerifyAdminLoginOtp(
+        [FromBody] AdminLoginOtpVerificationRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await adminEmailLoginService.CompleteOtpAsync(request.Email, request.Code, cancellationToken);
+        if (result.Failure != AuthFlowFailure.None)
+            return ToProblem(result.Failure);
+        if (!result.Response!.MfaRequired || string.IsNullOrWhiteSpace(result.Response.SessionToken))
+            return Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Mobile approval required", detail: "Admin sign-in could not start mobile approval.");
+        return Accepted(result.Response);
+    }
+
+    /// <summary>Sends a 6-digit Email OTP fallback for a pending user MFA session.</summary>
+    [AllowAnonymous]
+    [HttpPost("mfa/send-otp")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
+    public async Task<IActionResult> SendMfaOtp(
+        [FromBody] MfaOtpSendRequest request,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = "mfa-otp-send:" + Convert.ToHexString(
+            SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request.SessionToken)));
+        if (cache.TryGetValue(cacheKey, out _))
+        {
+            return Problem(
+                statusCode: StatusCodes.Status429TooManyRequests,
+                title: "Please wait before requesting another code",
+                detail: "You can request a new OTP every 30 seconds.");
+        }
+
+        var result = await authFlow.SendMfaEmailOtpAsync(request.SessionToken, cancellationToken);
+        if (result.Failure != AuthFlowFailure.None)
+            return ToProblem(result.Failure);
+
+        cache.Set(cacheKey, true, TimeSpan.FromSeconds(30));
+        return Ok(new { message = "A 6-digit verification code was sent to your verified email." });
+    }
+
+    /// <summary>Verifies a 6-digit Email OTP to approve a pending user MFA session.</summary>
+    [AllowAnonymous]
+    [HttpPost("mfa/verify-otp")]
+    [ProducesResponseType<MfaStatusResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<MfaStatusResponse>> VerifyMfaOtp(
+        [FromBody] MfaOtpVerifyRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await authFlow.VerifyMfaEmailOtpAsync(request.SessionToken, request.Code, cancellationToken);
+        if (result.Failure != AuthFlowFailure.None)
+            return ToProblem(result.Failure);
+        return Ok(result.Response);
+    }
 
     /// <summary>Approves a pending MFA challenge from the mobile application.</summary>
     [HttpPost("mfa/approve")]

@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using SafePassage.Api.Contracts.Auth;
 using SafePassage.Api.Data;
@@ -20,6 +21,8 @@ public interface IAdminEmailLoginService
 {
     Task RequestLinkAsync(string email, CancellationToken cancellationToken);
     Task<AuthFlowResult<LoginResponse>> CompleteLinkAsync(string token, CancellationToken cancellationToken);
+    Task RequestOtpAsync(string email, CancellationToken cancellationToken);
+    Task<AuthFlowResult<LoginResponse>> CompleteOtpAsync(string email, string code, CancellationToken cancellationToken);
 }
 
 public sealed class AdminEmailLoginService(
@@ -28,7 +31,8 @@ public sealed class AdminEmailLoginService(
     IAuthFlowService authFlow,
     IConfiguration configuration,
     IOptions<AdminLoginOptions> options,
-    ILogger<AdminEmailLoginService> logger) : IAdminEmailLoginService
+    ILogger<AdminEmailLoginService> logger,
+    IMemoryCache? cache = null) : IAdminEmailLoginService
 {
     public async Task RequestLinkAsync(string email, CancellationToken cancellationToken)
     {
@@ -163,6 +167,102 @@ public sealed class AdminEmailLoginService(
             logger.LogWarning("Admin email link was verified for user {UserId}, but mobile approval could not start: {Failure}.", loginToken.UserId, result.Failure);
         return result;
     }
+
+    private sealed record CachedAdminOtp(Guid UserId, byte[] CodeHash, int Attempts, DateTimeOffset ExpiresAt);
+
+    public async Task RequestOtpAsync(string email, CancellationToken cancellationToken)
+    {
+        if (cache is null)
+            return;
+
+        var normalizedEmail = email.Trim().ToUpperInvariant();
+        var user = await dbContext.Users.SingleOrDefaultAsync(candidate =>
+            candidate.Email.ToUpper() == normalizedEmail
+            && candidate.IsActive
+            && candidate.IsEmailVerified
+            && (candidate.Role.ToUpper() == "ADMIN"
+                || candidate.Role.ToUpper() == "ADMINISTRATOR"
+                || candidate.Role.ToUpper() == "SUPER ADMIN"), cancellationToken);
+
+        if (user is null) return;
+
+        var settings = options.Value;
+        var lifetimeMinutes = settings.TokenLifetimeMinutes is >= 5 and <= 30 ? settings.TokenLifetimeMinutes : 10;
+        var expiresAt = DateTimeOffset.UtcNow.AddMinutes(lifetimeMinutes);
+        var code = RandomNumberGenerator.GetInt32(100000, 1000000).ToString();
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(code));
+
+        cache.Set(AdminOtpCacheKey(normalizedEmail), new CachedAdminOtp(user.Id, hash, 0, expiresAt), expiresAt);
+
+        await emailSender.SendSignInOtpAsync(
+            user.Email,
+            user.FullName ?? user.Username,
+            code,
+            lifetimeMinutes,
+            isAdminLogin: true,
+            cancellationToken);
+    }
+
+    public async Task<AuthFlowResult<LoginResponse>> CompleteOtpAsync(
+        string email,
+        string code,
+        CancellationToken cancellationToken)
+    {
+        if (cache is null || string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(code))
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
+
+        var normalizedEmail = email.Trim().ToUpperInvariant();
+        var otpKey = AdminOtpCacheKey(normalizedEmail);
+        if (!cache.TryGetValue(otpKey, out CachedAdminOtp? cached) || cached is null || cached.ExpiresAt <= DateTimeOffset.UtcNow)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
+
+        var suppliedHash = SHA256.HashData(Encoding.UTF8.GetBytes(code.Trim()));
+        if (!CryptographicOperations.FixedTimeEquals(suppliedHash, cached.CodeHash))
+        {
+            var nextAttempts = cached.Attempts + 1;
+            if (nextAttempts >= 5)
+                cache.Remove(otpKey);
+            else
+                cache.Set(otpKey, cached with { Attempts = nextAttempts }, cached.ExpiresAt);
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
+        }
+
+        var user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Id == cached.UserId, cancellationToken);
+        if (user is null || !IsActiveAdministrator(user))
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
+
+        var mobileDevices = await dbContext.Devices
+            .AsNoTracking()
+            .Where(device => device.UserId == user.Id
+                && device.Status == DeviceStatus.Active
+                && device.TrustStatus == DeviceTrustStatus.Trusted
+                && (device.DeviceType.ToLower() == "mobile" || device.DeviceType.ToLower() == "phone"
+                    || device.OS.ToLower().StartsWith("android") || device.OS.ToLower().StartsWith("ios")))
+            .ToListAsync(cancellationToken);
+
+        if (mobileDevices.Count == 0)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.NoActiveMobileDevice);
+
+        if (!mobileDevices.Any(d => !string.IsNullOrWhiteSpace(d.SigningPublicKey)))
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.DeviceSigningKeyNotRegistered);
+
+        cache.Remove(otpKey);
+        dbContext.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            Timestamp = DateTimeOffset.UtcNow,
+            Action = "Admin Email OTP",
+            Resource = "Email OTP verified; mobile approval required",
+            Status = ActivityLogStatus.Success
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return await authFlow.RequestAdminLoginMfaAsync(user, cancellationToken);
+    }
+
+    private static string AdminOtpCacheKey(string normalizedEmail) =>
+        "admin-email-otp:" + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(normalizedEmail)));
 
     private string GetFrontendLoginUrl(AdminLoginOptions settings)
     {

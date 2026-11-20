@@ -235,5 +235,13 @@ public sealed class AccountActivationServiceTests
         public Task SendSubscriptionReceiptAsync(
             SubscriptionReceiptEmail receipt,
             CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task SendSignInOtpAsync(
+            string email,
+            string username,
+            string otpCode,
+            int lifetimeMinutes,
+            bool isAdminLogin,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }

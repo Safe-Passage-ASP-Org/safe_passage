@@ -33,6 +33,13 @@ public interface IActivationEmailSender
     Task SendSubscriptionReceiptAsync(
         SubscriptionReceiptEmail receipt,
         CancellationToken cancellationToken);
+    Task SendSignInOtpAsync(
+        string email,
+        string username,
+        string otpCode,
+        int lifetimeMinutes,
+        bool isAdminLogin,
+        CancellationToken cancellationToken);
 }
 
 public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivationEmailSender
@@ -193,4 +200,57 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
         + $"Payment Method: {receipt.PaymentMethod}\n"
         + $"Paid At (UTC): {receipt.PaidAt:yyyy-MM-dd HH:mm:ss} UTC\n\n"
         + $"Manage your subscription and billing history in the Safe Passage Portal:\n{receipt.PortalUrl}\n";
+
+    public async Task SendSignInOtpAsync(
+        string email,
+        string username,
+        string otpCode,
+        int lifetimeMinutes,
+        bool isAdminLogin,
+        CancellationToken cancellationToken)
+    {
+        var settings = options.Value;
+        if (string.IsNullOrWhiteSpace(settings.Host)
+            || settings.Port is < 1 or > 65535
+            || string.IsNullOrWhiteSpace(settings.FromAddress))
+            throw new EmailDeliveryException("SMTP is not configured to send sign-in OTP emails.");
+
+        try
+        {
+            var subject = isAdminLogin
+                ? "Your Safe Passage administrator verification code"
+                : "Your Safe Passage sign-in verification code";
+            using var message = new MailMessage
+            {
+                From = string.IsNullOrWhiteSpace(settings.FromName)
+                    ? new MailAddress(settings.FromAddress)
+                    : new MailAddress(settings.FromAddress, settings.FromName),
+                Subject = subject,
+                Body = FormatOtpBody(username, otpCode, lifetimeMinutes, isAdminLogin),
+                IsBodyHtml = false
+            };
+            message.To.Add(new MailAddress(email));
+            using var client = new SmtpClient(settings.Host, settings.Port)
+            {
+                EnableSsl = settings.EnableSsl,
+                Timeout = 15000
+            };
+            if (!string.IsNullOrWhiteSpace(settings.Username))
+                client.Credentials = new NetworkCredential(settings.Username, settings.Password);
+            await client.SendMailAsync(message, cancellationToken);
+        }
+        catch (SmtpException exception) { throw new EmailDeliveryException("The SMTP server could not deliver the OTP email.", exception); }
+        catch (FormatException exception) { throw new EmailDeliveryException("The OTP email address is invalid.", exception); }
+        catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the OTP email.", exception); }
+        catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
+    }
+
+    internal static string FormatOtpBody(string username, string otpCode, int lifetimeMinutes, bool isAdminLogin) =>
+        $"Hello {username},\n\n"
+        + (isAdminLogin
+            ? "Use this 6-digit verification code on the Safe Passage Admin Login page:\n\n"
+            : "Use this 6-digit verification code to complete your Safe Passage sign-in:\n\n")
+        + $"    {otpCode}\n\n"
+        + $"This code expires in {lifetimeMinutes} minutes and can only be used once.\n"
+        + "If you did not request this code, ignore this email and review your account activity.\n";
 }

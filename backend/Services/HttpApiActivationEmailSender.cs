@@ -98,6 +98,37 @@ public sealed class HttpApiActivationEmailSender(
         await new SmtpEmailSender(smtpOptions).SendSubscriptionReceiptAsync(receipt, cancellationToken);
     }
 
+    public async Task SendSignInOtpAsync(
+        string email,
+        string username,
+        string otpCode,
+        int lifetimeMinutes,
+        bool isAdminLogin,
+        CancellationToken cancellationToken)
+    {
+        var subject = isAdminLogin
+            ? "Your Safe Passage administrator verification code"
+            : "Your Safe Passage sign-in verification code";
+        var body = SmtpEmailSender.FormatOtpBody(username, otpCode, lifetimeMinutes, isAdminLogin);
+
+        var brevoApiKey = configuration["Brevo:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(brevoApiKey))
+        {
+            await SendViaBrevoAsync(brevoApiKey, email, username, subject, body, cancellationToken);
+            return;
+        }
+
+        var resendApiKey = configuration["Resend:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(resendApiKey))
+        {
+            await SendViaResendAsync(resendApiKey, email, subject, body, cancellationToken);
+            return;
+        }
+
+        await new SmtpEmailSender(smtpOptions).SendSignInOtpAsync(
+            email, username, otpCode, lifetimeMinutes, isAdminLogin, cancellationToken);
+    }
+
     private async Task SendViaBrevoAsync(
         string apiKey,
         string recipientEmail,

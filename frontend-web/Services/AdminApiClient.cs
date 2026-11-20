@@ -232,9 +232,53 @@ public sealed class AdminApiClient(HttpClient http)
         if (response.IsSuccessStatusCode)
             return;
 
-        var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
+        var problem = await ReadProblemSafeAsync(response, cancellationToken);
         throw new InvalidOperationException(
             problem?.Detail ?? problem?.Title ?? "Could not resend the approval request. Please try again.");
+    }
+
+    public async Task RequestAdminEmailOtpAsync(string email, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/admin-login/send-otp", new { email }, cancellationToken);
+        if (response.IsSuccessStatusCode) return;
+        var problem = await ReadProblemSafeAsync(response, cancellationToken);
+        throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Could not send an admin verification code.");
+    }
+
+    public async Task<LoginResult> VerifyAdminEmailOtpAsync(string email, string code, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/admin-login/verify-otp", new { email, code }, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await ReadProblemSafeAsync(response, cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Invalid or expired verification code.");
+        }
+        var body = await ReadJsonSafeAsync<LoginResponse>(response, cancellationToken);
+        if (body is null || !body.MfaRequired || string.IsNullOrWhiteSpace(body.SessionToken))
+            throw new InvalidOperationException("Admin sign-in requires mobile approval.");
+        return new(body.MfaRequired, body.SessionToken, body.Message ?? "Code verified. Approve this sign-in on your trusted mobile device.");
+    }
+
+    public async Task SendMfaOtpAsync(string sessionToken, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/mfa/send-otp", new { sessionToken }, cancellationToken);
+        if (response.IsSuccessStatusCode) return;
+        var problem = await ReadProblemSafeAsync(response, cancellationToken);
+        throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Could not send the email OTP.");
+    }
+
+    public async Task VerifyMfaOtpAsync(string sessionToken, string code, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/mfa/verify-otp", new { sessionToken, code }, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await ReadProblemSafeAsync(response, cancellationToken);
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Invalid or expired OTP code.");
+        }
+        var status = await ReadJsonSafeAsync<MfaStatusResponse>(response, cancellationToken);
+        if (status is null || string.IsNullOrWhiteSpace(status.AccessToken))
+            throw new InvalidOperationException("The server did not return an access token.");
+        SetToken(status.AccessToken);
     }
 
     public async Task ActivateAccountAsync(string token, string? password = null, CancellationToken cancellationToken = default)
