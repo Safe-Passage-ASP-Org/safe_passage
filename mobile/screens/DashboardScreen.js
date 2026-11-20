@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { getMfaStatus, saveAccessToken } from '../services/AuthService';
+import { fetchPendingMfaRequests, getMfaStatus, getToken, saveAccessToken } from '../services/AuthService';
 import { getApprovalDeviceId, storeApprovalDeviceId } from '../services/DeviceSigningService';
 import { deriveSecurityStatus, fetchDashboardData } from '../services/DashboardService';
 import { startMfaRealtime } from '../services/RealtimeService';
@@ -34,11 +34,41 @@ export default function DashboardScreen({ navigation, route }) {
   const loadDashboard = useCallback(async (isActive = () => true) => {
     try {
       const deviceId = approvalDeviceId ?? await getApprovalDeviceId();
+      if (sessionToken && !(await getToken())) {
+        if (isActive()) {
+          setRecentActivity([]);
+          setActivityError('');
+          setSecurityStatus({
+            state: 'checking',
+            label: 'Approval Pending',
+            detail: 'Approve this sign-in on your existing trusted device to finish.',
+            icon: 'time-outline',
+            color: '#f59e0b',
+          });
+        }
+        return;
+      }
+
       const data = await fetchDashboardData(deviceId);
       if (isActive()) {
         setRecentActivity(data.recentActivity);
         setSecurityStatus(data.securityStatus);
         setActivityError('');
+      }
+
+      const pending = await fetchPendingMfaRequests(deviceId);
+      if (isActive() && pending.length > 0) {
+        const next = pending[0];
+        navigation.navigate('MfaApproval', {
+          details: {
+            requestId: next.sessionToken,
+            deviceId: next.deviceId,
+            ip: next.ipAddress ?? 'Not provided',
+            os: next.operatingSystem ?? 'Not provided',
+            location: next.location ?? 'Not provided',
+            time: next.requestedAt ? new Date(next.requestedAt).toLocaleTimeString() : 'Just now',
+          },
+        });
       }
     } catch (error) {
       if (isActive()) {
@@ -49,7 +79,7 @@ export default function DashboardScreen({ navigation, route }) {
     } finally {
       if (isActive()) setLoading(false);
     }
-  }, [approvalDeviceId]);
+  }, [approvalDeviceId, navigation, sessionToken]);
 
   useFocusEffect(useCallback(() => {
     let active = true;
@@ -144,8 +174,22 @@ export default function DashboardScreen({ navigation, route }) {
             <View style={styles.alertIcon}><Ionicons name="time" size={24} color="#f59e0b" /></View>
             <View style={styles.alertContent}>
               <Text style={styles.alertTitle}>Waiting for approval</Text>
-              <Text style={styles.alertDesc}>Approve this request from a trusted device.</Text>
+              <Text style={styles.alertDesc}>Approve this request from your existing trusted device.</Text>
             </View>
+          </View>
+          <View style={{ flexDirection: 'row', gap: 10, marginTop: 10 }}>
+            <TouchableOpacity
+              style={[styles.retryButton, { flex: 1, alignItems: 'center' }]}
+              onPress={() => navigation.navigate('DeviceEnrollment')}
+            >
+              <Text style={styles.retryButtonText}>Enroll / Recover Phone</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.retryButton, { flex: 1, alignItems: 'center', backgroundColor: '#334155' }]}
+              onPress={() => navigation.replace('Login')}
+            >
+              <Text style={styles.retryButtonText}>Back to Login</Text>
+            </TouchableOpacity>
           </View>
         </View>
       ) : null}

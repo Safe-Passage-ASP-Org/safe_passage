@@ -110,6 +110,23 @@ public sealed class AdminEmailLoginService(
             || !IsActiveAdministrator(loginToken.User))
             return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
 
+        // Verify MFA device readiness before consuming the single-use email token so
+        // administrators without an enrolled trusted device do not burn their link.
+        var mobileDevices = await dbContext.Devices
+            .AsNoTracking()
+            .Where(device => device.UserId == loginToken.UserId
+                && device.Status == DeviceStatus.Active
+                && device.TrustStatus == DeviceTrustStatus.Trusted
+                && (device.DeviceType.ToLower() == "mobile" || device.DeviceType.ToLower() == "phone"
+                    || device.OS.ToLower().StartsWith("android") || device.OS.ToLower().StartsWith("ios")))
+            .ToListAsync(cancellationToken);
+
+        if (mobileDevices.Count == 0)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.NoActiveMobileDevice);
+
+        if (!mobileDevices.Any(d => !string.IsNullOrWhiteSpace(d.SigningPublicKey)))
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.DeviceSigningKeyNotRegistered);
+
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
@@ -150,6 +167,7 @@ public sealed class AdminEmailLoginService(
     private string GetFrontendLoginUrl(AdminLoginOptions settings)
     {
         var configuredUrl = settings.PublicUrl
+            ?? configuration["Frontend:BaseUrl"]
             ?? configuration["AccountActivation:PublicUrl"]
             ?? configuration["Facebook:FrontendUrl"]
             ?? "http://localhost:5092";

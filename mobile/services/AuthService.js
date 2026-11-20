@@ -66,6 +66,26 @@ export async function getMfaStatus(sessionToken, signal, deviceId) {
   return data;
 }
 
+export async function fetchPendingMfaRequests(deviceId) {
+  const token = await getToken();
+  if (!token) return [];
+
+  try {
+    const response = await fetch(`${BASE_URL}/api/auth/mfa/pending`, {
+      headers: {
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`,
+        ...getApplicationHeaders(deviceId),
+      },
+    });
+    if (!response.ok) return [];
+    const data = await response.json();
+    return Array.isArray(data) ? data : [];
+  } catch {
+    return [];
+  }
+}
+
 export async function saveAccessToken(accessToken) {
   if (!accessToken) throw new Error('The server did not return an access token.');
   await SecureStore.setItemAsync(TOKEN_KEY, accessToken);

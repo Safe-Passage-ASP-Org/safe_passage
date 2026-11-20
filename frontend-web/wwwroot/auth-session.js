@@ -1,12 +1,15 @@
 window.safePassageAuthSession = {
-    getPendingMfa() {
-        return window.sessionStorage.getItem("safePassage.pendingMfaSession");
+    _mfaKey(mode) {
+        return mode === "admin" ? "safePassage.pendingMfaSession.admin" : "safePassage.pendingMfaSession.user";
     },
-    savePendingMfa(token) {
-        window.sessionStorage.setItem("safePassage.pendingMfaSession", token);
+    getPendingMfa(mode) {
+        return window.sessionStorage.getItem(this._mfaKey(mode));
     },
-    clearPendingMfa() {
-        window.sessionStorage.removeItem("safePassage.pendingMfaSession");
+    savePendingMfa(token, mode) {
+        window.sessionStorage.setItem(this._mfaKey(mode), token);
+    },
+    clearPendingMfa(mode) {
+        window.sessionStorage.removeItem(this._mfaKey(mode));
     },
     replaceUrl(url) {
         window.history.replaceState(null, "", url);

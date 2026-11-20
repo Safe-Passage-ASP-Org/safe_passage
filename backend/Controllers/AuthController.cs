@@ -114,6 +114,7 @@ public sealed class AuthController(
         {
             var code = result.Failure switch
             {
+                AuthFlowFailure.AdminEmailLoginRequired => "admin_email_required",
                 AuthFlowFailure.NoActiveMobileDevice => "mfa_device_required",
                 AuthFlowFailure.NotificationFailed => "mfa_unavailable",
                 _ => "sign_in_failed"
@@ -221,6 +222,7 @@ public sealed class AuthController(
         {
             var code = result.Failure switch
             {
+                AuthFlowFailure.AdminEmailLoginRequired => "admin_email_required",
                 AuthFlowFailure.NoActiveMobileDevice => "mfa_device_required",
                 AuthFlowFailure.NotificationFailed => "mfa_unavailable",
                 _ => "sign_in_failed"
@@ -305,6 +307,7 @@ public sealed class AuthController(
         {
             var code = result.Failure switch
             {
+                AuthFlowFailure.AdminEmailLoginRequired => "admin_email_required",
                 AuthFlowFailure.NoActiveMobileDevice => "mfa_device_required",
                 AuthFlowFailure.NotificationFailed => "mfa_unavailable",
                 _ => "sign_in_failed"
@@ -538,6 +541,22 @@ public sealed class AuthController(
 
         cache.Set(cacheKey, true, TimeSpan.FromSeconds(15));
         return Ok(new { message = "Approval request resent to your registered device." });
+    }
+
+    /// <summary>Returns active pending MFA challenges for the signed-in user's trusted devices.</summary>
+    [Authorize]
+    [HttpGet("mfa/pending")]
+    [ProducesResponseType<IReadOnlyList<PendingMfaChallengeResponse>>(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<IReadOnlyList<PendingMfaChallengeResponse>>> GetPendingMfa(CancellationToken cancellationToken)
+    {
+        var rawUserId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!Guid.TryParse(rawUserId, out var userId))
+            return Unauthorized();
+
+        var deviceId = Request.Headers["X-Device-Id"].FirstOrDefault();
+        var pending = await authFlow.GetPendingMfaAsync(userId, deviceId, cancellationToken);
+        return Ok(pending);
     }
 
     /// <summary>Long-polls an MFA challenge and returns a JWT after approval.</summary>

@@ -72,6 +72,13 @@
             <p class="signup-eyebrow">ADMINISTRATOR ACCESS</p>
             <h1 id="login-title">Verify your email.</h1>
             <p class="signup-subtitle">Enter the verified email address for your administrator account. We’ll send a one-time sign-in link. You’ll still need to approve the sign-in on your trusted mobile device.</p>
+            @if (AdminLinkVerifying)
+            {
+                <div class="login-pending" role="status" aria-live="polite" style="margin-bottom:14px;">
+                    <span class="pending-indicator"></span>
+                    <strong>Verifying your email link and starting mobile approval…</strong>
+                </div>
+            }
             @if (!string.IsNullOrWhiteSpace(Error))
             {
                 <div class="signup-error" role="alert">@Error</div>
@@ -181,6 +188,7 @@
     private readonly AdminEmailLoginForm AdminEmailForm = new();
     private bool AdminEmailSent;
     private bool AdminEmailRequestBusy;
+    private bool AdminLinkVerifying;
     private bool AdminEmailLinkExchangeStarted;
     private bool IsAdminLogin => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin-login", StringComparison.OrdinalIgnoreCase);
 
@@ -193,6 +201,7 @@
         if (query.TryGetValue("facebookError", out var error))
             Error = error.ToString() switch
             {
+                "admin_email_required" => "Administrator accounts must use Admin Login, verify their email, then approve on a trusted mobile device.",
                 "email_required" => "Facebook did not provide an email address. Allow email access and try again.",
                 "account_unavailable" => "No active Safe Passage account matched this Facebook account. Sign in with your account first or contact an administrator.",
                 "mfa_device_required" => "Enroll a trusted mobile device before using Facebook sign-in.",
@@ -204,6 +213,7 @@
         else if (query.TryGetValue("githubError", out var githubError))
             Error = githubError.ToString() switch
             {
+                "admin_email_required" => "Administrator accounts must use Admin Login, verify their email, then approve on a trusted mobile device.",
                 "email_required" => "GitHub did not return a verified primary email. Verify an email address in GitHub settings, then try again.",
                 "account_unavailable" => "No active Safe Passage account matched this GitHub email. Sign in with your account first or contact an administrator.",
                 "mfa_device_required" => "Enroll a trusted mobile device before using GitHub sign-in.",
@@ -216,6 +226,7 @@
         else if (query.TryGetValue("gitlabError", out var gitlabError))
             Error = gitlabError.ToString() switch
             {
+                "admin_email_required" => "Administrator accounts must use Admin Login, verify their email, then approve on a trusted mobile device.",
                 "email_required" => "GitLab did not provide an email address. Check your GitLab profile email visibility and try again.",
                 "account_unavailable" => "No active Safe Passage account matched this GitLab account. Sign in with your account first or contact an administrator.",
                 "mfa_device_required" => "Enroll a trusted mobile device before using GitLab sign-in.",
@@ -279,7 +290,8 @@
                 catch (JSException) { }
                 await ClearPendingMfaAsync();
                 Busy = true;
-                Error = "Verifying your email link and starting mobile approval…";
+                AdminLinkVerifying = true;
+                Error = "";
                 await InvokeAsync(StateHasChanged);
                 try
                 {
@@ -292,6 +304,7 @@
                 finally
                 {
                     Busy = false;
+                    AdminLinkVerifying = false;
                     await InvokeAsync(StateHasChanged);
                 }
                 return;
@@ -398,6 +411,7 @@
 
     private async Task PollForApprovalAsync(CancellationToken cancellationToken)
     {
+        var transientFailures = 0;
         while (!cancellationToken.IsCancellationRequested && MfaPending)
         {
             try
@@ -409,9 +423,23 @@
                     await InvokeAsync(ContinueAfterAuthenticationAsync);
                     return;
                 }
+                if (transientFailures > 0)
+                {
+                    transientFailures = 0;
+                    ResendNotice = "";
+                }
                 await InvokeAsync(StateHasChanged);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { return; }
+            catch (Exception exception) when (IsTransientPollingError(exception) && transientFailures < 3)
+            {
+                transientFailures++;
+                ResendNotice = $"Reconnecting to server ({transientFailures}/3)…";
+                await InvokeAsync(StateHasChanged);
+                try { await Task.Delay(2000, cancellationToken); }
+                catch (OperationCanceledException) { return; }
+                continue;
+            }
             catch (Exception exception)
             {
                 await ClearPendingMfaAsync();
@@ -426,6 +454,11 @@
             catch (OperationCanceledException) { return; }
         }
     }
+
+    private static bool IsTransientPollingError(Exception exception) =>
+        exception is HttpRequestException or TaskCanceledException
+        || exception.Message.Contains("waking up", StringComparison.OrdinalIgnoreCase)
+        || exception.Message.Contains("timed out", StringComparison.OrdinalIgnoreCase);
 
     private async Task ResendApprovalAsync()
     {
@@ -500,21 +533,23 @@
         }
     }
 
+    private string MfaStorageMode => IsAdminLogin ? "admin" : "user";
+
     private async Task<string?> GetPendingMfaAsync()
     {
-        try { return await JS.InvokeAsync<string?>("safePassageAuthSession.getPendingMfa"); }
+        try { return await JS.InvokeAsync<string?>("safePassageAuthSession.getPendingMfa", MfaStorageMode); }
         catch (JSException) { return null; }
     }
 
     private async Task SavePendingMfaAsync(string token)
     {
-        try { await JS.InvokeVoidAsync("safePassageAuthSession.savePendingMfa", token); }
+        try { await JS.InvokeVoidAsync("safePassageAuthSession.savePendingMfa", token, MfaStorageMode); }
         catch (JSException) { }
     }
 
     private async Task ClearPendingMfaAsync()
     {
-        try { await JS.InvokeVoidAsync("safePassageAuthSession.clearPendingMfa"); }
+        try { await JS.InvokeVoidAsync("safePassageAuthSession.clearPendingMfa", MfaStorageMode); }
         catch (JSException) { }
     }
 
