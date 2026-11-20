@@ -59,16 +59,20 @@ export default function DashboardScreen({ navigation, route }) {
       const pending = await fetchPendingMfaRequests(deviceId);
       if (isActive() && pending.length > 0) {
         const next = pending[0];
-        navigation.navigate('MfaApproval', {
-          details: {
-            requestId: next.sessionToken,
-            deviceId: next.deviceId,
-            ip: next.ipAddress ?? 'Not provided',
-            os: next.operatingSystem ?? 'Not provided',
-            location: next.location ?? 'Not provided',
-            time: next.requestedAt ? new Date(next.requestedAt).toLocaleTimeString() : 'Just now',
-          },
-        });
+        const navState = navigation.getState?.();
+        const currentName = navState?.routes?.[navState.index]?.name;
+        if (currentName !== 'MfaApproval') {
+          navigation.navigate('MfaApproval', {
+            details: {
+              requestId: next.sessionToken,
+              deviceId: next.deviceId,
+              ip: next.ipAddress ?? 'Not provided',
+              os: next.operatingSystem ?? 'Not provided',
+              location: next.location ?? 'Not provided',
+              time: next.requestedAt ? new Date(next.requestedAt).toLocaleTimeString() : 'Just now',
+            },
+          });
+        }
       }
     } catch (error) {
       if (isActive()) {
