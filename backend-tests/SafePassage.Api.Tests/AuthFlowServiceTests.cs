@@ -354,7 +354,7 @@ public sealed class AuthFlowServiceTests
             NullLogger<AuthFlowService>.Instance,
             cache: cache);
 
-        var loginResult = await service.LoginAsync(new LoginRequest("pulluser", "Password123!"), CancellationToken.None);
+        var loginResult = await service.LoginAsync(new LoginRequest { Username = "pulluser", Password = "Password123!" }, CancellationToken.None);
         Assert.Equal(AuthFlowFailure.None, loginResult.Failure);
         Assert.True(loginResult.Response!.MfaRequired);
 
@@ -412,7 +412,7 @@ public sealed class AuthFlowServiceTests
             cache: cache,
             emailSender: emailSender);
 
-        var loginResult = await service.LoginAsync(new LoginRequest("otpuser", "Password123!"), CancellationToken.None);
+        var loginResult = await service.LoginAsync(new LoginRequest { Username = "otpuser", Password = "Password123!" }, CancellationToken.None);
         Assert.True(loginResult.Response!.MfaRequired);
 
         var sendResult = await service.SendMfaEmailOtpAsync(loginResult.Response.SessionToken!, CancellationToken.None);
