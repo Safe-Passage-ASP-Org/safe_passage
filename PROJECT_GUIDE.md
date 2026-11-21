@@ -60,10 +60,10 @@ In short, Vercel and the web/mobile clients provide user interfaces; Render runs
 
 ## 7. Add a Custom Site with a User Account
 
-1. Sign in to the web portal with a user account.
-2. Open **Credential Vault** and select **Add site**.
-3. Enter the site's name, login/web URL, and category. Description, username/email, password, and 2FA secret are optional.
-4. Select **Save**. The site appears in **My Applications** and syncs with the browser extension for the same account.
-5. On a supported login page, open the Safe Passage extension and follow its prompt. Approve the sign-in on a trusted mobile device before the extension uses the saved credentials or 2FA code.
+1. Install the extension in Chrome or Edge. Open the browser's extensions page, turn on **Developer mode**, select **Load unpacked**, and choose the project's `extension/` folder. If you already installed it, skip this step.
+2. Open the Safe Passage extension from the browser toolbar. Enter the Safe Passage API URL (`https://safe-passage-api.onrender.com`), your Safe Passage username or email, and password; select **Sign in & Wait for MFA**. Approve this extension sign-in on a trusted mobile device if requested.
+3. Open the website you want to save, then open the extension popup again. The **Login/Web URL** is filled with the current site's address; edit it if the site's login page uses a different URL. Enter a **Label** and choose a **Category**.
+4. Optionally add a description, your website username/email, password, and Base32 2FA secret. Select **Save credentials for this site**.
+5. The saved site syncs to **My Applications** and the user's Credential Vault. When you visit its supported login page, the extension shows a Safe Passage prompt. Request approval and approve it on a trusted mobile device before the extension fills the saved credentials or 2FA code.
 
-The site and its credentials belong to the user who saved them. They do not create an administrator-wide application or grant other accounts access. Saved passwords and 2FA secrets are stored encrypted by the backend.
+The site and its credentials belong to the user who saved them. They do not create an administrator-wide application or grant other accounts access. Saved passwords and 2FA secrets are stored encrypted by the backend. Sites can also be added from **Credential Vault** in the web portal; the extension and portal sync the same user sites.
