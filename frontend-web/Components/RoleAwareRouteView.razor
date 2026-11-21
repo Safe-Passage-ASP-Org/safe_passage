@@ -24,8 +24,17 @@
         "SecurityMfa"
     ];
 
+    private static readonly HashSet<string> UserPages =
+    [
+        "Subscription",
+        "DemoCheckout",
+        "PayPalCallback"
+    ];
+
     private bool CanViewRoute =>
-        Api.IsAdministrator || !AdminPages.Contains(RouteData.PageType.Name);
+        Api.IsAdministrator
+            ? !UserPages.Contains(RouteData.PageType.Name)
+            : !AdminPages.Contains(RouteData.PageType.Name);
 
     protected override void OnParametersSet()
     {
