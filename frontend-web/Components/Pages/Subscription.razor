@@ -86,21 +86,24 @@ else
                 <div class="sub-details">
                     <p class="mb-2">A PayMongo checkout is awaiting your payment confirmation.</p>
                     <div class="d-flex flex-wrap gap-2">
-                        @if (!string.IsNullOrWhiteSpace(Current.PendingApprovalUrl))
+                        @if (Current is { } pendingSubscription
+                             && !string.IsNullOrWhiteSpace(pendingSubscription.PendingApprovalUrl)
+                             && !string.IsNullOrWhiteSpace(pendingSubscription.PayPalSubscriptionId))
                         {
                             <button class="btn btn-primary btn-sm" type="button" disabled="@Busy"
-                                    @onclick="() => LaunchPopupAsync(Current.PendingApprovalUrl!, Current.PayPalSubscriptionId!)">
+                                    @onclick="() => LaunchPopupAsync(pendingSubscription.PendingApprovalUrl, pendingSubscription.PayPalSubscriptionId)">
                                 Resume PayMongo Checkout
                             </button>
                         }
-                        @if (!string.IsNullOrWhiteSpace(Current.PayPalSubscriptionId))
+                        @if (Current?.PayPalSubscriptionId is { } pendingSubscriptionId
+                             && !string.IsNullOrWhiteSpace(pendingSubscriptionId))
                         {
                             <button class="btn btn-outline-secondary btn-sm" type="button" disabled="@Busy"
-                                    @onclick="() => ConfirmManuallyAsync(Current.PayPalSubscriptionId!)">
+                                    @onclick="() => ConfirmManuallyAsync(pendingSubscriptionId)">
                                 Check / Confirm Status
                             </button>
                             <button class="btn btn-outline-danger btn-sm" type="button" disabled="@Busy"
-                                    @onclick="() => AbandonPendingAsync(Current.PayPalSubscriptionId!)">
+                                    @onclick="() => AbandonPendingAsync(pendingSubscriptionId)">
                                 Discard Pending
                             </button>
                         }
