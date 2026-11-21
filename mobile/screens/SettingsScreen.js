@@ -130,9 +130,15 @@ export default function SettingsScreen({ navigation }) {
   }, []));
 
   const handleLogout = async () => {
-    await stopMfaRealtime();
     await logout();
-    navigation.replace('Login');
+    void stopMfaRealtime();
+
+    const rootNavigation = navigation.getParent();
+    if (rootNavigation?.replace) {
+      rootNavigation.replace('Login');
+    } else {
+      navigation.navigate('Login');
+    }
   };
 
   const confirmLogout = () => {
