@@ -108,13 +108,11 @@
             <EditForm Model="AdminEmailForm" OnValidSubmit="RequestAdminEmailLinkAsync">
                 <DataAnnotationsValidator />
                 <label for="admin-email">Administrator email address</label>
-                <InputText id="admin-email" type="email" @bind-Value="AdminEmailForm.Email" autocomplete="email" disabled="@(AdminEmailRequestBusy || AdminOtpBusy)" placeholder="you@gmail.com" />
+                <InputText id="admin-email" type="email" @bind-Value="AdminEmailForm.Email" autocomplete="email" disabled="@AdminEmailRequestBusy" placeholder="you@gmail.com" />
                 <ValidationMessage For="() => AdminEmailForm.Email" />
                 <InteractiveSubmitButton Busy="@AdminEmailRequestBusy" BusyText="Sending link…">Send verification link <span aria-hidden="true">→</span></InteractiveSubmitButton>
             </EditForm>
-            <button class="login-link" type="button" @onclick="RequestAdminEmailOtpAsync" disabled="@(AdminEmailRequestBusy || AdminOtpBusy)">
-                @(AdminOtpBusy ? "Sending OTP…" : "Send 6-digit OTP instead")
-            </button>
+            <a class="login-link" href="@AdminOtpPageUrl" target="_top">Other verification method</a>
             <p class="signup-switch"><a href="/login">← User Login</a></p>
         }
         else
@@ -209,7 +207,6 @@
     private readonly AdminEmailLoginForm AdminEmailForm = new();
     private bool AdminEmailSent;
     private bool AdminEmailRequestBusy;
-    private bool AdminOtpBusy;
     private bool SendingOtp;
     private bool MfaOtpSent;
     private bool VerifyingOtp;
@@ -217,6 +214,7 @@
     private bool AdminLinkVerifying;
     private bool AdminEmailLinkExchangeStarted;
     private bool IsAdminLogin => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin-login", StringComparison.OrdinalIgnoreCase);
+    private string AdminOtpPageUrl => "/admin-otp?email=" + Uri.EscapeDataString(AdminEmailForm.Email.Trim());
 
     protected override void OnInitialized()
     {
@@ -418,24 +416,6 @@
         }
         catch (Exception exception) { Error = exception.Message; }
         finally { AdminEmailRequestBusy = false; }
-    }
-
-    private async Task RequestAdminEmailOtpAsync()
-    {
-        if (string.IsNullOrWhiteSpace(AdminEmailForm.Email))
-        {
-            Error = "Enter your administrator email address first.";
-            return;
-        }
-        AdminOtpBusy = true;
-        Error = "";
-        try
-        {
-            await Api.RequestAdminEmailOtpAsync(AdminEmailForm.Email.Trim());
-            Navigation.NavigateTo($"/admin-otp?email={Uri.EscapeDataString(AdminEmailForm.Email.Trim())}&sent=1");
-        }
-        catch (Exception exception) { Error = exception.Message; }
-        finally { AdminOtpBusy = false; }
     }
 
     private async Task SendMfaOtpAsync()
