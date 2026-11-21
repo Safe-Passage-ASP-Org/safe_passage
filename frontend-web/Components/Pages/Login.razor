@@ -432,7 +432,7 @@
         try
         {
             await Api.RequestAdminEmailOtpAsync(AdminEmailForm.Email.Trim());
-            Navigation.NavigateTo($"/admin-login/otp?email={Uri.EscapeDataString(AdminEmailForm.Email.Trim())}&sent=1");
+            Navigation.NavigateTo($"/admin-login/otp?email={Uri.EscapeDataString(AdminEmailForm.Email.Trim())}&sent=1", forceLoad: true);
         }
         catch (Exception exception) { Error = exception.Message; }
         finally { AdminOtpBusy = false; }
