@@ -8,15 +8,20 @@
 @inject IJSRuntime JS
 @implements IDisposable
 
-<PageTitle>Other Administrator Verification – Safe Passage</PageTitle>
+<PageTitle>Administrator Verification – Safe Passage</PageTitle>
 
-<main class="otp-page">
-    <a class="otp-brand" href="/" aria-label="Safe Passage home"><img src="/favicon.png" alt="" /> Safe Passage</a>
-    <section class="otp-card" aria-labelledby="otp-title">
-        <div class="otp-mark" aria-hidden="true">✉</div>
-        <p class="otp-eyebrow">ADMINISTRATOR ACCESS</p>
+<main class="signup-page">
+    <a class="signup-brand" href="/" aria-label="Safe Passage home">
+        <span class="signup-brand-mark" aria-hidden="true"><img src="/favicon.png" alt="" /></span>
+        <span>Safe Passage</span>
+    </a>
+    <section class="signup-card" aria-labelledby="otp-title">
+        <div class="signup-card-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none"><path d="M12 2.7 4.5 5.5v5.2c0 5 3.2 8.6 7.5 10.6 4.3-2 7.5-5.6 7.5-10.6V5.5L12 2.7Z" /><path d="m8.8 12.1 2.1 2.1 4.4-4.6" /></svg>
+        </div>
+        <p class="signup-eyebrow">ADMINISTRATOR ACCESS</p>
         <h1 id="otp-title">@(OtpRequested ? "Enter 6-digit Administrator OTP" : "Other verification method")</h1>
-        <p class="otp-subtitle">
+        <p class="signup-subtitle">
             @if (OtpRequested)
             {
                 <span>Enter the verification code sent to <strong>@EmailAddress</strong>. After verification, you’ll still need approval on your trusted mobile device.</span>
@@ -29,66 +34,40 @@
 
         @if (!string.IsNullOrWhiteSpace(Error))
         {
-            <div class="otp-error" role="alert">@Error</div>
+            <div class="signup-error" role="alert">@Error</div>
         }
         @if (!string.IsNullOrWhiteSpace(Notice))
         {
-            <div class="otp-notice" role="status">@Notice</div>
+            <div class="signup-notice" role="status">@Notice</div>
         }
 
         @if (!OtpRequested)
         {
-            <form class="otp-form" @onsubmit="SendOtpAsync" @onsubmit:preventDefault="true">
+            <form @onsubmit="SendOtpAsync" @onsubmit:preventDefault="true">
                 <label for="admin-otp-email">Administrator email address</label>
                 <input id="admin-otp-email" type="email" autocomplete="email" @bind="EmailAddress" required disabled="@Sending" />
-                <button class="otp-primary" type="submit" disabled="@Sending">@(Sending ? "Sending…" : "Send 6-digit OTP instead")</button>
+                <button class="signup-button" type="submit" disabled="@Sending">@(Sending ? "Sending OTP…" : "Send 6-digit OTP instead")</button>
             </form>
         }
         else
         {
-            <form class="otp-form" @onsubmit="VerifyAsync" @onsubmit:preventDefault="true">
+            <form @onsubmit="VerifyAsync" @onsubmit:preventDefault="true">
                 <label for="admin-otp-code">Verification code</label>
                 <input id="admin-otp-code" type="text" inputmode="numeric" autocomplete="one-time-code"
-                       @bind="Code" maxlength="6" minlength="6" pattern="[0-9]{6}" placeholder="123456" required disabled="@Verifying" />
-                <button class="otp-primary" type="submit" disabled="@Verifying">@(Verifying ? "Verifying…" : "Verify OTP")</button>
+                       @bind="Code" maxlength="6" minlength="6" pattern="[0-9]{6}" placeholder="123456" required disabled="@Verifying" style="letter-spacing:.35em;text-align:center;font-size:18px" />
+                <button class="signup-button" type="submit" disabled="@Verifying">@(Verifying ? "Verifying…" : "Verify OTP")</button>
             </form>
 
-            <div class="otp-resend">
-                <span>Didn’t receive the code?</span>
-                <button type="button" @onclick="ResendAsync" disabled="@(Resending || ResendSeconds > 0)">
+            <p class="signup-subtitle" style="text-align:center;margin:16px 0 0;">
+                Didn’t receive the code?
+                <button class="login-link" type="button" @onclick="ResendAsync" disabled="@(Resending || ResendSeconds > 0)">
                     @(Resending ? "Sending…" : ResendSeconds > 0 ? $"Resend verification in {ResendSeconds}s" : "Resend verification")
                 </button>
-            </div>
+            </p>
         }
-        <a class="otp-back" href="@($"/admin-login?email={Uri.EscapeDataString(EmailAddress ?? string.Empty)}")" target="_top">← Back to Admin Login</a>
+        <p class="signup-switch"><a href="@($"/admin-login?email={Uri.EscapeDataString(EmailAddress ?? string.Empty)}")" target="_top">← Back to Admin Login</a></p>
     </section>
 </main>
-
-<style>
-    .otp-page{min-height:100vh;padding:24px;background:#f5f8fa;color:#17212b;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
-    .otp-brand{display:inline-flex;align-items:center;gap:9px;color:#173b3b;text-decoration:none;font-weight:750}
-    .otp-brand img{width:30px;height:30px;border-radius:8px}
-    .otp-card{width:min(100%,450px);margin:clamp(50px,12vh,110px) auto 0;padding:34px;border:1px solid #e3e9ec;border-radius:14px;background:#fff;box-shadow:0 12px 36px #183c3a0d}
-    .otp-mark{width:44px;height:44px;display:grid;place-items:center;border-radius:12px;background:#e9f5f2;color:#087f75;font-size:22px}
-    .otp-eyebrow{margin:22px 0 8px;color:#087f75;font-size:11px;font-weight:750;letter-spacing:1px}
-    .otp-card h1{margin:0;color:#152b35;font-size:24px;line-height:1.3}
-    .otp-subtitle{margin:12px 0 22px;color:#60717a;font-size:14px;line-height:1.65;overflow-wrap:anywhere}
-    .otp-form{display:grid;gap:9px}
-    .otp-form label{font-size:13px;font-weight:650;color:#334650}
-    .otp-form input{height:48px;padding:0 13px;border:1px solid #cbd6da;border-radius:7px;font:inherit;font-size:18px;letter-spacing:5px}
-    .otp-form input[type=email]{font-size:14px;letter-spacing:normal}
-    .otp-form input:focus{outline:3px solid #087f7529;border-color:#087f75}
-    .otp-primary{height:44px;margin-top:5px;border:0;border-radius:7px;background:#087f75;color:white;font:inherit;font-weight:700;cursor:pointer}
-    .otp-primary:disabled{opacity:.6;cursor:wait}
-    .otp-resend{display:flex;flex-wrap:wrap;gap:5px;align-items:center;justify-content:center;margin-top:22px;color:#6b7a82;font-size:12px}
-    .otp-resend button,.otp-back{border:0;background:none;color:#087f75;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}
-    .otp-resend button:disabled{color:#8b989d;cursor:default}
-    .otp-back{display:block;width:fit-content;margin:24px auto 0;font-size:13px}
-    .otp-error,.otp-notice{margin:0 0 14px;padding:10px 12px;border-radius:7px;font-size:13px;line-height:1.5}
-    .otp-error{background:#fff0ee;color:#a33a31}
-    .otp-notice{background:#edf8f2;color:#14734f}
-    @@media(max-width:520px){.otp-page{padding:18px}.otp-card{margin-top:55px;padding:26px 22px}.otp-card h1{font-size:21px}}
-</style>
 
 @code {
     [SupplyParameterFromQuery(Name = "email")]
