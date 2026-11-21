@@ -64,8 +64,15 @@ async function refresh() {
       del.className = 'danger';
       del.textContent = 'Remove';
       del.addEventListener('click', async () => {
-        await send({ type: 'DELETE_CUSTOM_SITE', id: s.id });
-        refresh();
+        if (!window.confirm(`Remove ${s.name} from your vault? This also deletes its saved credentials and 2FA secret.`)) return;
+        del.disabled = true;
+        const result = await send({ type: 'DELETE_CUSTOM_SITE', id: s.id });
+        if (!result?.ok) {
+          document.getElementById('statusMsg').textContent = result?.error || 'Could not remove the saved site.';
+          del.disabled = false;
+          return;
+        }
+        await refresh();
       });
       row.append(info, del);
       list.appendChild(row);
