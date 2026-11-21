@@ -638,7 +638,7 @@ public sealed class AuthController(
                 SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(email.ToUpperInvariant())));
             if (!cache.TryGetValue(emailKey, out _))
             {
-                cache.Set(emailKey, true, TimeSpan.FromSeconds(30));
+                cache.Set(emailKey, true, TimeSpan.FromSeconds(20));
                 try
                 {
                     await adminEmailLoginService.RequestOtpAsync(email, cancellationToken);

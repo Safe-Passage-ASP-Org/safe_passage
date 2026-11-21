@@ -115,18 +115,6 @@
             <button class="login-link" type="button" @onclick="RequestAdminEmailOtpAsync" disabled="@(AdminEmailRequestBusy || AdminOtpBusy)">
                 @(AdminOtpBusy ? "Sending OTP…" : "Send 6-digit OTP instead")
             </button>
-            @if (AdminOtpSent)
-            {
-                <div style="margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0;">
-                    <label for="admin-otp-code">Enter 6-digit Administrator OTP</label>
-                    <div style="display:flex;gap:8px;margin-top:6px;">
-                        <InputText id="admin-otp-code" @bind-Value="AdminOtpCode" maxlength="6" placeholder="123456" disabled="@AdminOtpVerifying" />
-                        <button type="button" class="signup-button" style="width:auto;margin:0;padding:0 16px;" @onclick="VerifyAdminEmailOtpAsync" disabled="@AdminOtpVerifying">
-                            @(AdminOtpVerifying ? "Verifying…" : "Verify OTP")
-                        </button>
-                    </div>
-                </div>
-            }
             <p class="signup-switch"><a href="/login">← User Login</a></p>
         }
         else
@@ -221,10 +209,7 @@
     private readonly AdminEmailLoginForm AdminEmailForm = new();
     private bool AdminEmailSent;
     private bool AdminEmailRequestBusy;
-    private bool AdminOtpSent;
     private bool AdminOtpBusy;
-    private bool AdminOtpVerifying;
-    private string AdminOtpCode = "";
     private bool SendingOtp;
     private bool MfaOtpSent;
     private bool VerifyingOtp;
@@ -238,6 +223,7 @@
         Navigation.LocationChanged += HandleLocationChanged;
         var query = QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
         if (query.TryGetValue("returnUrl", out var value)) OidcReturnUrl = value.ToString();
+        if (IsAdminLogin && query.TryGetValue("email", out var adminEmail)) AdminEmailForm.Email = adminEmail.ToString();
 
         if (query.TryGetValue("facebookError", out var error))
             Error = error.ToString() switch
@@ -443,33 +429,13 @@
         }
         AdminOtpBusy = true;
         Error = "";
-        AdminOtpSent = false;
         try
         {
             await Api.RequestAdminEmailOtpAsync(AdminEmailForm.Email.Trim());
-            AdminOtpSent = true;
+            Navigation.NavigateTo($"/admin-login/otp?email={Uri.EscapeDataString(AdminEmailForm.Email.Trim())}&sent=1");
         }
         catch (Exception exception) { Error = exception.Message; }
         finally { AdminOtpBusy = false; }
-    }
-
-    private async Task VerifyAdminEmailOtpAsync()
-    {
-        if (string.IsNullOrWhiteSpace(AdminOtpCode))
-        {
-            Error = "Enter the 6-digit verification code from your email.";
-            return;
-        }
-        AdminOtpVerifying = true;
-        Error = "";
-        try
-        {
-            var result = await Api.VerifyAdminEmailOtpAsync(AdminEmailForm.Email.Trim(), AdminOtpCode.Trim());
-            await SavePendingMfaAsync(result.SessionToken!);
-            await ContinueLoginAsync(result);
-        }
-        catch (Exception exception) { Error = exception.Message; }
-        finally { AdminOtpVerifying = false; }
     }
 
     private async Task SendMfaOtpAsync()

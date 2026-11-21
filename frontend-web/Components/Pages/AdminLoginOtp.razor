@@ -1,0 +1,163 @@
+@page "/admin-login/otp"
+@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Components
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
+@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@implements IDisposable
+
+<PageTitle>Administrator Verification – Safe Passage</PageTitle>
+
+<main class="otp-page">
+    <a class="otp-brand" href="/" aria-label="Safe Passage home"><img src="/favicon.png" alt="" /> Safe Passage</a>
+    <section class="otp-card" aria-labelledby="otp-title">
+        <div class="otp-mark" aria-hidden="true">✉</div>
+        <p class="otp-eyebrow">ADMINISTRATOR ACCESS</p>
+        <h1 id="otp-title">Enter 6-digit Administrator OTP</h1>
+        <p class="otp-subtitle">Enter the verification code sent to <strong>@Email</strong>. After verification, you’ll still need approval on your trusted mobile device.</p>
+
+        @if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <div class="otp-error" role="alert">@Error</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Notice))
+        {
+            <div class="otp-notice" role="status">@Notice</div>
+        }
+
+        <form class="otp-form" @onsubmit="VerifyAsync" @onsubmit:preventDefault="true">
+            <label for="admin-otp-code">Verification code</label>
+            <input id="admin-otp-code" type="text" inputmode="numeric" autocomplete="one-time-code"
+                   @bind="Code" maxlength="6" minlength="6" pattern="[0-9]{6}" placeholder="123456" required disabled="@Verifying" />
+            <button class="otp-primary" type="submit" disabled="@Verifying">@(Verifying ? "Verifying…" : "Verify OTP")</button>
+        </form>
+
+        <div class="otp-resend">
+            <span>Didn’t receive the code?</span>
+            <button type="button" @onclick="ResendAsync" disabled="@(Resending || ResendSeconds > 0 || string.IsNullOrWhiteSpace(Email))">
+                @(Resending ? "Sending…" : ResendSeconds > 0 ? $"Resend verification in {ResendSeconds}s" : "Resend verification")
+            </button>
+        </div>
+        <a class="otp-back" href="@($"/admin-login?email={Uri.EscapeDataString(Email ?? string.Empty)}")">← Back to Admin Login</a>
+    </section>
+</main>
+
+<style>
+    .otp-page{min-height:100vh;padding:24px;background:#f5f8fa;color:#17212b;font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}
+    .otp-brand{display:inline-flex;align-items:center;gap:9px;color:#173b3b;text-decoration:none;font-weight:750}
+    .otp-brand img{width:30px;height:30px;border-radius:8px}
+    .otp-card{width:min(100%,450px);margin:clamp(50px,12vh,110px) auto 0;padding:34px;border:1px solid #e3e9ec;border-radius:14px;background:#fff;box-shadow:0 12px 36px #183c3a0d}
+    .otp-mark{width:44px;height:44px;display:grid;place-items:center;border-radius:12px;background:#e9f5f2;color:#087f75;font-size:22px}
+    .otp-eyebrow{margin:22px 0 8px;color:#087f75;font-size:11px;font-weight:750;letter-spacing:1px}
+    .otp-card h1{margin:0;color:#152b35;font-size:24px;line-height:1.3}
+    .otp-subtitle{margin:12px 0 22px;color:#60717a;font-size:14px;line-height:1.65;overflow-wrap:anywhere}
+    .otp-form{display:grid;gap:9px}
+    .otp-form label{font-size:13px;font-weight:650;color:#334650}
+    .otp-form input{height:48px;padding:0 13px;border:1px solid #cbd6da;border-radius:7px;font:inherit;font-size:18px;letter-spacing:5px}
+    .otp-form input:focus{outline:3px solid #087f7529;border-color:#087f75}
+    .otp-primary{height:44px;margin-top:5px;border:0;border-radius:7px;background:#087f75;color:white;font:inherit;font-weight:700;cursor:pointer}
+    .otp-primary:disabled{opacity:.6;cursor:wait}
+    .otp-resend{display:flex;flex-wrap:wrap;gap:5px;align-items:center;justify-content:center;margin-top:22px;color:#6b7a82;font-size:12px}
+    .otp-resend button,.otp-back{border:0;background:none;color:#087f75;font:inherit;font-weight:700;text-decoration:none;cursor:pointer}
+    .otp-resend button:disabled{color:#8b989d;cursor:default}
+    .otp-back{display:block;width:fit-content;margin:24px auto 0;font-size:13px}
+    .otp-error,.otp-notice{margin:0 0 14px;padding:10px 12px;border-radius:7px;font-size:13px;line-height:1.5}
+    .otp-error{background:#fff0ee;color:#a33a31}
+    .otp-notice{background:#edf8f2;color:#14734f}
+    @@media(max-width:520px){.otp-page{padding:18px}.otp-card{margin-top:55px;padding:26px 22px}.otp-card h1{font-size:21px}}
+</style>
+
+@code {
+    [SupplyParameterFromQuery(Name = "email")]
+    public string? Email { get; set; }
+
+    [SupplyParameterFromQuery(Name = "sent")]
+    public bool CodeJustSent { get; set; }
+
+    private string Code = "";
+    private string Error = "";
+    private string Notice = "";
+    private int ResendSeconds;
+    private bool Verifying;
+    private bool Resending;
+    private CancellationTokenSource? CountdownCancellation;
+
+    protected override void OnParametersSet()
+    {
+        if (CodeJustSent && ResendSeconds == 0)
+            StartCountdown();
+    }
+
+    private async Task VerifyAsync()
+    {
+        Error = "";
+        Notice = "";
+        if (string.IsNullOrWhiteSpace(Email) || string.IsNullOrWhiteSpace(Code))
+        {
+            Error = "Enter the 6-digit verification code from your email.";
+            return;
+        }
+
+        Verifying = true;
+        try
+        {
+            var result = await Api.VerifyAdminEmailOtpAsync(Email.Trim(), Code.Trim());
+            if (string.IsNullOrWhiteSpace(result.SessionToken))
+                throw new InvalidOperationException("The API did not return an administrator approval session.");
+            await JS.InvokeVoidAsync("safePassageAuthSession.savePendingMfa", result.SessionToken, "admin");
+            Navigation.NavigateTo("/admin-login", forceLoad: true);
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Verifying = false; }
+    }
+
+    private async Task ResendAsync()
+    {
+        if (string.IsNullOrWhiteSpace(Email) || ResendSeconds > 0 || Resending) return;
+        Resending = true;
+        Error = "";
+        Notice = "";
+        try
+        {
+            await Api.RequestAdminEmailOtpAsync(Email.Trim());
+            Code = "";
+            Notice = "If this address belongs to an active administrator, a new verification code has been sent.";
+            StartCountdown();
+        }
+        catch (Exception exception) { Error = exception.Message; }
+        finally { Resending = false; }
+    }
+
+    private void StartCountdown()
+    {
+        CountdownCancellation?.Cancel();
+        CountdownCancellation?.Dispose();
+        CountdownCancellation = new CancellationTokenSource();
+        ResendSeconds = 20;
+        _ = RunCountdownAsync(CountdownCancellation.Token);
+    }
+
+    private async Task RunCountdownAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (ResendSeconds > 0)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(1), cancellationToken);
+                await InvokeAsync(() =>
+                {
+                    if (ResendSeconds > 0) ResendSeconds--;
+                    StateHasChanged();
+                });
+            }
+        }
+        catch (OperationCanceledException) { }
+    }
+
+    public void Dispose()
+    {
+        CountdownCancellation?.Cancel();
+        CountdownCancellation?.Dispose();
+    }
+}
