@@ -407,6 +407,28 @@ public sealed class AdminApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
+    public async Task RequestAdminEmailChangeAsync(string newEmail, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/admin-email-change/request", new { newEmail }, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task VerifyAdminEmailChangeOtpAsync(string code, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/admin-email-change/verify-otp", new { code }, cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<EmailChangeResult>(cancellationToken: cancellationToken);
+        if (!string.IsNullOrWhiteSpace(result?.Email)) CurrentEmail = result.Email;
+    }
+
+    public async Task VerifyAdminEmailChangeLinkAsync(string token, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/admin-email-change/verify-link", new { token }, cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<EmailChangeResult>(cancellationToken: cancellationToken);
+        if (!string.IsNullOrWhiteSpace(result?.Email)) CurrentEmail = result.Email;
+    }
+
     public async Task<List<AdminPolicy>> GetPoliciesAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminPolicy>>("api/admin/policies", cancellationToken) ?? [];
 
@@ -653,6 +675,7 @@ public sealed class AdminApiClient(HttpClient http)
     }
 
     private sealed record LoginResponse(bool MfaRequired, string? SessionToken, string? AccessToken, string? Message);
+    private sealed record EmailChangeResult(string? Email, string? Message);
     private sealed record MfaStatusResponse(string? Status, string? AccessToken);
     private sealed record ApiProblem(string? Detail, string? Message, string? Title);
     private sealed record OidcSessionResult(string CompletionUrl);

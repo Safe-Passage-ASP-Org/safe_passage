@@ -24,6 +24,7 @@ public sealed class AuthController(
     IMemoryCache cache,
     IConfiguration configuration,
     IPasswordHasher<User> passwordHasher,
+    IActivationEmailSender activationEmailSender,
     ILogger<AuthController> logger) : ControllerBase
 {
     [HttpGet("facebook/enabled")]
@@ -478,6 +479,142 @@ public sealed class AuthController(
     public sealed record AdminLoginOtpVerificationRequest(string Email, string Code);
     public sealed record MfaOtpSendRequest(string SessionToken);
     public sealed record MfaOtpVerifyRequest(string SessionToken, string Code);
+
+    public sealed record AdminEmailChangeRequest(string NewEmail);
+    public sealed record AdminEmailChangeOtpRequest(string Code);
+    public sealed record AdminEmailChangeLinkRequest(string Token);
+
+    [HttpPost("admin-email-change/request")]
+    [Authorize]
+    public async Task<IActionResult> RequestAdminEmailChange(
+        [FromBody] AdminEmailChangeRequest request, CancellationToken cancellationToken)
+    {
+        var user = await GetCurrentAdministratorAsync(cancellationToken);
+        if (user is null) return Forbid();
+        var newEmail = request.NewEmail?.Trim();
+        if (string.IsNullOrWhiteSpace(newEmail) || newEmail.Length > 320 || !System.Net.Mail.MailAddress.TryCreate(newEmail, out var address)
+            || !string.Equals(address.Address, newEmail, StringComparison.OrdinalIgnoreCase))
+            return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Invalid email", detail: "Enter a valid email address.");
+        if (string.Equals(user.Email, newEmail, StringComparison.OrdinalIgnoreCase))
+            return Problem(statusCode: StatusCodes.Status400BadRequest, title: "Email unchanged", detail: "Enter a different email address.");
+        if (await dbContext.Users.AnyAsync(candidate => candidate.Id != user.Id && candidate.Email.ToUpper() == newEmail.ToUpper(), cancellationToken))
+            return Problem(statusCode: StatusCodes.Status409Conflict, title: "Email already in use", detail: "That email address is already registered.");
+        var requestLimitKey = "admin-email-change-user:" + user.Id;
+        cache.TryGetValue(requestLimitKey, out int emailChangeRequestCount);
+        if (emailChangeRequestCount >= 10)
+            return Problem(statusCode: StatusCodes.Status429TooManyRequests, title: "Too many requests", detail: "Please wait before requesting another email verification.");
+        cache.Set(requestLimitKey, emailChangeRequestCount + 1, TimeSpan.FromHours(1));
+
+        var now = DateTimeOffset.UtcNow;
+        var rawToken = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        var code = RandomNumberGenerator.GetInt32(0, 1_000_000).ToString("D6");
+        var pending = new AdminEmailChangeToken
+        {
+            Id = Guid.NewGuid(), UserId = user.Id, NewEmail = newEmail,
+            TokenHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(rawToken))),
+            OtpHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(code))),
+            CreatedAt = now, ExpiresAt = now.AddMinutes(10)
+        };
+        await dbContext.AdminEmailChangeTokens
+            .Where(token => token.UserId == user.Id && token.UsedAt == null)
+            .ExecuteDeleteAsync(cancellationToken);
+        dbContext.AdminEmailChangeTokens.Add(pending);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        var frontendBase = configuration["Frontend:BaseUrl"]
+            ?? configuration["GitHub:FrontendUrl"] ?? configuration["Facebook:FrontendUrl"] ?? "http://localhost:5092";
+        var verifyUrl = new Uri(new Uri(frontendBase.TrimEnd('/') + "/"), "verify-admin-email#emailToken=" + Uri.EscapeDataString(rawToken)).ToString();
+        try
+        {
+            await activationEmailSender.SendAdminEmailChangeVerificationAsync(newEmail, user.Username, verifyUrl, code, 10, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            dbContext.AdminEmailChangeTokens.Remove(pending);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            logger.LogError(exception, "Could not deliver administrator email change verification.");
+            return Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Email delivery failed", detail: "The verification email could not be sent. Check the address and try again.");
+        }
+        return Accepted(new { message = "A verification link and code were sent to the new email address." });
+    }
+
+    [HttpPost("admin-email-change/verify-otp")]
+    [Authorize]
+    public async Task<IActionResult> VerifyAdminEmailChangeOtp(
+        [FromBody] AdminEmailChangeOtpRequest request, CancellationToken cancellationToken)
+    {
+        var user = await GetCurrentAdministratorAsync(cancellationToken);
+        if (user is null) return Forbid();
+        var pending = await dbContext.AdminEmailChangeTokens
+            .Where(token => token.UserId == user.Id && token.UsedAt == null && token.ExpiresAt > DateTimeOffset.UtcNow)
+            .OrderByDescending(token => token.CreatedAt).FirstOrDefaultAsync(cancellationToken);
+        if (pending is null) return Problem(statusCode: 401, title: "Verification expired", detail: "Request a new verification email.");
+        if (pending.FailedAttempts >= 5) return Problem(statusCode: 429, title: "Too many attempts", detail: "Request a new verification email to try again.");
+        var suppliedHash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request.Code?.Trim() ?? "")));
+        if (!CryptographicOperations.FixedTimeEquals(Convert.FromHexString(pending.OtpHash), Convert.FromHexString(suppliedHash)))
+        {
+            pending.FailedAttempts++;
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return Problem(statusCode: 401, title: "Invalid code", detail: "That verification code is incorrect.");
+        }
+        return await CompleteAdminEmailChangeAsync(pending, user, cancellationToken);
+    }
+
+    [HttpPost("admin-email-change/verify-link")]
+    [AllowAnonymous]
+    public async Task<IActionResult> VerifyAdminEmailChangeLink(
+        [FromBody] AdminEmailChangeLinkRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Token)) return Problem(statusCode: 400, title: "Invalid link");
+        var hash = Convert.ToHexString(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(request.Token)));
+        var pending = await dbContext.AdminEmailChangeTokens
+            .SingleOrDefaultAsync(token => token.TokenHash == hash && token.UsedAt == null && token.ExpiresAt > DateTimeOffset.UtcNow, cancellationToken);
+        if (pending is null) return Problem(statusCode: 401, title: "Link expired", detail: "This verification link is invalid or expired. Request another email change link.");
+        var user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Id == pending.UserId, cancellationToken);
+        if (user is null || !IsAdministratorRole(user.Role)) return Problem(statusCode: 401, title: "Link expired");
+        return await CompleteAdminEmailChangeAsync(pending, user, cancellationToken);
+    }
+
+    private async Task<User?> GetCurrentAdministratorAsync(CancellationToken cancellationToken)
+    {
+        var rawId = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        if (!Guid.TryParse(rawId, out var userId)) return null;
+        var user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Id == userId, cancellationToken);
+        return user is { IsActive: true } && IsAdministratorRole(user.Role) ? user : null;
+    }
+
+    private async Task<IActionResult> CompleteAdminEmailChangeAsync(
+        AdminEmailChangeToken pending, User user, CancellationToken cancellationToken)
+    {
+        if (await dbContext.Users.AnyAsync(candidate => candidate.Id != user.Id && candidate.Email.ToUpper() == pending.NewEmail.ToUpper(), cancellationToken))
+            return Problem(statusCode: 409, title: "Email already in use", detail: "That email address is already registered. Request another change using a different address.");
+        var now = DateTimeOffset.UtcNow;
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        var affected = await dbContext.AdminEmailChangeTokens
+            .Where(token => token.Id == pending.Id && token.UsedAt == null && token.ExpiresAt > now && token.FailedAttempts < 5)
+            .ExecuteUpdateAsync(setters => setters.SetProperty(token => token.UsedAt, now), cancellationToken);
+        if (affected != 1) return Problem(statusCode: 401, title: "Verification expired", detail: "Request a new verification email.");
+        user.Email = pending.NewEmail;
+        user.IsEmailVerified = true;
+        dbContext.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(), UserId = user.Id, Timestamp = now,
+            Action = "Admin email changed", Resource = "Account Settings", Status = ActivityLogStatus.Success
+        });
+        try { await dbContext.SaveChangesAsync(cancellationToken); }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            return Problem(statusCode: 409, title: "Email already in use", detail: "That email address is already registered.");
+        }
+        await transaction.CommitAsync(cancellationToken);
+        return Ok(new { email = user.Email, message = "Administrator email updated successfully." });
+    }
+
+    private static bool IsAdministratorRole(string role) =>
+        string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(role, "Administrator", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(role, "Super Admin", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Sends a 6-digit one-time verification code to an active, verified administrator.</summary>
     [HttpPost("admin-login/send-otp")]

@@ -30,6 +30,13 @@ public interface IActivationEmailSender
         string loginUrl,
         int tokenLifetimeMinutes,
         CancellationToken cancellationToken);
+    Task SendAdminEmailChangeVerificationAsync(
+        string email,
+        string username,
+        string verificationUrl,
+        string otpCode,
+        int lifetimeMinutes,
+        CancellationToken cancellationToken);
     Task SendSubscriptionReceiptAsync(
         SubscriptionReceiptEmail receipt,
         CancellationToken cancellationToken);
@@ -150,6 +157,33 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
         catch (SmtpException exception) { throw new EmailDeliveryException("The SMTP server could not deliver the admin sign-in email.", exception); }
         catch (FormatException exception) { throw new EmailDeliveryException("The admin sign-in email address is invalid.", exception); }
         catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the admin sign-in email.", exception); }
+        catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
+    }
+
+    public async Task SendAdminEmailChangeVerificationAsync(
+        string email, string username, string verificationUrl, string otpCode, int lifetimeMinutes,
+        CancellationToken cancellationToken)
+    {
+        var settings = options.Value;
+        if (string.IsNullOrWhiteSpace(settings.Host) || settings.Port is < 1 or > 65535 || string.IsNullOrWhiteSpace(settings.FromAddress))
+            throw new EmailDeliveryException("SMTP is not configured to send administrator email change verification.");
+        try
+        {
+            using var message = new MailMessage
+            {
+                From = string.IsNullOrWhiteSpace(settings.FromName) ? new MailAddress(settings.FromAddress) : new MailAddress(settings.FromAddress, settings.FromName),
+                Subject = "Verify your new Safe Passage admin email",
+                Body = $"Hello {username},\n\nUse this one-time link to verify the new email address for your Safe Passage administrator account:\n\n{verificationUrl}\n\nOr enter this 6-digit code in Account Settings:\n\n    {otpCode}\n\nBoth expire in {lifetimeMinutes} minutes. If you did not request this change, ignore this email.",
+                IsBodyHtml = false
+            };
+            message.To.Add(new MailAddress(email));
+            using var client = new SmtpClient(settings.Host, settings.Port) { EnableSsl = settings.EnableSsl, Timeout = 15000 };
+            if (!string.IsNullOrWhiteSpace(settings.Username)) client.Credentials = new NetworkCredential(settings.Username, settings.Password);
+            await client.SendMailAsync(message, cancellationToken);
+        }
+        catch (SmtpException exception) { throw new EmailDeliveryException("The SMTP server could not deliver the email change verification.", exception); }
+        catch (FormatException exception) { throw new EmailDeliveryException("The email change recipient address is invalid.", exception); }
+        catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the email change verification.", exception); }
         catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
     }
 

@@ -294,6 +294,23 @@ namespace SafePassage.Api.Data.Migrations
                     b.ToTable("AdminLoginTokens");
                 });
 
+            modelBuilder.Entity("SafePassage.Api.Models.AdminEmailChangeToken", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("TEXT");
+                    b.Property<DateTimeOffset>("CreatedAt").HasColumnType("TEXT");
+                    b.Property<DateTimeOffset>("ExpiresAt").HasColumnType("TEXT");
+                    b.Property<int>("FailedAttempts").HasColumnType("INTEGER");
+                    b.Property<string>("NewEmail").IsRequired().HasMaxLength(320).HasColumnType("TEXT");
+                    b.Property<string>("OtpHash").IsRequired().HasMaxLength(64).HasColumnType("TEXT");
+                    b.Property<string>("TokenHash").IsRequired().HasMaxLength(64).HasColumnType("TEXT");
+                    b.Property<DateTimeOffset?>("UsedAt").HasColumnType("TEXT");
+                    b.Property<Guid>("UserId").HasColumnType("TEXT");
+                    b.HasKey("Id");
+                    b.HasIndex("TokenHash").IsUnique();
+                    b.HasIndex("UserId", "ExpiresAt");
+                    b.ToTable("AdminEmailChangeTokens");
+                });
+
             modelBuilder.Entity("SafePassage.Api.Models.ActivityLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -816,6 +833,15 @@ namespace SafePassage.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SafePassage.Api.Models.AdminEmailChangeToken", b =>
+                {
+                    b.HasOne("SafePassage.Api.Models.User", null)
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("SafePassage.Api.Models.ActivityLog", b =>

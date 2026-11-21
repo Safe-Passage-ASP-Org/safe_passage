@@ -8,6 +8,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<User> Users => Set<User>();
     public DbSet<AccountActivationToken> AccountActivationTokens => Set<AccountActivationToken>();
     public DbSet<AdminLoginToken> AdminLoginTokens => Set<AdminLoginToken>();
+    public DbSet<AdminEmailChangeToken> AdminEmailChangeTokens => Set<AdminEmailChangeToken>();
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<Device> Devices => Set<Device>();
     public DbSet<Application> Applications => Set<Application>();
@@ -72,6 +73,17 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(token => token.TokenHash).HasMaxLength(64).IsRequired();
             entity.HasOne(token => token.User).WithMany()
                 .HasForeignKey(token => token.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AdminEmailChangeToken>(entity =>
+        {
+            entity.HasKey(token => token.Id);
+            entity.HasIndex(token => token.TokenHash).IsUnique();
+            entity.HasIndex(token => new { token.UserId, token.ExpiresAt });
+            entity.Property(token => token.NewEmail).HasMaxLength(320).IsRequired();
+            entity.Property(token => token.TokenHash).HasMaxLength(64).IsRequired();
+            entity.Property(token => token.OtpHash).HasMaxLength(64).IsRequired();
+            entity.HasOne<User>().WithMany().HasForeignKey(token => token.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Group>(entity =>

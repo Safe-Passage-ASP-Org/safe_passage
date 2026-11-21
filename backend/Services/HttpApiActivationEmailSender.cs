@@ -74,6 +74,27 @@ public sealed class HttpApiActivationEmailSender(
             email, username, loginUrl, tokenLifetimeMinutes, cancellationToken);
     }
 
+    public async Task SendAdminEmailChangeVerificationAsync(
+        string email, string username, string verificationUrl, string otpCode, int lifetimeMinutes,
+        CancellationToken cancellationToken)
+    {
+        var subject = "Verify your new Safe Passage admin email";
+        var body = $"Hello {username},\n\nUse this one-time link to verify the new email address for your Safe Passage administrator account:\n\n{verificationUrl}\n\nOr enter this 6-digit code in Account Settings:\n\n    {otpCode}\n\nBoth expire in {lifetimeMinutes} minutes. If you did not request this change, ignore this email.";
+        var brevoApiKey = configuration["Brevo:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(brevoApiKey))
+        {
+            await SendViaBrevoAsync(brevoApiKey, email, username, subject, body, cancellationToken);
+            return;
+        }
+        var resendApiKey = configuration["Resend:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(resendApiKey))
+        {
+            await SendViaResendAsync(resendApiKey, email, subject, body, cancellationToken);
+            return;
+        }
+        await new SmtpEmailSender(smtpOptions).SendAdminEmailChangeVerificationAsync(email, username, verificationUrl, otpCode, lifetimeMinutes, cancellationToken);
+    }
+
     public async Task SendSubscriptionReceiptAsync(
         SubscriptionReceiptEmail receipt,
         CancellationToken cancellationToken)

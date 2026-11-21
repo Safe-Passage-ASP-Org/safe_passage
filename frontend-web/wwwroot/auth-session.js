@@ -16,5 +16,8 @@ window.safePassageAuthSession = {
     },
     getAdminEmailToken() {
         return new URLSearchParams(window.location.hash.slice(1)).get("emailToken");
+    },
+    getAdminEmailChangeToken() {
+        return new URLSearchParams(window.location.hash.slice(1)).get("emailToken");
     }
 };

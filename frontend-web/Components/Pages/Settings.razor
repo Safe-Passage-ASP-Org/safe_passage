@@ -23,6 +23,28 @@
         </div>
     </section>
 
+    @if (Api.IsAdministrator)
+    {
+    <section class="sp-card settings-section">
+        <div class="settings-section-title">Change Email</div>
+        <p class="settings-note">A verification link and 6-digit code will be sent to your new address. Your email changes after you verify either one.</p>
+        <form class="settings-password-form" @onsubmit="RequestEmailChangeAsync" @onsubmit:preventDefault="true">
+            <label>New email address<input type="email" required maxlength="320" autocomplete="email" @bind="NewEmail" /></label>
+            @if (!string.IsNullOrWhiteSpace(EmailError)) { <div class="settings-alert error" role="alert">@EmailError</div> }
+            @if (!string.IsNullOrWhiteSpace(EmailNotice)) { <div class="settings-alert ok" role="status">@EmailNotice</div> }
+            <button class="settings-save-btn" type="submit" disabled="@SendingEmailCode">@(SendingEmailCode ? "Sending…" : "Send Verification")</button>
+        </form>
+        @if (EmailVerificationSent)
+        {
+            <form class="settings-password-form settings-email-verify" @onsubmit="VerifyEmailOtpAsync" @onsubmit:preventDefault="true">
+                <label>6-digit verification code<input inputmode="numeric" autocomplete="one-time-code" required minlength="6" maxlength="6" pattern="[0-9]{6}" @bind="EmailOtp" /></label>
+                <button class="settings-save-btn" type="submit" disabled="@VerifyingEmail">@(VerifyingEmail ? "Verifying…" : "Verify Code")</button>
+            </form>
+        }
+    </section>
+    }
+    else
+    {
     <section class="sp-card settings-section">
         <div class="settings-section-title">Password</div>
         <p class="settings-note">Update your Safe Passage sign-in password. Must be at least 8 characters.</p>
@@ -35,6 +57,7 @@
             <button class="settings-save-btn" type="submit" disabled="@SavingPassword">@(SavingPassword ? "Updating…" : "Update Password")</button>
         </form>
     </section>
+    }
 
     <section class="sp-card settings-section">
         <div class="settings-section-title">Subscription</div>
@@ -89,6 +112,7 @@
     .settings-signout-btn:hover{background:#fee2e2;border-color:#f87171}
     .settings-signout-btn:focus-visible{outline:3px solid #fca5a5;outline-offset:2px}
     .settings-password-form{display:grid;gap:10px}
+    .settings-email-verify{margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0}
     .settings-password-form label{display:grid;gap:4px;font-size:12px;font-weight:600;color:#334155}
     .settings-password-form input{border:1px solid #cbd5dc;border-radius:5px;padding:8px 10px;font:inherit;font-size:13px}
     .settings-save-btn{justify-self:start;padding:8px 14px;border:0;border-radius:6px;background:var(--sp-accent,#087f75);color:#fff;font-size:12px;font-weight:650;cursor:pointer}
@@ -102,7 +126,9 @@
 
 @code {
     private string CurrentPassword = "", NewPassword = "", ConfirmPassword = "", PasswordError = "", PasswordNotice = "";
+    private string NewEmail = "", EmailOtp = "", EmailError = "", EmailNotice = "";
     private bool SavingPassword;
+    private bool SendingEmailCode, VerifyingEmail, EmailVerificationSent;
     private UserSubscriptionDto? CurrentSubscription;
 
     protected override async Task OnInitializedAsync()
@@ -157,6 +183,39 @@
         {
             SavingPassword = false;
         }
+    }
+
+    private async Task RequestEmailChangeAsync()
+    {
+        EmailError = "";
+        EmailNotice = "";
+        SendingEmailCode = true;
+        try
+        {
+            await Api.RequestAdminEmailChangeAsync(NewEmail.Trim());
+            EmailVerificationSent = true;
+            EmailOtp = "";
+            EmailNotice = $"A verification link and code were sent to {NewEmail.Trim()}.";
+        }
+        catch (Exception ex) { EmailError = ex.Message; }
+        finally { SendingEmailCode = false; }
+    }
+
+    private async Task VerifyEmailOtpAsync()
+    {
+        EmailError = "";
+        EmailNotice = "";
+        VerifyingEmail = true;
+        try
+        {
+            await Api.VerifyAdminEmailChangeOtpAsync(EmailOtp.Trim());
+            NewEmail = "";
+            EmailOtp = "";
+            EmailVerificationSent = false;
+            EmailNotice = "Administrator email updated successfully.";
+        }
+        catch (Exception ex) { EmailError = ex.Message; }
+        finally { VerifyingEmail = false; }
     }
 
     private void SignOut()

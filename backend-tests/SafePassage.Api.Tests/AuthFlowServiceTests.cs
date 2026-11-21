@@ -464,6 +464,7 @@ public sealed class AuthFlowServiceTests
 
         public Task SendActivationEmailAsync(string email, string username, string activationUrl, bool requiresPasswordSetup, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SendAdminLoginLinkAsync(string email, string username, string loginUrl, int tokenLifetimeMinutes, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SendAdminEmailChangeVerificationAsync(string email, string username, string verificationUrl, string otpCode, int lifetimeMinutes, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SendSubscriptionReceiptAsync(SubscriptionReceiptEmail receipt, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SendSignInOtpAsync(string email, string username, string otpCode, int lifetimeMinutes, bool isAdminLogin, CancellationToken cancellationToken)
         {

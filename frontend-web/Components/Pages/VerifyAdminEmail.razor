@@ -1,0 +1,56 @@
+@page "/verify-admin-email"
+@using Microsoft.JSInterop
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>Verify Admin Email – Safe Passage</PageTitle>
+<div class="sp-page-header"><h1 class="sp-page-title">Verify Admin Email</h1></div>
+<section class="sp-card verify-email-card" role="status">
+    @if (Working)
+    {
+        <p>Verifying your new email address…</p>
+    }
+    else if (!string.IsNullOrWhiteSpace(Error))
+    {
+        <p class="error">@Error</p>
+        <a href="/login">Return to sign in</a>
+    }
+    else
+    {
+        <p>@Message</p>
+        <a href="/login">Continue to sign in</a>
+    }
+</section>
+
+<style>
+    .verify-email-card{max-width:520px;padding:24px;line-height:1.6}
+    .verify-email-card .error{color:#b42318}
+    .verify-email-card a{color:#087f75;font-weight:650}
+</style>
+
+@code {
+    private bool Working = true;
+    private bool Attempted;
+    private string? Error;
+    private string Message = "Your administrator email address has been verified.";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Attempted) return;
+        Attempted = true;
+        try
+        {
+            var token = await JS.InvokeAsync<string?>("safePassageAuthSession.getAdminEmailChangeToken");
+            if (string.IsNullOrWhiteSpace(token))
+                throw new InvalidOperationException("This verification link is missing its token. Request a new email change from Account Settings.");
+            await Api.VerifyAdminEmailChangeLinkAsync(token);
+        }
+        catch (Exception ex) { Error = ex.Message; }
+        finally
+        {
+            Working = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

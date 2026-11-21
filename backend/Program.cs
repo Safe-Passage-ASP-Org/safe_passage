@@ -505,6 +505,21 @@ using (var scope = app.Services.CreateScope())
 
             using var adminLoginTokenCmd = conn.CreateCommand();
             adminLoginTokenCmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS "AdminEmailChangeTokens" (
+                    "Id" uuid PRIMARY KEY,
+                    "UserId" uuid NOT NULL REFERENCES "Users" ("Id") ON DELETE CASCADE,
+                    "NewEmail" character varying(320) NOT NULL,
+                    "TokenHash" character varying(64) NOT NULL,
+                    "OtpHash" character varying(64) NOT NULL,
+                    "FailedAttempts" integer NOT NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "ExpiresAt" timestamp with time zone NOT NULL,
+                    "UsedAt" timestamp with time zone NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_AdminEmailChangeTokens_TokenHash"
+                    ON "AdminEmailChangeTokens" ("TokenHash");
+                CREATE INDEX IF NOT EXISTS "IX_AdminEmailChangeTokens_UserId_ExpiresAt"
+                    ON "AdminEmailChangeTokens" ("UserId", "ExpiresAt");
                 CREATE TABLE IF NOT EXISTS "AdminLoginTokens" (
                     "Id" uuid PRIMARY KEY,
                     "UserId" uuid NOT NULL REFERENCES "Users" ("Id") ON DELETE CASCADE,
