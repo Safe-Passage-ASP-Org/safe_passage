@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Image, Text, View } from 'react-native';
-import { NavigationContainer, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
+import { NavigationContainer, DarkTheme } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -18,12 +18,10 @@ import SettingsScreen from './screens/SettingsScreen';
 // Services
 import { getToken } from './services/AuthService';
 import { setMfaRequestHandler, startMfaRealtime, stopMfaRealtime } from './services/RealtimeService';
+import { navigationRef } from './services/NavigationService';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
-
-// Navigation ref allows navigation from outside React components
-export const navigationRef = createNavigationContainerRef();
 
 const MainTabs = () => (
   <Tab.Navigator

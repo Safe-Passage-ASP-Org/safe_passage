@@ -8,6 +8,7 @@ import { logout, getToken } from '../services/AuthService';
 import { getApprovalDeviceId, getDeviceSigningPublicKey, getUserIdFromToken } from '../services/DeviceSigningService';
 import { registerForPushNotificationsAsync } from '../services/NotificationService';
 import { startMfaRealtime, stopMfaRealtime } from '../services/RealtimeService';
+import { navigationRef } from '../services/NavigationService';
 
 const PIN_KEY = 'safepassage_local_pin';
 const PUSH_PREF_KEY = 'safepassage_push_enabled';
@@ -78,11 +79,12 @@ function decodeJwtPayload(token) {
   }
 }
 
-export default function SettingsScreen({ navigation }) {
+export default function SettingsScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [userInfo, setUserInfo] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
   const [pinModalVisible, setPinModalVisible] = useState(false);
+  const [logoutModalVisible, setLogoutModalVisible] = useState(false);
   const [hasPin, setHasPin] = useState(false);
   const [pinDraft, setPinDraft] = useState('');
   const [pinConfirm, setPinConfirm] = useState('');
@@ -130,28 +132,15 @@ export default function SettingsScreen({ navigation }) {
   }, []));
 
   const handleLogout = async () => {
+    setLogoutModalVisible(false);
     await logout();
     void stopMfaRealtime();
-
-    const rootNavigation = navigation.getParent();
-    if (rootNavigation?.replace) {
-      rootNavigation.replace('Login');
-    } else {
-      navigation.navigate('Login');
+    if (navigationRef.isReady()) {
+      navigationRef.resetRoot({ index: 0, routes: [{ name: 'Login' }] });
     }
   };
 
-  const confirmLogout = () => {
-    Alert.alert(
-      'Sign out?',
-      'Are you sure you want to sign out of Safe Passage?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Sign Out', style: 'destructive', onPress: () => { void handleLogout(); } },
-      ],
-      { cancelable: true }
-    );
-  };
+  const confirmLogout = () => setLogoutModalVisible(true);
 
   const handleChangePin = () => {
     setPinDraft('');
@@ -276,6 +265,23 @@ export default function SettingsScreen({ navigation }) {
         <Ionicons name="log-out" size={24} color="#ef4444" />
         <Text style={styles.logoutText}>Sign Out</Text>
       </TouchableOpacity>
+
+      <Modal visible={logoutModalVisible} transparent animationType="fade" onRequestClose={() => setLogoutModalVisible(false)}>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard} accessibilityRole="alert">
+            <Text style={styles.modalTitle}>Sign out?</Text>
+            <Text style={styles.logoutConfirmationText}>Are you sure you want to sign out of Safe Passage?</Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity style={styles.modalCancelBtn} onPress={() => setLogoutModalVisible(false)}>
+                <Text style={styles.modalCancelText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.modalDangerBtn} onPress={() => { void handleLogout(); }}>
+                <Text style={styles.modalDangerText}>Sign Out</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
 
       <Modal visible={pinModalVisible} transparent animationType="fade" onRequestClose={() => setPinModalVisible(false)}>
         <View style={styles.modalBackdrop}>
@@ -406,6 +412,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   modalTitle: { fontSize: 18, fontWeight: 'bold', color: '#f8fafc', marginBottom: 4 },
+  logoutConfirmationText: { color: '#cbd5e1', fontSize: 14, lineHeight: 20 },
   pinInput: {
     backgroundColor: '#020617',
     borderWidth: 1,
