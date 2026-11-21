@@ -59,18 +59,21 @@
     </section>
     }
 
-    <section class="sp-card settings-section">
-        <div class="settings-section-title">Subscription</div>
-        @if (CurrentSubscription is not null)
-        {
-            <div class="settings-sub-row">
-                <span class="settings-role-badge">@CurrentSubscription.PlanName</span>
-                <span class="settings-sub-status">@(CurrentSubscription.HasActiveEntitlement ? "Active entitlement" : CurrentSubscription.Status)</span>
-            </div>
-        }
-        <p class="settings-note">Manage your Safe Passage subscription plan, PayMongo Test Mode billing, and renewal status.</p>
-        <a class="settings-link" href="/subscription">Manage Subscription →</a>
-    </section>
+    @if (!Api.IsAdministrator)
+    {
+        <section class="sp-card settings-section">
+            <div class="settings-section-title">Subscription</div>
+            @if (CurrentSubscription is not null)
+            {
+                <div class="settings-sub-row">
+                    <span class="settings-role-badge">@CurrentSubscription.PlanName</span>
+                    <span class="settings-sub-status">@(CurrentSubscription.HasActiveEntitlement ? "Active entitlement" : CurrentSubscription.Status)</span>
+                </div>
+            }
+            <p class="settings-note">Manage your Safe Passage subscription plan, PayMongo Test Mode billing, and renewal status.</p>
+            <a class="settings-link" href="/subscription">Manage Subscription →</a>
+        </section>
+    }
 
     <section class="sp-card settings-section">
         <div class="settings-section-title">System</div>
