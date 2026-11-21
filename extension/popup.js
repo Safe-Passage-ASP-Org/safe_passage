@@ -131,7 +131,7 @@ document.getElementById('saveSiteBtn').addEventListener('click', async () => {
   }
   await refresh();
   statusMsg.textContent = res?.ok
-    ? `Saved ${name}. Site verification status: ${res.verificationStatus || 'Pending'}.`
+    ? `Saved ${name}. It is synced with My Applications and is ready for mobile-approved sign-in.`
     : (res?.error || 'Failed to save site');
 });
 

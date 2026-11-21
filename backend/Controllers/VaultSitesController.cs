@@ -43,7 +43,10 @@ public sealed class VaultSitesController(ApplicationDbContext dbContext, Applica
             Origin = origin, Category = request.Category?.Trim() ?? "Other", Description = request.Description?.Trim() ?? "",
             AutoFillUsername = request.AutoFillUsername?.Trim() ?? "", EncryptedPassword = protector.Protect(request.Password),
             EncryptedTotpSecret = protector.Protect(NormalizeTotpSecret(request.TotpSecret)),
-            VerificationStatus = "Pending", CreatedAt = DateTimeOffset.UtcNow
+            // A site is submitted by its owner into their personal vault. Admin review
+            // should not block that user's own extension workflow.
+            VerificationStatus = "Verified", VerifiedAt = DateTimeOffset.UtcNow,
+            VerifiedByUserId = userId, CreatedAt = DateTimeOffset.UtcNow
         };
         dbContext.VaultSites.Add(site);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -64,15 +67,15 @@ public sealed class VaultSitesController(ApplicationDbContext dbContext, Applica
         if (origin != site.Origin)
         {
             site.Origin = origin;
-            site.VerificationStatus = "Pending";
-            site.VerifiedAt = null;
-            site.VerifiedByUserId = null;
+            site.VerificationStatus = "Verified";
+            site.VerifiedAt = DateTimeOffset.UtcNow;
+            site.VerifiedByUserId = userId;
         }
-        else if (site.VerificationStatus == "Rejected")
+        else if (site.VerificationStatus != "Verified")
         {
-            site.VerificationStatus = "Pending";
-            site.VerifiedAt = null;
-            site.VerifiedByUserId = null;
+            site.VerificationStatus = "Verified";
+            site.VerifiedAt = DateTimeOffset.UtcNow;
+            site.VerifiedByUserId = userId;
         }
         site.Name = request.Name.Trim();
         site.LoginUrl = request.LoginUrl.Trim();

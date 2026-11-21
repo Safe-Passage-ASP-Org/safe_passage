@@ -61,6 +61,32 @@
     }
 </section>
 
+<div class="sp-page-header catalog-header"><h2 class="sp-page-title">Your saved websites</h2><p class="sp-page-subtitle">Websites you added in the Credential Vault or browser extension, synced to your account.</p></div>
+<section class="sp-card my-apps-card">
+    @if (Loading)
+    {
+        <p class="my-apps-state" role="status">Loading saved websites…</p>
+    }
+    else if (SavedSites.Count == 0)
+    {
+        <p class="my-apps-state">No saved websites yet. Add a website in the Credential Vault or browser extension.</p>
+    }
+    else
+    {
+        @foreach (var site in SavedSites.OrderBy(site => site.Name, StringComparer.OrdinalIgnoreCase))
+        {
+            <article class="my-apps-row">
+                @if (!FailedIconIds.Contains(site.Id) && IconUrl(site.LoginUrl) is { } iconUrl) { <img class="my-apps-mark my-apps-site-icon" src="@iconUrl" alt="" @onerror="() => IconFailed(site.Id)" /> }
+                else { <span class="my-apps-mark">@Mark(site.Name)</span> }
+                <div><h2>@site.Name</h2><p>@site.LoginUrl</p></div>
+                <span class="catalog-status @(site.VerificationStatus == "Verified" ? "available" : site.VerificationStatus == "Rejected" ? "denied" : "pending")">@site.VerificationStatus</span>
+                <a class="my-apps-launch" href="@site.LoginUrl" target="_blank" rel="noopener noreferrer" aria-label="Open @site.Name">Open <span aria-hidden="true">↗</span></a>
+            </article>
+        }
+        <p class="my-apps-note">Saved websites appear here for your convenience. The extension still asks for trusted mobile approval before using saved credentials.</p>
+    }
+</section>
+
 <div class="sp-page-header catalog-header"><h2 class="sp-page-title">Browse applications</h2><p class="sp-page-subtitle">Discover apps your administrator has made available and request access when needed.</p></div>
 @if (LoadingCatalog)
 {
@@ -130,6 +156,7 @@ else
 
 @code {
     private List<AccessibleApplication> Applications = [];
+    private List<VaultSiteSummary> SavedSites = [];
     private List<CatalogApplication> Catalog = [];
     private List<MyApplicationAccessRequest> Requests = [];
     private readonly Dictionary<Guid, string> RequestReasons = [];
@@ -146,7 +173,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        try { Applications = await Api.GetMyApplicationsAsync(); }
+        try
+        {
+            var applicationsTask = Api.GetMyApplicationsAsync();
+            var sitesTask = Api.GetVaultSitesAsync();
+            await Task.WhenAll(applicationsTask, sitesTask);
+            Applications = await applicationsTask;
+            SavedSites = await sitesTask;
+        }
         catch (Exception exception) { Error = exception.Message; }
         finally { Loading = false; }
         await ReloadCatalogAsync();
