@@ -135,6 +135,18 @@ export default function SettingsScreen({ navigation }) {
     navigation.replace('Login');
   };
 
+  const confirmLogout = () => {
+    Alert.alert(
+      'Sign out?',
+      'Are you sure you want to sign out of Safe Passage?',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Sign Out', style: 'destructive', onPress: () => { void handleLogout(); } },
+      ],
+      { cancelable: true }
+    );
+  };
+
   const handleChangePin = () => {
     setPinDraft('');
     setPinConfirm('');
@@ -254,7 +266,7 @@ export default function SettingsScreen({ navigation }) {
       </View>
 
       {/* ── Sign Out ─────────────────────────────────────────── */}
-      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+      <TouchableOpacity style={styles.logoutButton} onPress={confirmLogout}>
         <Ionicons name="log-out" size={24} color="#ef4444" />
         <Text style={styles.logoutText}>Sign Out</Text>
       </TouchableOpacity>

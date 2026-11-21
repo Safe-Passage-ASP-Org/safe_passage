@@ -2,6 +2,7 @@
 @inject SafePassage.Web.Services.AdminApiClient Api
 @inject SafePassage.Web.Services.SecurityAlertCountService AlertCount
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 @implements IDisposable
 
 <div class="sp-shell">
@@ -124,8 +125,11 @@
 
     private void CloseProfileDropdown() => IsProfileMenuOpen = false;
 
-    private void SignOut()
+    private async Task SignOut()
     {
+        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure you want to sign out?"))
+            return;
+
         IsProfileMenuOpen = false;
         Api.SignOut();
         Navigation.NavigateTo("/login", forceLoad: true);
