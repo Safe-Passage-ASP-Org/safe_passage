@@ -13,6 +13,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<SecurityPolicy> SecurityPolicies => Set<SecurityPolicy>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+    public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<MfaSession> MfaSessions => Set<MfaSession>();
     public DbSet<UserGroup> UserGroups => Set<UserGroup>();
     public DbSet<ApplicationUserAccess> ApplicationUserAccesses => Set<ApplicationUserAccess>();
@@ -172,11 +173,27 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         {
             entity.HasKey(log => log.Id);
             entity.HasIndex(log => new { log.UserId, log.Timestamp });
+            entity.HasIndex(log => new { log.TargetUserId, log.Timestamp });
             entity.Property(log => log.Action).HasMaxLength(120).IsRequired();
             entity.Property(log => log.Resource).HasMaxLength(512).IsRequired();
+            entity.Property(log => log.DeviceId).HasMaxLength(256);
+            entity.Property(log => log.Reason).HasMaxLength(512);
+            entity.Property(log => log.IpAddress).HasMaxLength(64);
             entity.Property(log => log.Status).HasConversion<string>().HasMaxLength(32);
             entity.HasOne(log => log.User).WithMany(user => user.ActivityLogs)
                 .HasForeignKey(log => log.UserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<UserSession>(entity =>
+        {
+            entity.HasKey(session => session.Id);
+            entity.HasIndex(session => session.TokenJti).IsUnique();
+            entity.HasIndex(session => new { session.UserId, session.DeviceId, session.RevokedAt });
+            entity.Property(session => session.TokenJti).HasMaxLength(64).IsRequired();
+            entity.Property(session => session.DeviceId).HasMaxLength(256);
+            entity.Property(session => session.RevokedReason).HasMaxLength(128);
+            entity.HasOne(session => session.User).WithMany()
+                .HasForeignKey(session => session.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<MfaSession>(entity =>

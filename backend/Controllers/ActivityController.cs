@@ -22,7 +22,8 @@ public sealed class ActivityController(ApplicationDbContext dbContext) : Control
             return Unauthorized();
 
         var logs = await dbContext.ActivityLogs.AsNoTracking()
-            .Where(activity => activity.UserId == userId)
+            .Where(activity => activity.TargetUserId == userId
+                || (activity.TargetUserId == null && activity.UserId == userId))
             .ToListAsync(cancellationToken);
         logs = logs
             .OrderByDescending(log => log.Timestamp)
@@ -39,7 +40,8 @@ public sealed class ActivityController(ApplicationDbContext dbContext) : Control
                 var a when a.Contains("login") && !isSuccess => ("close-circle", "#ef4444"),
                 var a when a.Contains("mfa") && isSuccess => ("shield-checkmark", "#10b981"),
                 var a when a.Contains("mfa") && !isSuccess => ("warning", "#ef4444"),
-                var a when a.Contains("device") => ("hardware-chip", "#f59e0b"),
+                var a when a.Contains("device") => ("hardware-chip", isSuccess ? "#f59e0b" : "#ef4444"),
+                var a when a.Contains("suspended") => ("ban", "#ef4444"),
                 var a when a.Contains("app") => ("apps", "#0ea5e9"),
                 _ => (isSuccess ? "shield-checkmark" : "close-circle", isSuccess ? "#10b981" : "#ef4444")
             };
@@ -49,6 +51,8 @@ public sealed class ActivityController(ApplicationDbContext dbContext) : Control
                 id = log.Id.ToString(),
                 action = log.Action,
                 target = log.Resource,
+                deviceId = log.DeviceId,
+                reason = log.Reason,
                 time = GetRelativeTime(log.Timestamp),
                 icon,
                 color

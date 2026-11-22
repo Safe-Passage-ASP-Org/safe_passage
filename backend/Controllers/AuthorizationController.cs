@@ -66,17 +66,21 @@ public sealed class AuthorizationController(
             var requestedDeviceId = Request.Query["device_id"].FirstOrDefault()
                 ?? Request.Headers["X-Device-Id"].FirstOrDefault();
 
-            var candidateQuery = db.Devices.AsNoTracking()
-                .Where(d => d.UserId == user!.Id && d.Status == DeviceStatus.Active);
-
-            if (policy.RequiresTrustedDevice)
-                candidateQuery = candidateQuery.Where(d => d.TrustStatus == DeviceTrustStatus.Trusted);
-
+            var hasCompliantDevice = false;
             if (!string.IsNullOrWhiteSpace(requestedDeviceId))
-                candidateQuery = candidateQuery.Where(d => d.DeviceId == requestedDeviceId);
+            {
+                var candidateQuery = db.Devices.AsNoTracking()
+                    .Where(d => d.UserId == user!.Id
+                        && d.Status == DeviceStatus.Active
+                        && d.DeviceId == requestedDeviceId);
 
-            var candidates = await candidateQuery.ToListAsync(cancellationToken);
-            var hasCompliantDevice = candidates.Any(d => DevicePostureEvaluator.Evaluate(d, policy).IsCompliant);
+                if (policy.RequiresTrustedDevice)
+                    candidateQuery = candidateQuery.Where(d => d.TrustStatus == DeviceTrustStatus.Trusted);
+
+                var candidates = await candidateQuery.ToListAsync(cancellationToken);
+                hasCompliantDevice = candidates.Any(d => DevicePostureEvaluator.Evaluate(d, policy).IsCompliant);
+            }
+
             if (!hasCompliantDevice)
             {
                 db.ActivityLogs.Add(new ActivityLog

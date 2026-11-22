@@ -43,7 +43,8 @@ export default function ActivityScreen() {
       </View>
       <View style={styles.activityInfo}>
         <Text style={styles.activityAction}>{item.action}</Text>
-        <Text style={styles.activityTarget}>{item.target}</Text>
+        <Text style={styles.activityTarget}>{item.target}{item.deviceId ? ` • ${item.deviceId}` : ''}</Text>
+        {item.reason ? <Text style={styles.activityReason}>{item.reason}</Text> : null}
       </View>
       <Text style={styles.activityTime}>{item.time}</Text>
     </View>
@@ -129,6 +130,11 @@ const styles = StyleSheet.create({
   activityTarget: {
     fontSize: 14,
     color: '#94a3b8',
+  },
+  activityReason: {
+    fontSize: 12,
+    color: '#64748b',
+    marginTop: 2,
   },
   activityTime: {
     fontSize: 12,

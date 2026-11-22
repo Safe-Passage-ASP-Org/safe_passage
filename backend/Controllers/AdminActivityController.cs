@@ -21,10 +21,24 @@ public sealed class AdminActivityController(ApplicationDbContext dbContext) : Co
         CancellationToken cancellationToken = default)
     {
         var boundedLimit = Math.Clamp(limit, 1, 2000);
-        var logs = await dbContext.ActivityLogs.AsNoTracking()
-            .Select(log => new AdminActivityRecord(log.Id, log.Timestamp,
+        var query = dbContext.ActivityLogs.AsNoTracking();
+
+        if (!string.IsNullOrWhiteSpace(status)
+            && Enum.TryParse<ActivityLogStatus>(status.Trim(), ignoreCase: true, out var parsedStatus))
+        {
+            query = query.Where(log => log.Status == parsedStatus);
+        }
+
+        var logs = await query
+            .Select(log => new AdminActivityRecord(
+                log.Id,
+                log.Timestamp,
                 log.User == null ? "Unknown user" : log.User.Username,
-                log.Action, log.Resource, log.Status.ToString()))
+                log.Action,
+                log.Resource,
+                log.Status.ToString(),
+                log.DeviceId,
+                log.Reason))
             .ToListAsync(cancellationToken);
 
         IEnumerable<AdminActivityRecord> filtered = logs;
@@ -40,7 +54,9 @@ public sealed class AdminActivityController(ApplicationDbContext dbContext) : Co
             filtered = filtered.Where(l =>
                 l.Username.Contains(term, StringComparison.OrdinalIgnoreCase)
                 || l.Action.Contains(term, StringComparison.OrdinalIgnoreCase)
-                || l.Resource.Contains(term, StringComparison.OrdinalIgnoreCase));
+                || l.Resource.Contains(term, StringComparison.OrdinalIgnoreCase)
+                || (l.DeviceId?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false)
+                || (l.Reason?.Contains(term, StringComparison.OrdinalIgnoreCase) ?? false));
         }
 
         return Ok(filtered.OrderByDescending(log => log.Timestamp).Take(boundedLimit).ToList());
@@ -62,7 +78,7 @@ public sealed class AdminActivityController(ApplicationDbContext dbContext) : Co
     }
 
     public sealed record AdminActivityRecord(Guid Id, DateTimeOffset Timestamp, string Username,
-        string Action, string Resource, string Status);
+        string Action, string Resource, string Status, string? DeviceId = null, string? Reason = null);
 
     public sealed record AdminActivitySummary(int TotalCount, int MfaLast24h, int DeniedCount, int DeniedLast24h);
 }
