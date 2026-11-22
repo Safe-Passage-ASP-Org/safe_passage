@@ -48,6 +48,8 @@ public sealed class AuthFlowServiceTests
             OS = "Android 15",
             Status = DeviceStatus.Active,
             TrustStatus = DeviceTrustStatus.Trusted,
+            ScreenLockEnabled = true,
+            IsRootedOrJailbroken = false,
             SigningPublicKey = ExportPublicKey(signingKey),
             User = user
         };
@@ -144,6 +146,8 @@ public sealed class AuthFlowServiceTests
             OS = "Android 15",
             Status = DeviceStatus.Active,
             TrustStatus = DeviceTrustStatus.Trusted,
+            ScreenLockEnabled = true,
+            IsRootedOrJailbroken = false,
             User = user
         };
 
