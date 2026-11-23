@@ -26,7 +26,10 @@ else if (SupportedRoles.Count == 0)
 }
 else
 {
-    <div class="roles-summary" aria-live="polite"><span>@SupportedRoles.Count built-in roles</span><label class="roles-sort">Sort by <select aria-label="Sort roles" @bind="SortOrder"><option value="name">Name A–Z</option><option value="id">Role ID A–Z</option></select></label></div>
+    <div class="roles-summary" aria-live="polite"><span>@FilteredRoles.Count() of @SupportedRoles.Count built-in roles</span><input type="search" aria-label="Search roles" placeholder="Search roles…" @bind="SearchTerm" @bind:event="oninput" /><label class="roles-sort">Sort by <select aria-label="Sort roles" @bind="SortOrder"><option value="name">Name A–Z</option><option value="id">Role ID A–Z</option></select></label></div>
+    @if (!FilteredRoles.Any()) { <div class="sp-card roles-state">No roles match “@SearchTerm”. Try another search.</div> }
+    else
+    {
     <section class="roles-grid" aria-label="Built-in roles">
         @foreach (var role in SortedRoles)
         {
@@ -40,6 +43,7 @@ else
             </article>
         }
     </section>
+    }
     <aside class="roles-note">
         <strong>Permission editing is not available yet.</strong>
         The API currently returns fixed role definitions and enforces access through fixed role names.
@@ -48,7 +52,7 @@ else
 }
 
 <style>
-    .roles-summary { display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;color:#64748b;font-size:13px }.roles-sort{display:flex;align-items:center;gap:7px;font-size:12px}.roles-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:7px;background:#fff;color:#334155;font:inherit}
+    .roles-summary { display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 12px;color:#64748b;font-size:13px }.roles-sort{display:flex;align-items:center;gap:7px;font-size:12px}.roles-sort select,.roles-summary input{border:1px solid #cbd5dc;border-radius:5px;padding:7px;background:#fff;color:#334155;font:inherit}.roles-summary input{margin-left:auto;min-width:210px;font-size:12px}
     .roles-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 230px), 1fr)); gap: 14px; }
     .role-card { min-width: 0; padding: 18px; }
     .role-card-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -67,10 +71,12 @@ else
     private List<AdminRole> SupportedRoles = [];
     private bool Loading = true;
     private string Error = "";
+    private string SearchTerm = "";
     private string SortOrder = "name";
+    private IEnumerable<AdminRole> FilteredRoles => string.IsNullOrWhiteSpace(SearchTerm) ? SupportedRoles : SupportedRoles.Where(role => string.Join(" ", role.Id, role.Name, role.Description).Contains(SearchTerm.Trim(), StringComparison.OrdinalIgnoreCase));
     private IEnumerable<AdminRole> SortedRoles => SortOrder == "id"
-        ? SupportedRoles.OrderBy(role => role.Id, StringComparer.OrdinalIgnoreCase)
-        : SupportedRoles.OrderBy(role => role.Name, StringComparer.OrdinalIgnoreCase);
+        ? FilteredRoles.OrderBy(role => role.Id, StringComparer.OrdinalIgnoreCase)
+        : FilteredRoles.OrderBy(role => role.Name, StringComparer.OrdinalIgnoreCase);
 
     protected override Task OnInitializedAsync() => LoadRolesAsync();
 

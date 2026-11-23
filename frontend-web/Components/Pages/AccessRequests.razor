@@ -5,7 +5,7 @@
 <PageTitle>Access Requests – Safe Passage</PageTitle>
 <div class="sp-page-header"><h1 class="sp-page-title">Access Requests</h1><p class="sp-page-subtitle">Review requests for applications published in the user catalog.</p></div>
 
-<div class="requests-toolbar"><strong>@Requests.Count request@(Requests.Count == 1 ? "" : "s")</strong><label for="request-filter">Show <select id="request-filter" value="@StatusFilter" @onchange="ChangeFilterAsync"><option value="Pending">Pending</option><option value="All">All requests</option></select></label></div>
+<div class="requests-toolbar"><strong>@FilteredRequests.Count() of @Requests.Count request@(Requests.Count == 1 ? "" : "s")</strong><input type="search" aria-label="Search access requests" placeholder="Search requests…" @bind="SearchTerm" @bind:event="oninput" /><label for="request-filter">Show <select id="request-filter" value="@StatusFilter" @onchange="ChangeFilterAsync"><option value="Pending">Pending</option><option value="All">All requests</option></select></label></div>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="requests-error" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Notice)) { <div class="requests-notice" role="status">@Notice</div> }
 <section class="sp-card request-list">
@@ -17,9 +17,13 @@
     {
         <p class="request-empty">No @StatusFilter.ToLowerInvariant() access requests.</p>
     }
+    else if (!FilteredRequests.Any())
+    {
+        <p class="request-empty">No requests match “@SearchTerm”. Try another search.</p>
+    }
     else
     {
-        @foreach (var request in Requests)
+        @foreach (var request in FilteredRequests)
         {
             <article class="request-card">
                 <div class="request-heading"><div><h2>@request.ApplicationName</h2><p>@request.Username · @request.Email</p></div><span class="request-status @request.Status.ToLowerInvariant()">@request.Status</span></div>
@@ -41,15 +45,18 @@
 
 <style>
     .requests-toolbar{display:flex;justify-content:space-between;align-items:center;margin:0 0 14px;color:#475569;font-size:13px}.requests-toolbar label{display:flex;align-items:center;gap:8px;font-size:12px}.requests-toolbar select{border:1px solid #cbd5dc;border-radius:5px;background:#fff;padding:8px;color:#334155;font:inherit}.request-list{padding:4px 20px}.request-card{padding:18px 0;border-bottom:1px solid #edf0f2}.request-card:last-child{border-bottom:0}.request-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.request-heading h2{margin:0 0 4px;font-size:15px}.request-heading p,.request-date,.request-decision-note{margin:0;color:#64748b;font-size:12px}.request-status{padding:5px 8px;border-radius:12px;font-size:10px;font-weight:700;text-transform:uppercase}.request-status.pending{background:#fff5df;color:#946200}.request-status.approved{background:#e5f5ed;color:#087f5b}.request-status.denied{background:#fcecea;color:#9d332b}.request-reason{margin:13px 0 6px;color:#334155;font-size:13px;white-space:pre-wrap}.decision-note{display:grid;gap:6px;margin-top:13px;color:#475569;font-size:11px}.decision-note textarea{border:1px solid #cbd5dc;border-radius:5px;padding:9px;font:inherit;font-size:12px}.request-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}.approve-button,.deny-button{border:0;border-radius:5px;padding:9px 12px;font-size:11px;font-weight:700;cursor:pointer}.approve-button{background:#087f75;color:white}.deny-button{background:#f1f5f9;color:#475569}.approve-button:disabled,.deny-button:disabled{opacity:.6}.request-empty{padding:24px 0;color:#64748b;font-size:13px}.requests-error,.requests-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.requests-error{background:#fcecea;color:#9d332b}.requests-notice{background:#edf7f2;color:#087f5b}
-    @@media(max-width:520px){.request-list{padding:4px 14px}.request-actions{flex-direction:column-reverse}.request-actions button{width:100%}}
+    .requests-toolbar input{flex:1;max-width:420px;min-width:160px;border:1px solid #cbd5dc;border-radius:5px;background:#fff;padding:8px;color:#334155;font:inherit;font-size:12px}
+    @@media(max-width:520px){.requests-toolbar{flex-wrap:wrap}.requests-toolbar input{order:3;max-width:none;flex-basis:100%}.request-list{padding:4px 14px}.request-actions{flex-direction:column-reverse}.request-actions button{width:100%}}
 </style>
 
 @code {
     private List<AdminAccessRequest> Requests = [];
     private readonly Dictionary<Guid, string> DecisionNotes = [];
     private string StatusFilter = "Pending";
+    private string SearchTerm = "";
     private string Error = "", Notice = "";
     private bool Loading = true, Saving;
+    private IEnumerable<AdminAccessRequest> FilteredRequests => string.IsNullOrWhiteSpace(SearchTerm) ? Requests : Requests.Where(request => string.Join(" ", request.ApplicationName, request.Username, request.Email, request.Status, request.Reason, request.DecisionNote).Contains(SearchTerm.Trim(), StringComparison.OrdinalIgnoreCase));
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
 

@@ -6,12 +6,13 @@
 <PageTitle>Security Policies – Safe Passage</PageTitle>
 <div class="sp-page-header"><h1 class="sp-page-title">Security Policies</h1><p class="sp-page-subtitle">Manage enforced authentication and device trust rules.</p></div>
 <div class="policy-toolbar"><span>@PolicyRecords.Count policies · @PolicyRecords.Count(policy => policy.IsEnforced) enforced</span><button class="policy-save" @onclick="CreatePolicy" disabled="@Saving">＋ Add policy</button></div>
-<div class="policy-sort"><label for="policy-sort">Sort by</label><select id="policy-sort" aria-label="Sort policies" @bind="SortOrder"><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="enforced">Enforced first</option><option value="type">Policy type</option></select></div>
+<div class="policy-sort"><input type="search" aria-label="Search policies" placeholder="Search policies…" @bind="SearchTerm" @bind:event="oninput" /><label for="policy-sort">Sort by</label><select id="policy-sort" aria-label="Sort policies" @bind="SortOrder"><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="enforced">Enforced first</option><option value="type">Policy type</option></select></div>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="policy-alert" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Notice)) { <div class="policy-notice" role="status">@Notice</div> }
 <p class="policy-note">Enforced authentication and device policies combine: if any enforced policy requires MFA or a trusted device, the stricter requirement remains in effect.</p>
 @if (Loading) { <div class="sp-card policy-empty" role="status">Loading policies…</div> }
 else if (PolicyRecords.Count == 0) { <div class="sp-card policy-empty">No policies configured. Add a policy to define device and MFA requirements.</div> }
+else if (!FilteredPolicies.Any()) { <div class="sp-card policy-empty">No policies match “@SearchTerm”. Try another search.</div> }
 else
 {
     <div class="policy-grid">
@@ -45,7 +46,7 @@ else
     </section></div>
 }
 <style>
-    .policy-sort{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:-4px 0 12px;color:#64748b;font-size:12px}.policy-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}
+    .policy-sort{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin:-4px 0 12px;color:#64748b;font-size:12px}.policy-sort select,.policy-sort input{border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}.policy-sort input{margin-right:auto;min-width:210px}
     .policy-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;color:#64748b;font-size:12px}.policy-save,.policy-cancel{border:0;border-radius:5px;padding:9px 14px;font-size:12px;font-weight:650;cursor:pointer}.policy-save{background:#087f75;color:#fff}.policy-cancel{background:#f1f5f9;color:#334155}.policy-save:disabled,.policy-cancel:disabled{opacity:.6}.policy-alert,.policy-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.policy-alert{background:#fcecea;color:#9d332b}.policy-notice{background:#edf7f2;color:#087f5b}.policy-note,.posture-note{padding:12px 14px;border:1px solid #e5d5a8;border-radius:6px;background:#fffaf0;color:#715c37;font-size:12px;line-height:1.5}.posture-note{margin:0;font-size:11px}.policy-empty{padding:24px;color:#64748b;font-size:13px}.policy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,290px),1fr));gap:14px}.policy-card{padding:18px}.policy-card-head{display:flex;justify-content:space-between;align-items:center}.policy-kind{color:#087f75;text-transform:uppercase;font-size:10px;font-weight:750;letter-spacing:.5px}.policy-badge{padding:4px 8px;border-radius:12px;font-size:10px;font-weight:700}.policy-badge.on{background:#edf7f2;color:#087f5b}.policy-badge.off{background:#f2f4f6;color:#64748b}.policy-card h2{font-size:16px;margin:15px 0}.policy-rule-list{display:flex;flex-wrap:wrap;gap:6px;min-height:36px}.policy-rule-list span{padding:4px 7px;border-radius:4px;background:#f0f5f4;color:#47635d;font-size:10px}.policy-card>button{margin-top:15px;border:0;background:none;color:#087f75;font-weight:650;font-size:12px;cursor:pointer}.policy-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:18px;background:#0f172a80}.policy-modal{width:min(100%,520px);max-height:90vh;overflow:auto;border-radius:8px;background:#fff;padding:23px;box-shadow:0 20px 60px #0f172a40}.policy-modal header{display:flex;justify-content:space-between;margin-bottom:20px}.policy-modal header small{font-size:10px;color:#087f75;font-weight:700}.policy-modal h2{font-size:20px;margin:5px 0}.policy-modal header button{border:0;background:none;color:#64748b;font-size:25px;cursor:pointer}.policy-modal form{display:grid;gap:13px}.policy-modal form>label:not(.policy-check){display:grid;gap:6px;font-size:12px;font-weight:650;color:#334155}.policy-modal input:not([type=checkbox]),.policy-modal select{border:1px solid #cbd5dc;border-radius:5px;padding:9px;font:inherit;font-size:13px}.policy-check{display:flex;gap:9px;align-items:center;color:#334155;font-size:12px}.policy-check input{accent-color:#087f75}.policy-rules{display:grid;grid-template-columns:1fr 1fr;gap:10px;border-top:1px solid #edf0f2;padding-top:13px}.policy-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:10px}
     @@media(max-width:560px){.policy-rules{grid-template-columns:1fr}}
 </style>
@@ -57,12 +58,14 @@ else
     private bool Loading = true, Saving, IsNew;
     private string Error = "", FormError = "", Notice = "";
     private string SortOrder = "name-asc";
+    private string SearchTerm = "";
+    private IEnumerable<AdminPolicy> FilteredPolicies => string.IsNullOrWhiteSpace(SearchTerm) ? PolicyRecords : PolicyRecords.Where(policy => string.Join(" ", policy.PolicyName, policy.PolicyType, policy.IsEnforced ? "Enforced" : "Disabled", DescribeRules(policy.RulesJson)).Contains(SearchTerm.Trim(), StringComparison.OrdinalIgnoreCase));
     private IEnumerable<AdminPolicy> SortedPolicies => SortOrder switch
     {
-        "name-desc" => PolicyRecords.OrderByDescending(policy => policy.PolicyName, StringComparer.OrdinalIgnoreCase),
-        "enforced" => PolicyRecords.OrderByDescending(policy => policy.IsEnforced).ThenBy(policy => policy.PolicyName, StringComparer.OrdinalIgnoreCase),
-        "type" => PolicyRecords.OrderBy(policy => policy.PolicyType, StringComparer.OrdinalIgnoreCase).ThenBy(policy => policy.PolicyName, StringComparer.OrdinalIgnoreCase),
-        _ => PolicyRecords.OrderBy(policy => policy.PolicyName, StringComparer.OrdinalIgnoreCase)
+        "name-desc" => FilteredPolicies.OrderByDescending(policy => policy.PolicyName, StringComparer.OrdinalIgnoreCase),
+        "enforced" => FilteredPolicies.OrderByDescending(policy => policy.IsEnforced).ThenBy(policy => policy.PolicyName, StringComparer.OrdinalIgnoreCase),
+        "type" => FilteredPolicies.OrderBy(policy => policy.PolicyType, StringComparer.OrdinalIgnoreCase).ThenBy(policy => policy.PolicyName, StringComparer.OrdinalIgnoreCase),
+        _ => FilteredPolicies.OrderBy(policy => policy.PolicyName, StringComparer.OrdinalIgnoreCase)
     };
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private bool MfaEnforced { get => Rules.RequireMfa || Rules.RequireStepUp; set { Rules.RequireMfa = value; Rules.RequireStepUp = value; } }

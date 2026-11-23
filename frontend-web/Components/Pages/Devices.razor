@@ -25,12 +25,13 @@
 </div>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="device-alert" role="alert">@Error</div> }
 @if (!string.IsNullOrWhiteSpace(Notice)) { <div class="device-notice" role="status">@Notice</div> }
-<div class="device-sort"><label for="device-sort">Sort by</label><select id="device-sort" aria-label="Sort devices" @bind="SortOrder"><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="owner-asc">Owner A–Z</option><option value="registered-newest">Recently registered</option><option value="registered-oldest">Oldest registered</option></select></div>
+<div class="device-sort"><input type="search" aria-label="Search devices" placeholder="Search devices…" @bind="SearchTerm" @bind:event="oninput" /><label for="device-sort">Sort by</label><select id="device-sort" aria-label="Sort devices" @bind="SortOrder"><option value="name-asc">Name A–Z</option><option value="name-desc">Name Z–A</option><option value="owner-asc">Owner A–Z</option><option value="registered-newest">Recently registered</option><option value="registered-oldest">Oldest registered</option></select></div>
 
 <section class="sp-card device-card">
-    <div class="device-heading"><div><h2>Registered devices</h2><p>@(Api.IsAdministrator ? "Trust posture and assigned owners" : "Your registered devices")</p></div><span>@RegisteredDevices.Count devices</span></div>
+    <div class="device-heading"><div><h2>Registered devices</h2><p>@(Api.IsAdministrator ? "Trust posture and assigned owners" : "Your registered devices")</p></div><span>@FilteredDevices.Count() of @RegisteredDevices.Count devices</span></div>
     @if (Loading) { <p class="device-state" role="status">Loading devices…</p> }
     else if (RegisteredDevices.Count == 0) { <p class="device-state">No devices are registered.</p> }
+    else if (!FilteredDevices.Any()) { <p class="device-state">No devices match “@SearchTerm”. Try another search.</p> }
     else
     {
         <div class="device-scroll"><table class="device-table">
@@ -64,7 +65,7 @@
 }
 
 <style>
-    .device-sort{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 12px;color:#64748b;font-size:12px}.device-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}
+    .device-sort{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:0 0 12px;color:#64748b;font-size:12px}.device-sort select,.device-sort input{border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}.device-sort input{margin-right:auto;min-width:210px}
     .device-apk-banner{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:15px 18px;margin-bottom:18px}.device-apk-banner strong{display:block;font-size:14px;color:#0f172a;margin-bottom:3px}.device-apk-banner p{margin:0;font-size:12px;color:#64748b}.device-apk-actions{display:flex;flex-wrap:wrap;align-items:center;gap:10px}.device-apk-btn{display:inline-flex;align-items:center;padding:8px 14px;border-radius:6px;background:#087f75;color:#fff;font-size:12px;font-weight:650;text-decoration:none}.device-apk-link{display:inline-flex;align-items:center;padding:8px 12px;border-radius:6px;border:1px solid #cbd5dc;color:#334155;font-size:12px;font-weight:600;text-decoration:none}
     .device-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}.device-stats div{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;background:#fff;border:1px solid #e2e8f0;border-radius:7px}.device-stats span{color:#64748b;font-size:12px}.device-stats strong{font-size:20px;color:#087f5b}.device-stats .pending{color:#b7791f}.device-stats .disabled{color:#b5473c}.device-alert,.device-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.device-alert{background:#fcecea;color:#9d332b}.device-notice{background:#edf7f2;color:#087f5b}
     .device-card{overflow:hidden}.device-heading{display:flex;justify-content:space-between;align-items:center;padding:18px 21px;border-bottom:1px solid #e8edf1}.device-heading h2{font-size:16px;margin:0 0 4px}.device-heading p,.device-heading>span{font-size:12px;color:#64748b;margin:0}.device-scroll{overflow:auto}.device-table{width:100%;min-width:920px;border-collapse:collapse}.device-table th{padding:12px 15px;text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px}.device-table td{padding:14px 15px;border-top:1px solid #edf0f2;font-size:12px;white-space:nowrap}.device-table td small{display:block;color:#64748b;margin:4px 0 0 37px}.device-name{display:flex;align-items:center;gap:9px}.device-name strong{font-size:13px}.device-glyph{width:28px;height:28px;display:grid;place-items:center;border-radius:5px;background:#e9f3f1;color:#087f75;font-size:15px}.device-os{color:#52616b}.device-pill,.trust-pill{display:inline-flex;align-items:center;gap:6px;border-radius:12px;padding:4px 8px;font-size:10px;font-weight:650;background:#edf7f2;color:#087f5b}.device-pill.pending{background:#fff5df;color:#936115}.device-pill.disabled{background:#fcecea;color:#a53e34}.trust-pill.untrusted{background:#f2f4f6;color:#64748b}.trust-pill i{width:6px;height:6px;border-radius:50%;background:currentColor}.device-actions{display:flex;gap:8px}.device-actions button{border:0;background:none;padding:4px 0;color:#087f75;font-size:11px;font-weight:650;cursor:pointer}.device-actions button.disable{color:#b5473c}.device-actions button.details{color:#53636d}.device-actions button:disabled{color:#aab3ba;cursor:not-allowed}.device-state{padding:24px;color:#64748b;font-size:13px}
@@ -81,13 +82,15 @@
     private string Error = "";
     private string Notice = "";
     private string SortOrder = "name-asc";
+    private string SearchTerm = "";
+    private IEnumerable<AdminDevice> FilteredDevices => string.IsNullOrWhiteSpace(SearchTerm) ? RegisteredDevices : RegisteredDevices.Where(device => string.Join(" ", device.DeviceName, device.DeviceId, device.DeviceType, device.OS, UserNames.GetValueOrDefault(device.UserId), device.Status, device.TrustStatus, FormatPostureSummary(device.Posture), device.RegistrationDate.ToString("g")).Contains(SearchTerm.Trim(), StringComparison.OrdinalIgnoreCase));
     private IEnumerable<AdminDevice> SortedDevices => SortOrder switch
     {
-        "name-desc" => RegisteredDevices.OrderByDescending(device => device.DeviceName, StringComparer.OrdinalIgnoreCase),
-        "owner-asc" => RegisteredDevices.OrderBy(device => UserNames.GetValueOrDefault(device.UserId) ?? "", StringComparer.OrdinalIgnoreCase).ThenBy(device => device.DeviceName, StringComparer.OrdinalIgnoreCase),
-        "registered-newest" => RegisteredDevices.OrderByDescending(device => device.RegistrationDate),
-        "registered-oldest" => RegisteredDevices.OrderBy(device => device.RegistrationDate),
-        _ => RegisteredDevices.OrderBy(device => device.DeviceName, StringComparer.OrdinalIgnoreCase)
+        "name-desc" => FilteredDevices.OrderByDescending(device => device.DeviceName, StringComparer.OrdinalIgnoreCase),
+        "owner-asc" => FilteredDevices.OrderBy(device => UserNames.GetValueOrDefault(device.UserId) ?? "", StringComparer.OrdinalIgnoreCase).ThenBy(device => device.DeviceName, StringComparer.OrdinalIgnoreCase),
+        "registered-newest" => FilteredDevices.OrderByDescending(device => device.RegistrationDate),
+        "registered-oldest" => FilteredDevices.OrderBy(device => device.RegistrationDate),
+        _ => FilteredDevices.OrderBy(device => device.DeviceName, StringComparer.OrdinalIgnoreCase)
     };
 
     protected override async Task OnInitializedAsync() => await LoadAsync();
