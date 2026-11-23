@@ -81,18 +81,15 @@ public sealed class DeviceManagementService(
         if (deviceExists)
             return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.DuplicateDevice);
 
+        var deviceId = request.DeviceId.Trim();
         var device = new Device
         {
             Id = Guid.NewGuid(),
-            DeviceId = request.DeviceId.Trim(),
+            DeviceId = deviceId,
             DeviceName = request.DeviceName.Trim(),
             DeviceType = request.DeviceType.Trim(),
             OS = request.OS.Trim(),
             RegistrationDate = DateTimeOffset.UtcNow,
-            // Authenticated registration and credential-verified first-device
-            // registration trust the device without an administrator step.
-            Status = DeviceStatus.Active,
-            TrustStatus = DeviceTrustStatus.Trusted,
             SigningPublicKey = request.SigningPublicKey,
             ScreenLockEnabled = request.Posture?.ScreenLockEnabled,
             IsRootedOrJailbroken = request.Posture?.IsRootedOrJailbroken,
@@ -100,8 +97,45 @@ public sealed class DeviceManagementService(
             UserId = userId
         };
 
+        var evaluator = policyEvaluator ?? new SecurityPolicyEvaluator(dbContext);
+        var policy = await evaluator.EvaluateAsync(cancellationToken);
+        var postureResult = DevicePostureEvaluator.Evaluate(device, policy);
+        if (!postureResult.IsCompliant)
+        {
+            AddActivity(
+                userId,
+                userId,
+                deviceId,
+                "Device Registration Blocked",
+                device.DeviceName,
+                ActivityLogStatus.Denied,
+                postureResult.FailureReason);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return DeviceManagementResult<DeviceResponse>.Failed(
+                DeviceManagementFailure.PostureNonCompliant,
+                postureResult.FailureReason);
+        }
+
+        // Only the first device on an account is auto-trusted on registration;
+        // subsequent devices require administrator approval.
+        var hasExistingTrustedDevice = await dbContext.Devices.AnyAsync(
+            candidate => candidate.UserId == userId
+                && candidate.Status == DeviceStatus.Active
+                && candidate.TrustStatus == DeviceTrustStatus.Trusted,
+            cancellationToken);
+
+        device.Status = hasExistingTrustedDevice ? DeviceStatus.PendingApproval : DeviceStatus.Active;
+        device.TrustStatus = hasExistingTrustedDevice ? DeviceTrustStatus.Untrusted : DeviceTrustStatus.Trusted;
+
         dbContext.Devices.Add(device);
-        AddActivity(userId, "Device Registration", device.DeviceName, ActivityLogStatus.Success);
+        AddActivity(
+            userId,
+            userId,
+            deviceId,
+            hasExistingTrustedDevice ? "Device Registration Pending" : "Device Registration",
+            device.DeviceName,
+            ActivityLogStatus.Success,
+            hasExistingTrustedDevice ? "Awaiting administrator approval" : "First trusted device enrolled");
         try
         {
             await dbContext.SaveChangesAsync(cancellationToken);
@@ -200,7 +234,7 @@ public sealed class DeviceManagementService(
         var postureResult = DevicePostureEvaluator.Evaluate(device, policy);
         if (!postureResult.IsCompliant)
         {
-            AddActivity(actorId, "Device Trust Blocked", device.DeviceId, ActivityLogStatus.Denied);
+            AddActivity(actorId, device.UserId, device.DeviceId, "Device Trust Blocked", device.DeviceName, ActivityLogStatus.Denied, postureResult.FailureReason);
             await dbContext.SaveChangesAsync(cancellationToken);
             return DeviceManagementResult<DeviceResponse>.Failed(
                 DeviceManagementFailure.PostureNonCompliant,
@@ -213,9 +247,9 @@ public sealed class DeviceManagementService(
         {
             device.SigningPublicKey = device.PendingSigningPublicKey;
             device.PendingSigningPublicKey = null;
-            AddActivity(device.UserId, "Device Signing Key Recovery Approved", device.DeviceId, ActivityLogStatus.Success);
+            AddActivity(actorId, device.UserId, device.DeviceId, "Device Signing Key Recovery Approved", device.DeviceName, ActivityLogStatus.Success, "Replacement signing key approved by administrator");
         }
-        AddActivity(actorId, "Device Trusted", device.DeviceId, ActivityLogStatus.Success);
+        AddActivity(actorId, device.UserId, device.DeviceId, "Device Trusted", device.DeviceName, ActivityLogStatus.Success, "Device approved and marked trusted");
         await dbContext.SaveChangesAsync(cancellationToken);
         return DeviceManagementResult<DeviceResponse>.Success(ToResponse(device));
     }
@@ -229,24 +263,55 @@ public sealed class DeviceManagementService(
         if (device is null)
             return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.NotFound);
 
+        var now = DateTimeOffset.UtcNow;
         device.Status = DeviceStatus.Disabled;
         device.TrustStatus = DeviceTrustStatus.Untrusted;
         device.PendingSigningPublicKey = null;
-        AddActivity(actorId, "Device Revoked", device.DeviceId, ActivityLogStatus.Success);
+
+        var activeSessions = await dbContext.UserSessions
+            .Where(s => s.UserId == device.UserId && s.DeviceId == device.DeviceId && s.RevokedAt == null)
+            .ToListAsync(cancellationToken);
+        foreach (var session in activeSessions)
+        {
+            session.RevokedAt = now;
+            session.RevokedReason = "DeviceRevoked";
+        }
+
+        var pendingMfa = await dbContext.MfaSessions
+            .Where(m => m.DeviceId == device.Id && m.Status == MfaSessionStatus.Pending)
+            .ToListAsync(cancellationToken);
+        foreach (var mfa in pendingMfa)
+            mfa.Status = MfaSessionStatus.Denied;
+
+        AddActivity(actorId, device.UserId, device.DeviceId, "Device Revoked", device.DeviceName, ActivityLogStatus.Success, "Device disabled and active sessions revoked");
         await dbContext.SaveChangesAsync(cancellationToken);
         return DeviceManagementResult<DeviceResponse>.Success(ToResponse(device));
     }
 
-    private void AddActivity(Guid userId, string action, string resource, ActivityLogStatus status) =>
+    private void AddActivity(
+        Guid actorUserId,
+        Guid targetUserId,
+        string? deviceId,
+        string action,
+        string resource,
+        ActivityLogStatus status,
+        string? reason = null) =>
         dbContext.ActivityLogs.Add(new ActivityLog
         {
             Id = Guid.NewGuid(),
-            UserId = userId,
+            UserId = targetUserId,
+            ActorUserId = actorUserId,
+            TargetUserId = targetUserId,
+            DeviceId = deviceId,
             Timestamp = DateTimeOffset.UtcNow,
             Action = action,
             Resource = resource,
+            Reason = reason,
             Status = status
         });
+
+    private void AddActivity(Guid userId, string action, string resource, ActivityLogStatus status) =>
+        AddActivity(userId, userId, null, action, resource, status);
 
     private static DeviceResponse ToResponse(Device device) => new(
         device.Id,

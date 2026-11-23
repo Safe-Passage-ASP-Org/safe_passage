@@ -84,18 +84,27 @@ public sealed class AuthFlowService(
                     signatureTimestamp,
                     request.DeviceSignature))
             {
-                signingDevice.LastActiveDate = DateTimeOffset.UtcNow;
-                AddActivity(user.Id, "Login", "Trusted mobile device proved possession of its signing key", ActivityLogStatus.Success);
-                await dbContext.SaveChangesAsync(cancellationToken);
-                return AuthFlowResult<LoginResponse>.Success(new(
-                    false,
-                    null,
-                    signingDevice.DeviceId,
-                    null,
-                    null,
-                    jwtTokenService.CreateAccessToken(user, signingDevice.DeviceId),
-                    "Bearer",
-                    "Credentials accepted; this trusted device authenticated with its registered signing key."));
+                var posture = DevicePostureEvaluator.Evaluate(signingDevice, policy);
+                if (!posture.IsCompliant)
+                {
+                    AddActivity(user.Id, "Login", "Device posture non-compliant for key-based login", ActivityLogStatus.Denied, signingDevice.DeviceId, posture.FailureReason);
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
+                else
+                {
+                    signingDevice.LastActiveDate = DateTimeOffset.UtcNow;
+                    AddActivity(user.Id, "Login", "Trusted mobile device proved possession of its signing key", ActivityLogStatus.Success, signingDevice.DeviceId);
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    return AuthFlowResult<LoginResponse>.Success(new(
+                        false,
+                        null,
+                        signingDevice.DeviceId,
+                        null,
+                        null,
+                        jwtTokenService.CreateAccessToken(user, signingDevice.DeviceId),
+                        "Bearer",
+                        "Credentials accepted; this trusted device authenticated with its registered signing key."));
+                }
             }
         }
 
@@ -123,10 +132,10 @@ public sealed class AuthFlowService(
                 && candidate.TrustStatus == DeviceTrustStatus.Trusted,
                 cancellationToken);
 
-            if (trustedDevice is not null)
+            if (trustedDevice is not null && DevicePostureEvaluator.Evaluate(trustedDevice, policy).IsCompliant)
             {
                 trustedDevice.LastActiveDate = DateTimeOffset.UtcNow;
-                AddActivity(user.Id, "Login", "Trusted-device MFA bypass allowed by policy", ActivityLogStatus.Success);
+                AddActivity(user.Id, "Login", "Trusted-device MFA bypass allowed by policy", ActivityLogStatus.Success, trustedDevice.DeviceId);
                 await dbContext.SaveChangesAsync(cancellationToken);
                 return AuthFlowResult<LoginResponse>.Success(new(
                     false,
@@ -149,8 +158,10 @@ public sealed class AuthFlowService(
                     || candidate.OS.ToLower().StartsWith("android")
                     || candidate.OS.ToLower().StartsWith("ios")))
             .ToListAsync(cancellationToken);
-        var device = mfaDevices.FirstOrDefault(candidate =>
-            !string.Equals(candidate.DeviceId, request.DeviceId, StringComparison.Ordinal));
+        var device = mfaDevices
+            .OrderByDescending(candidate => candidate.LastActiveDate ?? candidate.RegistrationDate)
+            .FirstOrDefault(candidate =>
+                !string.Equals(candidate.DeviceId, request.DeviceId, StringComparison.Ordinal));
 
         if (device is null)
         {
@@ -376,9 +387,18 @@ public sealed class AuthFlowService(
         if (!string.Equals(device.DeviceId, request.DeviceId, StringComparison.Ordinal)
             || !MfaApprovalSignature.Verify(device.SigningPublicKey, request.SessionToken, request.DeviceId, request.Signature))
         {
-            AddActivity(session.UserId, "MFA Approval Rejected", "Invalid device-bound approval signature", ActivityLogStatus.Denied);
+            AddActivity(session.UserId, "MFA Approval Rejected", "Invalid device-bound approval signature", ActivityLogStatus.Denied, device.DeviceId);
             await dbContext.SaveChangesAsync(cancellationToken);
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.InvalidApprovalSignature);
+        }
+
+        var policy = await securityPolicyEvaluator.EvaluateAsync(cancellationToken);
+        var posture = DevicePostureEvaluator.Evaluate(device, policy);
+        if (!posture.IsCompliant)
+        {
+            AddActivity(session.UserId, "MFA Approval Rejected", "Approving device failed security posture check", ActivityLogStatus.Denied, device.DeviceId, posture.FailureReason);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
         }
 
         var user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Id == session.UserId, cancellationToken);
@@ -814,14 +834,25 @@ public sealed class AuthFlowService(
         return true;
     }
 
-    private void AddActivity(Guid? userId, string action, string resource, ActivityLogStatus status) =>
+    private void AddActivity(
+        Guid? userId,
+        string action,
+        string resource,
+        ActivityLogStatus status,
+        string? deviceId = null,
+        string? reason = null) =>
         dbContext.ActivityLogs.Add(new ActivityLog
         {
             Id = Guid.NewGuid(),
             UserId = userId,
+            ActorUserId = userId,
+            TargetUserId = userId,
+            DeviceId = deviceId,
             Timestamp = DateTimeOffset.UtcNow,
             Action = action,
             Resource = resource,
+            Reason = reason,
+            IpAddress = BuildMfaRequestContext().IpAddress,
             Status = status
         });
 

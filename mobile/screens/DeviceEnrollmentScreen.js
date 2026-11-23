@@ -31,18 +31,37 @@ export default function DeviceEnrollmentScreen({ navigation }) {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok && response.status === 409 && data.title === 'Device setup unavailable') {
+        const signingPublicKey = await getDeviceSigningPublicKey(username.trim());
+        const payload = {
+          username: username.trim(), password,
+          deviceId: telemetry.deviceId, deviceName: telemetry.deviceName,
+          deviceType: telemetry.deviceType, os: telemetry.os,
+          signingPublicKey,
+          posture: telemetry.posture ?? null,
+        };
+        const pendingResponse = await fetch(`${BASE_URL}/api/devices/register-pending`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...getApplicationHeaders(telemetry.deviceId) },
+          body: JSON.stringify(payload),
+        });
+        if (pendingResponse.ok) {
+          setRecoveryPending(true);
+          setPassword('');
+          return;
+        }
+
+        const pendingData = await pendingResponse.json().catch(() => ({}));
+        if (pendingResponse.status !== 409) {
+          throw new Error(pendingData.detail ?? pendingData.title ?? 'Could not register this phone for approval.');
+        }
+
         const recoveryResponse = await fetch(`${BASE_URL}/api/devices/recover-signing-key`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...getApplicationHeaders(telemetry.deviceId) },
-          body: JSON.stringify({
-            username: username.trim(), password,
-            deviceId: telemetry.deviceId, deviceName: telemetry.deviceName,
-            deviceType: telemetry.deviceType, os: telemetry.os,
-            signingPublicKey: await getDeviceSigningPublicKey(username.trim()),
-          }),
+          body: JSON.stringify(payload),
         });
         const recoveryData = await recoveryResponse.json().catch(() => ({}));
-        if (!recoveryResponse.ok) throw new Error(recoveryData.detail ?? recoveryData.title ?? 'Could not submit the signing-key recovery request.');
+        if (!recoveryResponse.ok) throw new Error(recoveryData.detail ?? recoveryData.title ?? 'Could not submit the device recovery request.');
         setRecoveryPending(true);
         setPassword('');
         return;
@@ -62,16 +81,16 @@ export default function DeviceEnrollmentScreen({ navigation }) {
   return (
     <KeyboardAvoidingView style={styles.container} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
       <View style={styles.card}>
-        {recoveryPending ? <Text style={styles.title}>Recovery request submitted</Text> : <Text style={styles.title}>Set up or recover this phone</Text>}
+        {recoveryPending ? <Text style={styles.title}>Approval requested</Text> : <Text style={styles.title}>Set up this phone</Text>}
         {recoveryPending ? (
           <>
-            <Text style={styles.description}>An administrator must approve this phone&apos;s new signing key. After approval, return to Login and sign in again.</Text>
+            <Text style={styles.description}>Your request has been sent to an administrator. Once approved, return to Login and sign in again.</Text>
             <TouchableOpacity style={styles.button} onPress={() => navigation.replace('Login')}>
               <Text style={styles.buttonText}>Back to sign in</Text>
             </TouchableOpacity>
           </>
         ) : <>
-        <Text style={styles.description}>Enter these account credentials. New setup signs in immediately. Replacing a lost or mismatched signing key requires administrator approval.</Text>
+        <Text style={styles.description}>Sign in with your Safe Passage account to link this phone for MFA approvals. If you already have another phone linked or are reinstalling the app, an administrator will review your request.</Text>
         <Text style={styles.label}>Email or username</Text>
         <TextInput style={styles.input} autoCapitalize="none" autoCorrect={false} value={username} onChangeText={setUsername} editable={!busy} />
         <Text style={styles.label}>Password</Text>

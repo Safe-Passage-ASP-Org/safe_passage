@@ -165,6 +165,53 @@ builder.Services.AddAuthentication(options =>
                     && context.HttpContext.Request.Path.StartsWithSegments("/mfaHub"))
                     context.Token = accessToken;
                 return Task.CompletedTask;
+            },
+            OnTokenValidated = async context =>
+            {
+                var userClaim = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier)
+                    ?? context.Principal?.FindFirstValue("sub");
+                if (!Guid.TryParse(userClaim, out var userId))
+                {
+                    context.Fail("Invalid subject claim.");
+                    return;
+                }
+
+                var db = context.HttpContext.RequestServices.GetRequiredService<ApplicationDbContext>();
+                var isActive = await db.Users.AsNoTracking()
+                    .Where(u => u.Id == userId)
+                    .Select(u => (bool?)u.IsActive)
+                    .SingleOrDefaultAsync(context.HttpContext.RequestAborted);
+                if (isActive != true)
+                {
+                    context.Fail("Account is inactive or suspended.");
+                    return;
+                }
+
+                var jti = context.Principal?.FindFirstValue(System.IdentityModel.Tokens.Jwt.JwtRegisteredClaimNames.Jti);
+                if (!string.IsNullOrWhiteSpace(jti))
+                {
+                    var isRevoked = await db.UserSessions.AsNoTracking()
+                        .AnyAsync(s => s.TokenJti == jti && s.RevokedAt != null, context.HttpContext.RequestAborted);
+                    if (isRevoked)
+                    {
+                        context.Fail("Session has been revoked.");
+                        return;
+                    }
+                }
+
+                var deviceId = context.Principal?.FindFirstValue("device_id");
+                if (!string.IsNullOrWhiteSpace(deviceId))
+                {
+                    var deviceStatus = await db.Devices.AsNoTracking()
+                        .Where(d => d.UserId == userId && d.DeviceId == deviceId)
+                        .Select(d => (DeviceStatus?)d.Status)
+                        .SingleOrDefaultAsync(context.HttpContext.RequestAborted);
+                    if (deviceStatus is not null && deviceStatus != DeviceStatus.Active)
+                    {
+                        context.Fail("Device has been disabled.");
+                        return;
+                    }
+                }
             }
         };
         options.TokenValidationParameters = new TokenValidationParameters
@@ -558,6 +605,28 @@ using (var scope = app.Services.CreateScope())
                     ON "VaultSites" ("UserId", "Origin");
                 CREATE INDEX IF NOT EXISTS "IX_VaultSites_VerificationStatus_CreatedAt"
                     ON "VaultSites" ("VerificationStatus", "CreatedAt");
+                ALTER TABLE "ActivityLogs"
+                    ADD COLUMN IF NOT EXISTS "ActorUserId" uuid NULL,
+                    ADD COLUMN IF NOT EXISTS "TargetUserId" uuid NULL,
+                    ADD COLUMN IF NOT EXISTS "DeviceId" character varying(256) NULL,
+                    ADD COLUMN IF NOT EXISTS "Reason" character varying(512) NULL,
+                    ADD COLUMN IF NOT EXISTS "IpAddress" character varying(64) NULL;
+                CREATE INDEX IF NOT EXISTS "IX_ActivityLogs_TargetUserId_Timestamp"
+                    ON "ActivityLogs" ("TargetUserId", "Timestamp");
+                CREATE TABLE IF NOT EXISTS "UserSessions" (
+                    "Id" uuid PRIMARY KEY,
+                    "UserId" uuid NOT NULL REFERENCES "Users" ("Id") ON DELETE CASCADE,
+                    "DeviceId" character varying(256) NULL,
+                    "TokenJti" character varying(64) NOT NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "ExpiresAt" timestamp with time zone NOT NULL,
+                    "RevokedAt" timestamp with time zone NULL,
+                    "RevokedReason" character varying(128) NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_UserSessions_TokenJti"
+                    ON "UserSessions" ("TokenJti");
+                CREATE INDEX IF NOT EXISTS "IX_UserSessions_UserId_DeviceId_RevokedAt"
+                    ON "UserSessions" ("UserId", "DeviceId", "RevokedAt");
                 """;
             adminLoginTokenCmd.ExecuteNonQuery();
         }

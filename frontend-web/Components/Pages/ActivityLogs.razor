@@ -11,10 +11,10 @@
     else if (FilteredRows.Count == 0) { <p class="audit-state">@(Rows.Count == 0 ? "No activity has been recorded." : "No events match these filters.")</p> }
     else
     {
-        <div class="audit-scroll"><table><thead><tr><th>Timestamp</th><th>User</th><th>Event</th><th>Resource</th><th>Result</th></tr></thead><tbody>
+        <div class="audit-scroll"><table><thead><tr><th>Timestamp</th><th>User</th><th>Device</th><th>Event</th><th>Resource</th><th>Result</th></tr></thead><tbody>
         @foreach (var row in FilteredRows)
         {
-            <tr><td>@row.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td><td>@row.Username</td><td>@row.Action</td><td>@row.Resource</td><td><span class="audit-status @(row.Status.Equals("Success", StringComparison.OrdinalIgnoreCase) ? "success" : "denied")">@row.Status</span></td></tr>
+            <tr><td>@row.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td><td>@row.Username</td><td>@(string.IsNullOrWhiteSpace(row.DeviceId) ? "—" : row.DeviceId)</td><td>@row.Action</td><td>@row.Resource@if (!string.IsNullOrWhiteSpace(row.Reason)) { <div style="color:#64748b;font-size:11px;margin-top:2px;">@row.Reason</div> }</td><td><span class="audit-status @(row.Status.Equals("Success", StringComparison.OrdinalIgnoreCase) ? "success" : "denied")">@row.Status</span></td></tr>
         }
         </tbody></table></div>
         <p class="audit-foot">Showing @FilteredRows.Count of @Rows.Count most recent events.</p>
@@ -34,7 +34,7 @@
         {
             var filtered = Rows.Where(row =>
         (string.IsNullOrWhiteSpace(StatusFilter) || row.Status.Equals(StatusFilter, StringComparison.OrdinalIgnoreCase))
-        && (string.IsNullOrWhiteSpace(Search) || $"{row.Username} {row.Action} {row.Resource}".Contains(Search, StringComparison.OrdinalIgnoreCase)));
+        && (string.IsNullOrWhiteSpace(Search) || $"{row.Username} {row.DeviceId} {row.Action} {row.Resource} {row.Reason}".Contains(Search, StringComparison.OrdinalIgnoreCase)));
             return (SortOrder switch
             {
                 "oldest" => filtered.OrderBy(row => row.Timestamp),
