@@ -38,7 +38,8 @@ public sealed record CancelSubscriptionRequest(string? Reason = null);
 public sealed record CompleteDemoCheckoutRequest(
     string SessionId,
     string PaymentMethod,
-    string Outcome);
+    string Outcome,
+    string? DemoToken = null);
 
 public sealed record SubscriptionHistoryItemResponse(
     string SubscriptionId,

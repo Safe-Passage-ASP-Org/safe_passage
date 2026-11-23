@@ -38,6 +38,7 @@ public interface ISubscriptionService
     Task<SubscriptionResult<UserSubscriptionResponse>> CancelSubscriptionAsync(Guid userId, string? reason, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<bool>> ProcessWebhookAsync(string signatureHeader, string rawBody, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<bool>> CompleteDemoCheckoutAsync(Guid userId, string sessionId, string paymentMethod, string outcome, CancellationToken cancellationToken = default);
+    Guid? ValidateDemoToken(string sessionId, string? demoToken);
     Task<IReadOnlyList<SubscriptionHistoryItemResponse>> GetBillingHistoryAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<ResendReceiptResponse>> ResendReceiptAsync(Guid userId, string? subscriptionId = null, CancellationToken cancellationToken = default);
 }
@@ -156,11 +157,13 @@ public sealed class SubscriptionService(
             var demoSessionId = $"cs_demo_{Guid.NewGuid():N}";
             var planName = string.IsNullOrWhiteSpace(plan.Name) ? normalizedPlanCode : plan.Name;
             var frontendBase = ResolveFrontendBaseUrl(options);
+            var demoToken = CreateDemoToken(userId, demoSessionId, now.AddHours(2));
             var demoUrl = $"{frontendBase}/subscription/demo-checkout"
                 + $"?sessionId={Uri.EscapeDataString(demoSessionId)}"
                 + $"&plan={Uri.EscapeDataString(normalizedPlanCode)}"
                 + $"&amount={Uri.EscapeDataString(plan.PriceDisplay)}"
-                + $"&name={Uri.EscapeDataString(planName)}";
+                + $"&name={Uri.EscapeDataString(planName)}"
+                + $"&token={Uri.EscapeDataString(demoToken)}";
 
             var demoRecord = new UserSubscription
             {
@@ -496,6 +499,59 @@ public sealed class SubscriptionService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return new(SubscriptionFailure.None, true);
+    }
+
+    private static readonly byte[] FallbackDemoKey = System.Security.Cryptography.RandomNumberGenerator.GetBytes(32);
+
+    private byte[] GetDemoSigningKey()
+    {
+        var configured = configuration?["Jwt:SigningKey"];
+        return !string.IsNullOrWhiteSpace(configured)
+            ? System.Text.Encoding.UTF8.GetBytes(configured)
+            : FallbackDemoKey;
+    }
+
+    private string CreateDemoToken(Guid userId, string sessionId, DateTimeOffset expiresAt)
+    {
+        var payload = $"{sessionId}|{userId:N}|{expiresAt.ToUnixTimeSeconds()}";
+        var payloadBytes = System.Text.Encoding.UTF8.GetBytes(payload);
+        using var hmac = new System.Security.Cryptography.HMACSHA256(GetDemoSigningKey());
+        var sig = hmac.ComputeHash(payloadBytes);
+        return $"{Convert.ToBase64String(payloadBytes)}.{Convert.ToBase64String(sig)}";
+    }
+
+    public Guid? ValidateDemoToken(string sessionId, string? demoToken)
+    {
+        if (string.IsNullOrWhiteSpace(sessionId) || string.IsNullOrWhiteSpace(demoToken))
+            return null;
+
+        var parts = demoToken.Split('.', 2);
+        if (parts.Length != 2)
+            return null;
+
+        try
+        {
+            var payloadBytes = Convert.FromBase64String(parts[0]);
+            var providedSig = Convert.FromBase64String(parts[1]);
+            using var hmac = new System.Security.Cryptography.HMACSHA256(GetDemoSigningKey());
+            var expectedSig = hmac.ComputeHash(payloadBytes);
+            if (!System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(providedSig, expectedSig))
+                return null;
+
+            var payload = System.Text.Encoding.UTF8.GetString(payloadBytes);
+            var segments = payload.Split('|', 3);
+            if (segments.Length != 3
+                || !string.Equals(segments[0], sessionId.Trim(), StringComparison.Ordinal)
+                || !Guid.TryParseExact(segments[1], "N", out var userId)
+                || !long.TryParse(segments[2], out var expUnix))
+                return null;
+
+            return DateTimeOffset.FromUnixTimeSeconds(expUnix) >= DateTimeOffset.UtcNow ? userId : null;
+        }
+        catch (FormatException)
+        {
+            return null;
+        }
     }
 
     public async Task<IReadOnlyList<SubscriptionHistoryItemResponse>> GetBillingHistoryAsync(

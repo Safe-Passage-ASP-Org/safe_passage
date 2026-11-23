@@ -641,11 +641,12 @@ public sealed class AdminApiClient(HttpClient http)
         string sessionId,
         string paymentMethod,
         string outcome,
+        string? demoToken = null,
         CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync(
             "api/subscriptions/demo/complete",
-            new { sessionId, paymentMethod, outcome },
+            new { sessionId, paymentMethod, outcome, demoToken },
             cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
