@@ -57,25 +57,32 @@ function DeviceCard({ item }) {
 
 // ─── Registration Result Overlay ─────────────────────────────────────────────
 function RegistrationResult({ result, telemetry, onDismiss }) {
+  const isTrusted = String(result.status ?? '').toUpperCase() === 'ACTIVE'
+    || String(result.trustStatus ?? '').toUpperCase() === 'TRUSTED';
+  const accentColor = isTrusted ? '#10b981' : '#f59e0b';
+  const statusLabel = isTrusted ? 'Trusted' : 'Pending Admin Approval';
+
   return (
     <View style={styles.resultOverlay}>
       <View style={styles.resultCard}>
-        <View style={styles.resultIconWrapper}>
-          <Ionicons name="time" size={56} color="#f59e0b" />
+        <View style={[styles.resultIconWrapper, { backgroundColor: `${accentColor}20` }]}>
+          <Ionicons name={isTrusted ? 'shield-checkmark' : 'time'} size={56} color={accentColor} />
         </View>
-        <Text style={styles.resultTitle}>Device Registered</Text>
-        <View style={styles.statusChip}>
-          <Text style={styles.statusChipText}>Status: {result.status}</Text>
+        <Text style={styles.resultTitle}>{isTrusted ? 'Device Linked & Trusted' : 'Approval Requested'}</Text>
+        <View style={[styles.statusChip, { backgroundColor: `${accentColor}20`, borderColor: `${accentColor}60` }]}>
+          <Text style={[styles.statusChipText, { color: accentColor }]}>Status: {statusLabel}</Text>
         </View>
         <Text style={styles.resultMessage}>{result.message}</Text>
 
         <View style={styles.telemetryBox}>
-          <Text style={styles.telemetryTitle}>Collected Telemetry</Text>
-          <TelemetryRow label="Device ID"      value={telemetry.deviceId} />
-          <TelemetryRow label="Device Name"    value={telemetry.deviceName} />
-          <TelemetryRow label="OS"             value={`${telemetry.osName} ${telemetry.osVersion}`} />
-          <TelemetryRow label="Model"          value={telemetry.modelName} />
-          <TelemetryRow label="HW Fingerprint" value={telemetry.hardwareFingerprint} mono />
+          <Text style={styles.telemetryTitle}>Device Summary</Text>
+          <TelemetryRow label="Device Name" value={telemetry.deviceName} />
+          <TelemetryRow label="OS"          value={`${telemetry.osName} ${telemetry.osVersion}`} />
+          <TelemetryRow label="Model"       value={telemetry.modelName} />
+          <TelemetryRow
+            label="Screen Lock"
+            value={telemetry.posture?.screenLockEnabled === true ? 'Enabled' : telemetry.posture?.screenLockEnabled === false ? 'Disabled' : 'Unknown'}
+          />
         </View>
 
         <TouchableOpacity style={styles.dismissButton} onPress={onDismiss}>
@@ -121,7 +128,7 @@ export default function DevicesScreen() {
         const token = await getToken();
         const deviceId = await getApprovalDeviceId();
         if (!token) {
-          if (active) setFetchError('Sign-in is waiting for approval. You can register this device below using your account credentials.');
+          if (active) setFetchError('Sign in to view your registered devices, or link this device below.');
           return;
         }
         if (!deviceId) throw new Error('Device information is unavailable. Sign in again.');
@@ -196,7 +203,7 @@ export default function DevicesScreen() {
           <View style={styles.credentialsCard}>
             <Text style={styles.credentialsTitle}>Verify your account</Text>
             <Text style={styles.credentialsDescription}>
-              This sign-in is waiting for MFA approval. Re-enter your credentials to verify your account and register this device.
+              Enter your Safe Passage credentials to link this device to your account.
             </Text>
             <Text style={styles.credentialsLabel}>Email or username</Text>
             <TextInput

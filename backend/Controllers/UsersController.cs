@@ -161,8 +161,31 @@ public sealed class UsersController(
             return BadRequest(new { message = "The account must be activated from its email invitation before it can be enabled." });
         if (!request.IsActive && user.Id.ToString() == User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value)
             return BadRequest(new { message = "You cannot deactivate your own administrator account." });
+        var now = DateTimeOffset.UtcNow;
         user.IsActive = request.IsActive;
-        AddAudit(request.IsActive ? "User Reactivated" : "User Suspended", user.Username);
+        if (!request.IsActive)
+        {
+            var activeSessions = await dbContext.UserSessions
+                .Where(s => s.UserId == user.Id && s.RevokedAt == null)
+                .ToListAsync(cancellationToken);
+            foreach (var session in activeSessions)
+            {
+                session.RevokedAt = now;
+                session.RevokedReason = "AccountSuspended";
+            }
+
+            var pendingMfa = await dbContext.MfaSessions
+                .Where(m => m.UserId == user.Id && m.Status == MfaSessionStatus.Pending)
+                .ToListAsync(cancellationToken);
+            foreach (var mfa in pendingMfa)
+                mfa.Status = MfaSessionStatus.Denied;
+        }
+
+        AddAudit(
+            request.IsActive ? "User Reactivated" : "User Suspended",
+            user.Username,
+            targetUserId: user.Id,
+            reason: request.IsActive ? "Account enabled by administrator" : "Account suspended and active sessions revoked");
         await dbContext.SaveChangesAsync(cancellationToken);
         return NoContent();
     }
@@ -192,16 +215,21 @@ public sealed class UsersController(
         new(user.Id, user.Username, user.Email, user.IsActive, user.IsEmailVerified, user.Role,
             groups.Select(group => group.Name).OrderBy(name => name).ToList(), user.FullName, user.PhoneNumber);
 
-    private void AddAudit(string action, string resource)
+    private void AddAudit(string action, string resource, Guid? targetUserId = null, string? deviceId = null, string? reason = null)
     {
         var claim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub");
+        Guid? actorId = Guid.TryParse(claim, out var parsedActorId) ? parsedActorId : null;
         dbContext.ActivityLogs.Add(new ActivityLog
         {
             Id = Guid.NewGuid(),
-            UserId = Guid.TryParse(claim, out var actorId) ? actorId : null,
+            UserId = targetUserId ?? actorId,
+            ActorUserId = actorId,
+            TargetUserId = targetUserId,
+            DeviceId = deviceId,
             Timestamp = DateTimeOffset.UtcNow,
             Action = action,
             Resource = resource,
+            Reason = reason,
             Status = ActivityLogStatus.Success
         });
     }

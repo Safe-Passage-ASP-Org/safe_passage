@@ -57,6 +57,16 @@ public sealed class SecurityMiddleware(RequestDelegate next, ILogger<SecurityMid
             return;
         }
 
+        var isUserActive = await dbContext.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => (bool?)u.IsActive)
+            .SingleOrDefaultAsync(context.RequestAborted);
+        if (isUserActive != true)
+        {
+            await WriteProblemAsync(context, StatusCodes.Status401Unauthorized, "Account unavailable", "This account is inactive or suspended.");
+            return;
+        }
+
         var deviceId = context.Request.Headers["X-Device-Id"].ToString();
         if (string.IsNullOrWhiteSpace(deviceId))
         {
