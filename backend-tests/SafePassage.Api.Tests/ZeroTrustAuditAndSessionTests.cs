@@ -171,7 +171,7 @@ public sealed class ZeroTrustAuditAndSessionTests
         dbContext.UserSessions.Add(session);
         await dbContext.SaveChangesAsync();
 
-        var controller = new UsersController(dbContext, new PasswordHasher<User>(), null!)
+        var controller = new UsersController(dbContext, new PasswordHasher<User>(), null!, null!)
         {
             ControllerContext = new ControllerContext
             {

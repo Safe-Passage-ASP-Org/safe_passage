@@ -54,7 +54,7 @@ public sealed class UsersControllerInvitationTests
         ApplicationDbContext dbContext,
         IAccountActivationService activationService)
     {
-        var controller = new UsersController(dbContext, new PasswordHasher<User>(), activationService)
+        var controller = new UsersController(dbContext, new PasswordHasher<User>(), activationService, null!)
         {
             ControllerContext = new ControllerContext
             {

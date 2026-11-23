@@ -741,7 +741,8 @@ public sealed class AdminApiClient(HttpClient http)
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
 public sealed record UserProfile(string Name, string Username, string Email, string? BackupEmail, string Role);
 public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
-    string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null);
+    string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null,
+    UserSubscriptionDto? Subscription = null);
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
 public sealed class AdminGroupForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
 public sealed record DevicePostureInfo(bool? ScreenLockEnabled, bool? IsRootedOrJailbroken, DateTimeOffset? ReportedAt);

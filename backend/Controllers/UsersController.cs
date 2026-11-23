@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using SafePassage.Api.Contracts.Subscriptions;
 using SafePassage.Api.Data;
 using SafePassage.Api.Models;
 using SafePassage.Api.Services;
@@ -17,7 +18,8 @@ namespace SafePassage.Api.Controllers;
 public sealed class UsersController(
     ApplicationDbContext dbContext,
     IPasswordHasher<User> passwordHasher,
-    IAccountActivationService accountActivationService) : ControllerBase
+    IAccountActivationService accountActivationService,
+    ISubscriptionService subscriptionService) : ControllerBase
 {
     private static readonly HashSet<string> Roles = new(StringComparer.OrdinalIgnoreCase)
         { "Admin", "Administrator", "Super Admin", "Auditor", "Operator", "User" };
@@ -30,7 +32,9 @@ public sealed class UsersController(
             .Select(user => new UserSummary(user.Id, user.Username, user.Email, user.IsActive, user.IsEmailVerified, user.Role,
                 user.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList(), user.FullName, user.PhoneNumber))
             .ToListAsync(cancellationToken);
-        return Ok(users);
+        var subscriptions = await subscriptionService.GetUserSubscriptionsAsync(
+            users.Select(user => user.Id).ToArray(), cancellationToken);
+        return Ok(users.Select(user => user with { Subscription = subscriptions[user.Id] }).ToList());
     }
 
     [HttpGet("{id:guid}")]
@@ -41,7 +45,9 @@ public sealed class UsersController(
             .Select(candidate => new UserSummary(candidate.Id, candidate.Username, candidate.Email, candidate.IsActive, candidate.IsEmailVerified, candidate.Role,
                 candidate.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList(), candidate.FullName, candidate.PhoneNumber))
             .SingleOrDefaultAsync(cancellationToken);
-        return user is null ? NotFound() : Ok(user);
+        if (user is null) return NotFound();
+        var subscriptions = await subscriptionService.GetUserSubscriptionsAsync([user.Id], cancellationToken);
+        return Ok(user with { Subscription = subscriptions[user.Id] });
     }
 
     [HttpPost]
@@ -237,5 +243,6 @@ public sealed class UsersController(
     public sealed record UserRequest(string? Username, string? Email, string? Role, List<string>? Groups);
     public sealed record UserStatusRequest(bool IsActive);
     public sealed record UserSummary(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
-        string Role, List<string> Groups, string? FullName, string? PhoneNumber);
+        string Role, List<string> Groups, string? FullName, string? PhoneNumber,
+        UserSubscriptionResponse? Subscription = null);
 }

@@ -31,6 +31,7 @@ public interface ISubscriptionService
 {
     IReadOnlyList<SubscriptionPlanResponse> GetPlans();
     Task<UserSubscriptionResponse> GetUserSubscriptionAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<IReadOnlyDictionary<Guid, UserSubscriptionResponse>> GetUserSubscriptionsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken = default);
     Task<bool> HasActiveEntitlementAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<CreateCheckoutResponse>> CreateCheckoutAsync(Guid userId, string planCode, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<UserSubscriptionResponse>> ConfirmSubscriptionAsync(Guid userId, string subscriptionId, CancellationToken cancellationToken = default);
@@ -90,6 +91,29 @@ public sealed class SubscriptionService(
         return current is null
             ? ToFreeResponse()
             : ToResponse(current, now);
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, UserSubscriptionResponse>> GetUserSubscriptionsAsync(
+        IReadOnlyCollection<Guid> userIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = userIds.Distinct().ToArray();
+        if (ids.Length == 0)
+            return new Dictionary<Guid, UserSubscriptionResponse>();
+
+        var subscriptions = await dbContext.UserSubscriptions
+            .Where(subscription => ids.Contains(subscription.UserId))
+            .ToListAsync(cancellationToken);
+        var subscriptionsByUser = subscriptions.ToLookup(subscription => subscription.UserId);
+        var now = DateTimeOffset.UtcNow;
+
+        return ids.ToDictionary(
+            userId => userId,
+            userId =>
+            {
+                var current = SelectCurrentSubscription(subscriptionsByUser[userId].ToArray(), now);
+                return current is null ? ToFreeResponse() : ToResponse(current, now);
+            });
     }
 
     public async Task<bool> HasActiveEntitlementAsync(
