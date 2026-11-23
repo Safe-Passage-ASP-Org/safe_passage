@@ -94,9 +94,11 @@ public sealed class SubscriptionsController(ISubscriptionService subscriptionSer
             : ToProblem(result.Failure, result.ErrorDetail);
     }
 
+    [AllowAnonymous]
     [HttpPost("demo/complete")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> CompleteDemoCheckout(
@@ -104,7 +106,12 @@ public sealed class SubscriptionsController(ISubscriptionService subscriptionSer
         CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId))
-            return Unauthorized();
+        {
+            var tokenUserId = subscriptionService.ValidateDemoToken(request.SessionId, request.DemoToken);
+            if (tokenUserId is null)
+                return Unauthorized();
+            userId = tokenUserId.Value;
+        }
 
         var result = await subscriptionService.CompleteDemoCheckoutAsync(
             userId,

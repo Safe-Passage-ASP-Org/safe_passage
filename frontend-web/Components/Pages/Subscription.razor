@@ -21,12 +21,12 @@
 
 @if (!string.IsNullOrWhiteSpace(ErrorMessage))
 {
-    <div class="alert alert-danger" role="alert">@ErrorMessage</div>
+    <div class="sub-alert sub-alert-danger" role="alert">@ErrorMessage</div>
 }
 
 @if (!string.IsNullOrWhiteSpace(SuccessMessage))
 {
-    <div class="alert alert-success" role="alert">@SuccessMessage</div>
+    <div class="sub-alert sub-alert-success" role="alert">@SuccessMessage</div>
 }
 
 @if (Loading)
@@ -48,7 +48,7 @@ else
                         <div class="sub-meta">Reference ID: <code>@Current.PayPalSubscriptionId</code></div>
                     }
                 </div>
-                <span class="sub-status-badge @GetStatusClass(Current?.Status)">@(Current?.Status ?? "Free")</span>
+                <span class="sub-status-badge @GetStatusClass(Current?.Status)">@FormatStatus(Current?.Status)</span>
             </div>
 
             @if (Current?.HasActiveEntitlement == true)
@@ -63,48 +63,52 @@ else
                     }
                     @if (Current.CancelAtPeriodEnd)
                     {
-                        <div class="text-warning mt-1">
+                        <div class="sub-warning-text">
                             Auto-renewal is off. You retain access until the end of your paid period.
                         </div>
                     }
                 </div>
 
-                <div class="mt-3 d-flex flex-wrap gap-2">
+                <div class="sub-actions-row">
                     @if (string.Equals(Current.Status, "Active", StringComparison.OrdinalIgnoreCase))
                     {
-                        <button class="btn btn-outline-danger btn-sm" type="button" disabled="@Busy" @onclick="CancelCurrentAsync">
-                            @(Busy ? "Cancelling..." : "Cancel Subscription")
+                        <button class="sub-btn sub-btn-danger" type="button" disabled="@Busy" @onclick="CancelCurrentAsync">
+                            @(BusyAction == "cancel" ? "Cancelling..." : "Cancel Subscription")
                         </button>
                     }
-                    <button class="btn btn-outline-secondary btn-sm" type="button" disabled="@Busy" @onclick="() => ResendReceiptAsync(Current.PayPalSubscriptionId)">
-                        @(Busy ? "Sending..." : "Resend Receipt Email")
+                    <button class="sub-btn sub-btn-secondary" type="button" disabled="@Busy" @onclick="() => ResendReceiptAsync(Current.PayPalSubscriptionId)">
+                        @(BusyAction == "resend" ? "Sending..." : "Resend Receipt Email")
                     </button>
                 </div>
             }
             else if (string.Equals(Current?.Status, "ApprovalPending", StringComparison.OrdinalIgnoreCase))
             {
                 <div class="sub-details">
-                    <p class="mb-2">A PayMongo checkout is awaiting your payment confirmation.</p>
-                    <div class="d-flex flex-wrap gap-2">
+                    <p class="sub-pending-text">
+                        @(IsDemoMode
+                            ? "A sandbox checkout session is awaiting your payment confirmation."
+                            : "A PayMongo checkout is awaiting your payment confirmation.")
+                    </p>
+                    <div class="sub-actions-row">
                         @if (Current is { } pendingSubscription
                              && !string.IsNullOrWhiteSpace(pendingSubscription.PendingApprovalUrl)
                              && !string.IsNullOrWhiteSpace(pendingSubscription.PayPalSubscriptionId))
                         {
-                            <button class="btn btn-primary btn-sm" type="button" disabled="@Busy"
+                            <button class="sub-btn sub-btn-primary" type="button" disabled="@Busy"
                                     @onclick="() => LaunchPopupAsync(pendingSubscription.PendingApprovalUrl, pendingSubscription.PayPalSubscriptionId)">
-                                Resume PayMongo Checkout
+                                Resume Checkout
                             </button>
                         }
                         @if (Current?.PayPalSubscriptionId is { } pendingSubscriptionId
                              && !string.IsNullOrWhiteSpace(pendingSubscriptionId))
                         {
-                            <button class="btn btn-outline-secondary btn-sm" type="button" disabled="@Busy"
+                            <button class="sub-btn sub-btn-secondary" type="button" disabled="@Busy"
                                     @onclick="() => ConfirmManuallyAsync(pendingSubscriptionId)">
-                                Check / Confirm Status
+                                @(BusyAction == "confirm" ? "Checking..." : "Check / Confirm Status")
                             </button>
-                            <button class="btn btn-outline-danger btn-sm" type="button" disabled="@Busy"
+                            <button class="sub-btn sub-btn-danger" type="button" disabled="@Busy"
                                     @onclick="() => AbandonPendingAsync(pendingSubscriptionId)">
-                                Discard Pending
+                                @(BusyAction == "abandon" ? "Discarding..." : "Discard Pending")
                             </button>
                         }
                     </div>
@@ -112,14 +116,14 @@ else
             }
             else
             {
-                <p class="sub-note mb-0">You are currently on the Free tier. Choose a Test Mode plan below to subscribe with PayMongo (Card, GCash, Maya, GrabPay).</p>
+                <p class="sub-note mb-0">You are currently on the Free tier. Choose a plan below to subscribe with @(IsDemoMode ? "PayMongo Sandbox" : "PayMongo") (Card, GCash, Maya, GrabPay).</p>
             }
 
             @if (!string.IsNullOrWhiteSpace(BlockedPopupUrl))
             {
-                <div class="alert alert-warning mt-3 mb-0">
+                <div class="sub-alert sub-alert-warning" style="margin-top:12px;">
                     Popup was blocked by your browser.
-                    <a href="@BlockedPopupUrl" target="_blank" rel="noopener noreferrer" class="alert-link">Open PayMongo Checkout</a>,
+                    <a href="@BlockedPopupUrl" target="_blank" rel="noopener noreferrer">Open Checkout</a>,
                     then click <strong>Check / Confirm Status</strong> above after completing payment.
                 </div>
             }
@@ -139,6 +143,8 @@ else
                         var isCurrentActivePlan = Current?.HasActiveEntitlement == true
                             && string.Equals(Current.PlanCode, plan.PlanCode, StringComparison.OrdinalIgnoreCase);
 
+                        var isThisPlanBusy = string.Equals(BusyPlanCode, plan.PlanCode, StringComparison.OrdinalIgnoreCase);
+
                         <div class="sub-plan-item @(isCurrentActivePlan ? "sub-plan-item-active" : "")">
                             <div class="sub-plan-info">
                                 <div class="sub-plan-title">
@@ -151,10 +157,10 @@ else
                                     <div class="sub-unconfigured">PayMongo Test Mode secret key not configured on server</div>
                                 }
                             </div>
-                            <button class="btn btn-primary btn-sm" type="button"
+                            <button class="sub-btn sub-btn-primary" type="button"
                                     disabled="@(Busy || !plan.IsConfigured || Current?.HasActiveEntitlement == true)"
                                     @onclick="() => StartCheckoutAsync(plan.PlanCode)">
-                                @(isCurrentActivePlan ? "Current Plan" : Busy ? "Starting..." : "Subscribe with PayMongo")
+                                @(isCurrentActivePlan ? "Current Plan" : isThisPlanBusy ? "Starting..." : "Subscribe with PayMongo")
                             </button>
                         </div>
                     }
@@ -171,8 +177,8 @@ else
         }
         else
         {
-            <div class="table-responsive">
-                <table class="table table-sm align-middle mb-0" style="font-size:13px;">
+            <div class="sub-table-wrap">
+                <table class="sub-table">
                     <thead>
                         <tr>
                             <th>Plan</th>
@@ -181,7 +187,7 @@ else
                             <th>Mode</th>
                             <th>Reference ID</th>
                             <th>Date</th>
-                            <th class="text-end">Receipt</th>
+                            <th style="text-align:right;">Receipt</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -192,22 +198,22 @@ else
                                             && item.CurrentPeriodStart.HasValue;
                             <tr>
                                 <td><strong>@item.PlanName</strong></td>
-                                <td><span class="sub-status-badge @GetStatusClass(item.Status)">@item.Status</span></td>
+                                <td><span class="sub-status-badge @GetStatusClass(item.Status)">@FormatStatus(item.Status)</span></td>
                                 <td>@item.PriceDisplay</td>
                                 <td>@item.PaymentMode</td>
                                 <td><code>@item.SubscriptionId</code></td>
                                 <td>@item.CreatedAt.ToLocalTime().ToString("MMM dd, yyyy HH:mm")</td>
-                                <td class="text-end">
+                                <td style="text-align:right;">
                                     @if (canResend)
                                     {
-                                        <button class="btn btn-outline-secondary btn-sm" type="button" disabled="@Busy"
+                                        <button class="sub-btn sub-btn-secondary sub-btn-sm" type="button" disabled="@Busy"
                                                 @onclick="() => ResendReceiptAsync(item.SubscriptionId)">
                                             Resend
                                         </button>
                                     }
                                     else
                                     {
-                                        <span class="text-muted">-</span>
+                                        <span style="color:#94a3b8;">-</span>
                                     }
                                 </td>
                             </tr>
@@ -245,6 +251,27 @@ else
     .sub-mode-badge{padding:5px 12px;border-radius:14px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.4px}
     .sub-mode-demo{background:#fef9c3;color:#854d0e;border:1px solid #fde047}
     .sub-mode-paymongo{background:#e0f2fe;color:#0369a1;border:1px solid #bae6fd}
+    .sub-actions-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+    .sub-pending-text{margin:0 0 8px;color:#334155;font-size:13px}
+    .sub-warning-text{color:#b45309;font-size:12px;margin-top:6px}
+    .sub-btn{display:inline-flex;align-items:center;justify-content:center;border-radius:6px;padding:8px 14px;font:inherit;font-size:12px;font-weight:650;cursor:pointer;border:1px solid transparent;transition:background-color .15s,border-color .15s,opacity .15s;white-space:nowrap}
+    .sub-btn:disabled{opacity:.55;cursor:not-allowed}
+    .sub-btn-sm{padding:5px 10px;font-size:11px}
+    .sub-btn-primary{background:#087f75;color:#fff;border-color:#087f75}
+    .sub-btn-primary:hover:not(:disabled){background:#06685f}
+    .sub-btn-secondary{background:#fff;color:#334155;border-color:#cbd5dc}
+    .sub-btn-secondary:hover:not(:disabled){background:#f8fafc}
+    .sub-btn-danger{background:#fcecea;color:#a53e34;border-color:#f5c2be}
+    .sub-btn-danger:hover:not(:disabled){background:#fadbd8}
+    .sub-alert{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}
+    .sub-alert-danger{background:#fcecea;color:#9d332b;border:1px solid #f5c2be}
+    .sub-alert-success{background:#edf7f2;color:#087f5b;border:1px solid #b7e4cf}
+    .sub-alert-warning{background:#fffbeb;color:#92400e;border:1px solid #fde68a}
+    .sub-alert-warning a{color:#087f75;font-weight:650}
+    .sub-table-wrap{overflow:auto}
+    .sub-table{width:100%;border-collapse:collapse;font-size:13px;min-width:680px}
+    .sub-table th{text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px;padding:10px 12px}
+    .sub-table td{padding:11px 12px;border-top:1px solid #edf0f2;vertical-align:middle}
 </style>
 
 @code {
@@ -253,6 +280,8 @@ else
     private UserSubscriptionDto? Current { get; set; }
     private bool Loading { get; set; } = true;
     private bool Busy { get; set; }
+    private string? BusyPlanCode { get; set; }
+    private string? BusyAction { get; set; }
     private string? ErrorMessage { get; set; }
     private string? SuccessMessage { get; set; }
     private string? BlockedPopupUrl { get; set; }
@@ -289,6 +318,7 @@ else
     private async Task StartCheckoutAsync(string planCode)
     {
         Busy = true;
+        BusyPlanCode = planCode;
         ErrorMessage = null;
         SuccessMessage = null;
         BlockedPopupUrl = null;
@@ -305,6 +335,7 @@ else
         finally
         {
             Busy = false;
+            BusyPlanCode = null;
         }
     }
 
@@ -332,7 +363,7 @@ else
     public async Task OnPayPalCancelled(string subscriptionId)
     {
         await AbandonPendingAsync(subscriptionId);
-        ErrorMessage = "PayPal checkout was cancelled.";
+        ErrorMessage = "Checkout was cancelled.";
         await InvokeAsync(StateHasChanged);
     }
 
@@ -346,6 +377,7 @@ else
     private async Task ConfirmManuallyAsync(string subscriptionId, bool silentIfPending = false)
     {
         Busy = true;
+        BusyAction = "confirm";
         ErrorMessage = null;
         SuccessMessage = null;
         BlockedPopupUrl = null;
@@ -356,7 +388,7 @@ else
             if (Current.HasActiveEntitlement)
                 SuccessMessage = $"Subscription {Current.PlanName} is now active.";
             else if (!silentIfPending)
-                ErrorMessage = $"Subscription status is currently {Current.Status}. Complete approval in checkout first.";
+                ErrorMessage = $"Subscription status is currently {FormatStatus(Current.Status)}. Complete approval in checkout first.";
         }
         catch (Exception ex)
         {
@@ -365,18 +397,21 @@ else
         finally
         {
             Busy = false;
+            BusyAction = null;
         }
     }
 
     private async Task AbandonPendingAsync(string subscriptionId)
     {
         Busy = true;
+        BusyAction = "abandon";
         ErrorMessage = null;
         BlockedPopupUrl = null;
         try
         {
             await Api.AbandonSubscriptionAsync(subscriptionId);
             Current = await Api.GetMySubscriptionAsync();
+            History = await Api.GetSubscriptionHistoryAsync();
         }
         catch (Exception ex)
         {
@@ -385,12 +420,14 @@ else
         finally
         {
             Busy = false;
+            BusyAction = null;
         }
     }
 
     private async Task CancelCurrentAsync()
     {
         Busy = true;
+        BusyAction = "cancel";
         ErrorMessage = null;
         SuccessMessage = null;
         try
@@ -406,12 +443,14 @@ else
         finally
         {
             Busy = false;
+            BusyAction = null;
         }
     }
 
     private async Task ResendReceiptAsync(string? subscriptionId)
     {
         Busy = true;
+        BusyAction = "resend";
         ErrorMessage = null;
         SuccessMessage = null;
         try
@@ -426,8 +465,16 @@ else
         finally
         {
             Busy = false;
+            BusyAction = null;
         }
     }
+
+    private static string FormatStatus(string? status) => status switch
+    {
+        "ApprovalPending" => "Approval Pending",
+        null or "" => "Free",
+        _ => status
+    };
 
     private static string GetStatusClass(string? status) => status?.ToLowerInvariant() switch
     {
