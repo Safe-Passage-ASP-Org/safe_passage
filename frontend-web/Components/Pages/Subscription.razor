@@ -167,6 +167,81 @@ else
         </section>
     </div>
 
+    <section class="sp-card sub-card" style="margin-top:16px;">
+        <div class="sub-section-title">Plan Tiers &amp; Security Capabilities</div>
+        <div class="sub-tiers-grid">
+            <div class="sub-tier-card @(Current?.HasActiveEntitlement != true ? "sub-tier-current" : "")">
+                <div class="sub-tier-head">
+                    <span class="sub-tier-name">Free</span>
+                    <span class="sub-tier-badge">Starter</span>
+                </div>
+                <div class="sub-tier-price">PHP 0 <span>/ month</span></div>
+                <p class="sub-tier-desc">Core device-bound MFA for individuals getting started with zero-trust access.</p>
+                <ul class="sub-tier-list">
+                    <li>Up to 2 enrolled mobile devices</li>
+                    <li>Push &amp; biometric MFA approvals</li>
+                    <li>7-day personal activity timeline</li>
+                    <li>Basic posture checks (screen lock &amp; root/jailbreak)</li>
+                </ul>
+                <div class="sub-tier-foot">
+                    <span class="sub-tier-note">@(Current?.HasActiveEntitlement != true ? "Active on your account" : "Included base tier")</span>
+                </div>
+            </div>
+
+            <div class="sub-tier-card sub-tier-featured @(Current?.HasActiveEntitlement == true ? "sub-tier-current" : "")">
+                <div class="sub-tier-head">
+                    <span class="sub-tier-name">Pro</span>
+                    <span class="sub-tier-badge sub-tier-badge-pro">Most Popular</span>
+                </div>
+                <div class="sub-tier-price">PHP 299 <span>/ month</span></div>
+                <p class="sub-tier-desc">Full continuous posture enforcement, cryptographic key login, and extended audit retention.</p>
+                <ul class="sub-tier-list">
+                    <li>Unlimited trusted devices per account</li>
+                    <li>Key-bound passwordless device login</li>
+                    <li>90-day dual-perspective audit logs &amp; printable receipts</li>
+                    <li>OIDC SSO &amp; Browser Extension Vault sync</li>
+                    <li>Auto-revocation on posture drift or suspension</li>
+                </ul>
+                <div class="sub-tier-foot">
+                    @if (Current?.HasActiveEntitlement == true)
+                    {
+                        <span class="sub-tier-note">Active on your account</span>
+                    }
+                    else
+                    {
+                        <button class="sub-btn sub-btn-primary" style="width:100%;" type="button"
+                                disabled="@(Busy || Plans.All(p => !p.IsConfigured))"
+                                @onclick='() => StartCheckoutAsync("pro-monthly")'>
+                            @(string.Equals(BusyPlanCode, "pro-monthly", StringComparison.OrdinalIgnoreCase) ? "Starting..." : "Upgrade to Pro")
+                        </button>
+                    }
+                </div>
+            </div>
+
+            <div class="sub-tier-card sub-tier-enterprise">
+                <div class="sub-tier-head">
+                    <span class="sub-tier-name">Enterprise</span>
+                    <span class="sub-tier-badge sub-tier-badge-ent">Zero-Trust Suite</span>
+                </div>
+                <div class="sub-tier-price">PHP 1,490+ <span>/ month</span></div>
+                <p class="sub-tier-desc">Organization-wide hardware attestation, SIEM telemetry streaming, and compliance automation.</p>
+                <ul class="sub-tier-list">
+                    <li>FIDO2 / WebAuthn &amp; HSM hardware key attestation</li>
+                    <li>Real-time SIEM webhook streaming (Splunk, Datadog, Sentinel)</li>
+                    <li>Geo-velocity &amp; impossible-travel anomaly blocking</li>
+                    <li>SCIM 2.0 directory sync (Entra ID, Okta, Google Workspace)</li>
+                    <li>Dedicated tenant isolation, 99.99% SLA &amp; SOC 2 pack</li>
+                </ul>
+                <div class="sub-tier-foot">
+                    <button class="sub-btn sub-btn-secondary" style="width:100%;" type="button"
+                            @onclick="RequestEnterpriseSales">
+                        Contact Enterprise Sales
+                    </button>
+                </div>
+            </div>
+        </div>
+    </section>
+
     <section class="sp-card sub-card mt-4">
         <div class="sub-section-title">Billing &amp; Receipt History</div>
         @if (History.Count == 0)
@@ -318,7 +393,22 @@ else
     .sub-receipt-dl dt{color:#64748b}
     .sub-receipt-dl dd{margin:0;text-align:right;font-weight:600;color:#0f172a}
     .sub-receipt-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
-    @@media print{.no-print{display:none!important}body *{visibility:hidden}.sub-receipt-backdrop,.sub-receipt-modal,.sub-receipt-modal *{visibility:visible}.sub-receipt-backdrop{position:static;background:none;padding:0}.sub-receipt-modal{box-shadow:none;max-width:100%}}
+    .sub-tiers-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,250px),1fr));gap:14px}
+    .sub-tier-card{display:flex;flex-direction:column;padding:18px;border:1px solid #e2e8f0;border-radius:10px;background:#fff}
+    .sub-tier-featured{border-color:#087f75;box-shadow:0 8px 24px rgba(8,127,117,.08)}
+    .sub-tier-enterprise{background:linear-gradient(180deg,#f8fafc 0%,#fff 100%);border-color:#cbd5e1}
+    .sub-tier-current{background:#f0fdfa}
+    .sub-tier-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+    .sub-tier-name{font-size:17px;font-weight:750;color:#0f172a}
+    .sub-tier-badge{padding:3px 8px;border-radius:10px;font-size:10px;font-weight:700;text-transform:uppercase;background:#f1f5f9;color:#475569}
+    .sub-tier-badge-pro{background:#ccfbf1;color:#0f766e}
+    .sub-tier-badge-ent{background:#0f172a;color:#f8fafc}
+    .sub-tier-price{font-size:22px;font-weight:800;color:#0f172a;margin-bottom:6px}
+    .sub-tier-price span{font-size:12px;font-weight:500;color:#64748b}
+    .sub-tier-desc{font-size:12px;color:#64748b;line-height:1.45;margin:0 0 12px}
+    .sub-tier-list{margin:0 0 16px;padding-left:18px;font-size:12px;color:#334155;line-height:1.65;flex:1}
+    .sub-tier-foot{margin-top:auto;padding-top:10px;border-top:1px solid #edf0f2}
+    .sub-tier-note{display:block;text-align:center;font-size:12px;font-weight:600;color:#087f75}
 </style>
 
 @code {
@@ -524,8 +614,56 @@ else
         _ => status
     };
 
-    private async Task PrintReceiptAsync() =>
-        await JS.InvokeVoidAsync("window.print");
+    private void RequestEnterpriseSales()
+    {
+        ErrorMessage = null;
+        SuccessMessage = "Enterprise inquiry logged. Our security team will reach out to your account email with FIDO2/HSM, SIEM, and SCIM 2.0 onboarding details.";
+    }
+
+    private async Task PrintReceiptAsync()
+    {
+        if (SelectedReceipt is null)
+            return;
+
+        static string E(string? value) => System.Net.WebUtility.HtmlEncode(value ?? "—");
+        var account = E(Api.CurrentEmail ?? Api.CurrentUsername ?? "Account holder");
+        var cancelledRow = SelectedReceipt.CancelledAt.HasValue
+            ? $"<tr><th>Cancelled At</th><td>{E(SelectedReceipt.CancelledAt.Value.ToLocalTime().ToString("MMM dd, yyyy HH:mm"))}</td></tr>"
+            : string.Empty;
+
+        var html = $@"<!doctype html>
+<html><head><meta charset=""utf-8""><title>Safe Passage Receipt - {E(SelectedReceipt.SubscriptionId)}</title>
+<style>
+body{{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;color:#0f172a;margin:36px;max-width:620px}}
+.hdr{{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #087f75;padding-bottom:14px;margin-bottom:20px}}
+.eyebrow{{font-size:11px;font-weight:700;letter-spacing:.7px;color:#087f75;text-transform:uppercase}}
+h1{{font-size:22px;margin:4px 0 0}}
+.amt{{font-size:20px;font-weight:800;color:#087f75}}
+table{{width:100%;border-collapse:collapse;font-size:13px}}
+th,td{{padding:10px 0;border-bottom:1px solid #e2e8f0;text-align:left}}
+th{{color:#64748b;font-weight:600;width:42%}}
+td{{text-align:right;font-weight:600}}
+.foot{{margin-top:24px;font-size:11px;color:#64748b}}
+</style></head><body>
+<div class=""hdr"">
+  <div><div class=""eyebrow"">Safe Passage Official Receipt</div><h1>{E(SelectedReceipt.PlanName)}</h1></div>
+  <div class=""amt"">{E(SelectedReceipt.PriceDisplay)}</div>
+</div>
+<table>
+  <tr><th>Account</th><td>{account}</td></tr>
+  <tr><th>Reference ID</th><td>{E(SelectedReceipt.SubscriptionId)}</td></tr>
+  <tr><th>Status</th><td>{E(FormatStatus(SelectedReceipt.Status))}</td></tr>
+  <tr><th>Payment Method</th><td>{E(SelectedReceipt.PaymentMode)}</td></tr>
+  <tr><th>Issued Date</th><td>{E(SelectedReceipt.CreatedAt.ToLocalTime().ToString("MMM dd, yyyy HH:mm"))}</td></tr>
+  <tr><th>Billing Period Start</th><td>{E(SelectedReceipt.CurrentPeriodStart?.ToLocalTime().ToString("MMM dd, yyyy"))}</td></tr>
+  <tr><th>Expiration / Next Renewal</th><td>{E(SelectedReceipt.CurrentPeriodEnd?.ToLocalTime().ToString("MMM dd, yyyy"))}</td></tr>
+  {cancelledRow}
+</table>
+<div class=""foot"">Generated by Safe Passage Identity Security Platform.</div>
+</body></html>";
+
+        await JS.InvokeVoidAsync("safePassageReceipt.printHtml", html);
+    }
 
     private static string GetStatusClass(string? status) => status?.ToLowerInvariant() switch
     {
