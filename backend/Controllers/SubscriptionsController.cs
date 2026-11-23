@@ -94,9 +94,11 @@ public sealed class SubscriptionsController(ISubscriptionService subscriptionSer
             : ToProblem(result.Failure, result.ErrorDetail);
     }
 
+    [AllowAnonymous]
     [HttpPost("demo/complete")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> CompleteDemoCheckout(
@@ -104,7 +106,12 @@ public sealed class SubscriptionsController(ISubscriptionService subscriptionSer
         CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId))
-            return Unauthorized();
+        {
+            var tokenUserId = subscriptionService.ValidateDemoToken(request.SessionId, request.DemoToken);
+            if (tokenUserId is null)
+                return Unauthorized();
+            userId = tokenUserId.Value;
+        }
 
         var result = await subscriptionService.CompleteDemoCheckoutAsync(
             userId,
@@ -172,7 +179,7 @@ public sealed class SubscriptionsController(ISubscriptionService subscriptionSer
         {
             SubscriptionFailure.UserUnavailable => (StatusCodes.Status403Forbidden, "Account unavailable"),
             SubscriptionFailure.InvalidPlan => (StatusCodes.Status400BadRequest, "Invalid subscription plan"),
-            SubscriptionFailure.PlanNotConfigured => (StatusCodes.Status503ServiceUnavailable, "PayPal Sandbox not configured"),
+            SubscriptionFailure.PlanNotConfigured => (StatusCodes.Status503ServiceUnavailable, "Payment gateway not configured"),
             SubscriptionFailure.AlreadySubscribed => (StatusCodes.Status409Conflict, "Subscription already active"),
             SubscriptionFailure.NotFound => (StatusCodes.Status404NotFound, "Subscription not found"),
             SubscriptionFailure.OwnershipMismatch => (StatusCodes.Status403Forbidden, "Subscription ownership mismatch"),

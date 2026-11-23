@@ -641,16 +641,17 @@ public sealed class AdminApiClient(HttpClient http)
         string sessionId,
         string paymentMethod,
         string outcome,
+        string? demoToken = null,
         CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync(
             "api/subscriptions/demo/complete",
-            new { sessionId, paymentMethod, outcome },
+            new { sessionId, paymentMethod, outcome, demoToken },
             cancellationToken);
         if (!response.IsSuccessStatusCode)
         {
             var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
-            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Sandbox checkout failed ({(int)response.StatusCode}).");
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Checkout failed ({(int)response.StatusCode}).");
         }
     }
 
