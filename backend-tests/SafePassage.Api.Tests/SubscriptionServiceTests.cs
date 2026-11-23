@@ -189,7 +189,7 @@ public sealed class SubscriptionServiceTests
         var completed = await service.CompleteDemoCheckoutAsync(
             user.Id,
             checkout.Data!.PayPalSubscriptionId,
-            "GCash (Sandbox)",
+            "GCash",
             "paid");
         Assert.Equal(SubscriptionFailure.None, completed.Failure);
 
@@ -200,7 +200,7 @@ public sealed class SubscriptionServiceTests
 
         Assert.Single(emailSender.SentReceipts);
         Assert.Equal(user.Email, emailSender.SentReceipts[0].RecipientEmail);
-        Assert.Equal("GCash (Sandbox)", emailSender.SentReceipts[0].PaymentMethod);
+        Assert.Equal("GCash", emailSender.SentReceipts[0].PaymentMethod);
         Assert.Equal(checkout.Data.PayPalSubscriptionId, emailSender.SentReceipts[0].ReferenceId);
     }
 
@@ -261,7 +261,7 @@ public sealed class SubscriptionServiceTests
         var history = await service.GetBillingHistoryAsync(user.Id);
         Assert.Equal(2, history.Count);
         Assert.Equal("cs_demo_newer", history[0].SubscriptionId);
-        Assert.Equal("Sandbox Simulator", history[0].PaymentMode);
+        Assert.Equal("PayMongo", history[0].PaymentMode);
         Assert.Equal("cs_demo_older", history[1].SubscriptionId);
     }
 

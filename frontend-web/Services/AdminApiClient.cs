@@ -651,7 +651,7 @@ public sealed class AdminApiClient(HttpClient http)
         if (!response.IsSuccessStatusCode)
         {
             var problem = await response.Content.ReadFromJsonAsync<ApiProblem>(cancellationToken: cancellationToken);
-            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Sandbox checkout failed ({(int)response.StatusCode}).");
+            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? $"Checkout failed ({(int)response.StatusCode}).");
         }
     }
 
