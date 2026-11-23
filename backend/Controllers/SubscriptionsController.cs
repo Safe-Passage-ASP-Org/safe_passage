@@ -179,7 +179,7 @@ public sealed class SubscriptionsController(ISubscriptionService subscriptionSer
         {
             SubscriptionFailure.UserUnavailable => (StatusCodes.Status403Forbidden, "Account unavailable"),
             SubscriptionFailure.InvalidPlan => (StatusCodes.Status400BadRequest, "Invalid subscription plan"),
-            SubscriptionFailure.PlanNotConfigured => (StatusCodes.Status503ServiceUnavailable, "PayPal Sandbox not configured"),
+            SubscriptionFailure.PlanNotConfigured => (StatusCodes.Status503ServiceUnavailable, "Payment gateway not configured"),
             SubscriptionFailure.AlreadySubscribed => (StatusCodes.Status409Conflict, "Subscription already active"),
             SubscriptionFailure.NotFound => (StatusCodes.Status404NotFound, "Subscription not found"),
             SubscriptionFailure.OwnershipMismatch => (StatusCodes.Status403Forbidden, "Subscription ownership mismatch"),

@@ -13,8 +13,8 @@
     </div>
     @if (!Loading && Plans.Count > 0)
     {
-        <span class="sub-mode-badge @(IsDemoMode ? "sub-mode-demo" : "sub-mode-paymongo")">
-            @(IsDemoMode ? "Sandbox Simulator" : "PayMongo Test Mode")
+        <span class="sub-mode-badge sub-mode-paymongo">
+            PayMongo
         </span>
     }
 </div>
@@ -85,9 +85,7 @@ else
             {
                 <div class="sub-details">
                     <p class="sub-pending-text">
-                        @(IsDemoMode
-                            ? "A sandbox checkout session is awaiting your payment confirmation."
-                            : "A PayMongo checkout is awaiting your payment confirmation.")
+                        A PayMongo checkout is awaiting your payment confirmation.
                     </p>
                     <div class="sub-actions-row">
                         @if (Current is { } pendingSubscription
@@ -116,7 +114,7 @@ else
             }
             else
             {
-                <p class="sub-note mb-0">You are currently on the Free tier. Choose a plan below to subscribe with @(IsDemoMode ? "PayMongo Sandbox" : "PayMongo") (Card, GCash, Maya, GrabPay).</p>
+                <p class="sub-note mb-0">You are currently on the Free tier. Choose a plan below to subscribe with PayMongo (Card, GCash, Maya, GrabPay).</p>
             }
 
             @if (!string.IsNullOrWhiteSpace(BlockedPopupUrl))
@@ -130,7 +128,7 @@ else
         </section>
 
         <section class="sp-card sub-card">
-            <div class="sub-section-title">Available Plans (@(IsDemoMode ? "Sandbox Simulator" : "PayMongo Test Mode"))</div>
+            <div class="sub-section-title">Available Plans</div>
             @if (Plans.Count == 0)
             {
                 <p class="sub-note mb-0">No subscription plans are configured.</p>
@@ -154,7 +152,7 @@ else
                                 <div class="sub-plan-desc">@plan.Description</div>
                                 @if (!plan.IsConfigured)
                                 {
-                                    <div class="sub-unconfigured">PayMongo Test Mode secret key not configured on server</div>
+                                    <div class="sub-unconfigured">Payment checkout is not configured on the server</div>
                                 }
                             </div>
                             <button class="sub-btn sub-btn-primary" type="button"
@@ -187,6 +185,7 @@ else
                             <th>Mode</th>
                             <th>Reference ID</th>
                             <th>Date</th>
+                            <th>Expires</th>
                             <th style="text-align:right;">Receipt</th>
                         </tr>
                     </thead>
@@ -203,18 +202,21 @@ else
                                 <td>@item.PaymentMode</td>
                                 <td><code>@item.SubscriptionId</code></td>
                                 <td>@item.CreatedAt.ToLocalTime().ToString("MMM dd, yyyy HH:mm")</td>
+                                <td>@(item.CurrentPeriodEnd.HasValue ? item.CurrentPeriodEnd.Value.ToLocalTime().ToString("MMM dd, yyyy") : "—")</td>
                                 <td style="text-align:right;">
-                                    @if (canResend)
-                                    {
-                                        <button class="sub-btn sub-btn-secondary sub-btn-sm" type="button" disabled="@Busy"
-                                                @onclick="() => ResendReceiptAsync(item.SubscriptionId)">
-                                            Resend
+                                    <div style="display:inline-flex;gap:6px;justify-content:flex-end;">
+                                        <button class="sub-btn sub-btn-secondary sub-btn-sm" type="button"
+                                                @onclick="() => SelectedReceipt = item">
+                                            View Receipt
                                         </button>
-                                    }
-                                    else
-                                    {
-                                        <span style="color:#94a3b8;">-</span>
-                                    }
+                                        @if (canResend)
+                                        {
+                                            <button class="sub-btn sub-btn-secondary sub-btn-sm" type="button" disabled="@Busy"
+                                                    @onclick="() => ResendReceiptAsync(item.SubscriptionId)">
+                                                Resend
+                                            </button>
+                                        }
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -223,6 +225,39 @@ else
             </div>
         }
     </section>
+
+    @if (SelectedReceipt is not null)
+    {
+        <div class="sub-receipt-backdrop" @onclick="() => SelectedReceipt = null">
+            <section class="sub-receipt-modal" role="dialog" aria-modal="true" aria-labelledby="receipt-modal-title" @onclick:stopPropagation="true">
+                <div class="sub-receipt-header">
+                    <div>
+                        <span class="sub-receipt-eyebrow">SAFE PASSAGE RECEIPT</span>
+                        <h2 id="receipt-modal-title">@SelectedReceipt.PlanName</h2>
+                    </div>
+                    <button type="button" class="sub-receipt-close no-print" aria-label="Close" @onclick="() => SelectedReceipt = null">&times;</button>
+                </div>
+                <dl class="sub-receipt-dl">
+                    <dt>Account</dt><dd>@(Api.CurrentEmail ?? Api.CurrentUsername ?? "Account holder")</dd>
+                    <dt>Reference ID</dt><dd><code>@SelectedReceipt.SubscriptionId</code></dd>
+                    <dt>Status</dt><dd>@FormatStatus(SelectedReceipt.Status)</dd>
+                    <dt>Amount</dt><dd>@SelectedReceipt.PriceDisplay</dd>
+                    <dt>Payment Method</dt><dd>@SelectedReceipt.PaymentMode</dd>
+                    <dt>Issued Date</dt><dd>@SelectedReceipt.CreatedAt.ToLocalTime().ToString("MMM dd, yyyy HH:mm")</dd>
+                    <dt>Billing Period Start</dt><dd>@(SelectedReceipt.CurrentPeriodStart?.ToLocalTime().ToString("MMM dd, yyyy") ?? "—")</dd>
+                    <dt>Expiration / Next Renewal</dt><dd>@(SelectedReceipt.CurrentPeriodEnd?.ToLocalTime().ToString("MMM dd, yyyy") ?? "—")</dd>
+                    @if (SelectedReceipt.CancelledAt.HasValue)
+                    {
+                        <dt>Cancelled At</dt><dd>@SelectedReceipt.CancelledAt.Value.ToLocalTime().ToString("MMM dd, yyyy HH:mm")</dd>
+                    }
+                </dl>
+                <div class="sub-receipt-footer no-print">
+                    <button type="button" class="sub-btn sub-btn-secondary" @onclick="() => SelectedReceipt = null">Close</button>
+                    <button type="button" class="sub-btn sub-btn-primary" @onclick="PrintReceiptAsync">Print Receipt</button>
+                </div>
+            </section>
+        </div>
+    }
 }
 
 <style>
@@ -272,12 +307,25 @@ else
     .sub-table{width:100%;border-collapse:collapse;font-size:13px;min-width:680px}
     .sub-table th{text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px;padding:10px 12px}
     .sub-table td{padding:11px 12px;border-top:1px solid #edf0f2;vertical-align:middle}
+    .sub-receipt-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.5)}
+    .sub-receipt-modal{width:min(100%,480px);max-height:90vh;overflow:auto;padding:24px;background:#fff;border-radius:10px;box-shadow:0 24px 70px rgba(15,23,42,.25)}
+    .sub-receipt-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px}
+    .sub-receipt-eyebrow{font-size:10px;font-weight:700;letter-spacing:.7px;color:#087f75}
+    .sub-receipt-header h2{margin:4px 0 0;font-size:20px;font-weight:700;color:#0f172a}
+    .sub-receipt-close{border:0;background:none;color:#64748b;font-size:24px;line-height:1;cursor:pointer}
+    .sub-receipt-dl{display:grid;grid-template-columns:1fr 1.2fr;margin:0}
+    .sub-receipt-dl dt,.sub-receipt-dl dd{padding:9px 0;border-top:1px solid #edf0f2;font-size:12px;overflow-wrap:anywhere}
+    .sub-receipt-dl dt{color:#64748b}
+    .sub-receipt-dl dd{margin:0;text-align:right;font-weight:600;color:#0f172a}
+    .sub-receipt-footer{display:flex;justify-content:flex-end;gap:8px;margin-top:20px}
+    @@media print{.no-print{display:none!important}body *{visibility:hidden}.sub-receipt-backdrop,.sub-receipt-modal,.sub-receipt-modal *{visibility:visible}.sub-receipt-backdrop{position:static;background:none;padding:0}.sub-receipt-modal{box-shadow:none;max-width:100%}}
 </style>
 
 @code {
     private List<SubscriptionPlanDto> Plans { get; set; } = [];
     private List<SubscriptionHistoryItemDto> History { get; set; } = [];
     private UserSubscriptionDto? Current { get; set; }
+    private SubscriptionHistoryItemDto? SelectedReceipt { get; set; }
     private bool Loading { get; set; } = true;
     private bool Busy { get; set; }
     private string? BusyPlanCode { get; set; }
@@ -475,6 +523,9 @@ else
         null or "" => "Free",
         _ => status
     };
+
+    private async Task PrintReceiptAsync() =>
+        await JS.InvokeVoidAsync("window.print");
 
     private static string GetStatusClass(string? status) => status?.ToLowerInvariant() switch
     {

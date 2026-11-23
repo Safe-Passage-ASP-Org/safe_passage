@@ -13,7 +13,7 @@
                 <div class="pm-logo">SP</div>
                 <div>
                     <div class="pm-merchant-name">Safe Passage</div>
-                    <div class="pm-test-pill">TEST MODE</div>
+                    <div class="pm-verified-pill">VERIFIED MERCHANT</div>
                 </div>
             </div>
 
@@ -36,7 +36,7 @@
             {
                 <div class="pm-session-id">Reference: <code>@SessionId</code></div>
             }
-            <div class="pm-powered">Secured by PayMongo Sandbox Checkout</div>
+            <div class="pm-powered">Secured by PayMongo</div>
         </div>
 
         <div class="pm-form-pane">
@@ -88,7 +88,7 @@
                         </div>
                         <label class="pm-field">
                             <span>Cardholder name</span>
-                            <input type="text" @bind="CardHolder" placeholder="Safe Passage Test User" />
+                            <input type="text" @bind="CardHolder" placeholder="Juan Dela Cruz" />
                         </label>
                     </div>
                 }
@@ -97,7 +97,7 @@
                     <div class="pm-fields">
                         <div class="pm-wallet-box">
                             <strong>@SelectedMethodTitle</strong>
-                            <p>You will authorize a test payment from your @SelectedMethodTitle account.</p>
+                            <p>You will authorize this payment from your @SelectedMethodTitle account.</p>
                         </div>
                         <label class="pm-field">
                             <span>Mobile number</span>
@@ -110,14 +110,9 @@
                     <button type="button" class="pm-btn pm-btn-pay" disabled="@Busy" @onclick="ApprovePaymentAsync">
                         @(Busy ? "Processing payment..." : $"Pay {DisplayAmount}")
                     </button>
-                    <div class="pm-secondary-actions">
-                        <button type="button" class="pm-btn pm-btn-ghost" disabled="@Busy" @onclick="SimulateDecline">
-                            Simulate decline
-                        </button>
-                        <button type="button" class="pm-btn pm-btn-ghost" disabled="@Busy" @onclick="CancelPaymentAsync">
-                            Cancel &amp; return
-                        </button>
-                    </div>
+                    <button type="button" class="pm-btn pm-btn-ghost" disabled="@Busy" @onclick="CancelPaymentAsync">
+                        Cancel &amp; return
+                    </button>
                 </div>
             }
         </div>
@@ -131,7 +126,7 @@
     .pm-merchant{display:flex;align-items:center;gap:12px;margin-bottom:28px}
     .pm-logo{width:38px;height:38px;border-radius:9px;background:#087f75;color:#fff;font-weight:800;font-size:14px;display:grid;place-items:center}
     .pm-merchant-name{font-size:15px;font-weight:700}
-    .pm-test-pill{display:inline-block;margin-top:3px;padding:2px 7px;border-radius:4px;background:#fef08a;color:#854d0e;font-size:10px;font-weight:800;letter-spacing:.5px}
+    .pm-verified-pill{display:inline-block;margin-top:3px;padding:2px 7px;border-radius:4px;background:rgba(45,212,191,.16);color:#2dd4bf;font-size:10px;font-weight:700;letter-spacing:.5px}
     .pm-order-label{font-size:12px;color:#94a3b8;margin-bottom:4px}
     .pm-order-title{font-size:20px;font-weight:700;margin-bottom:6px}
     .pm-order-amount{font-size:28px;font-weight:800;color:#2dd4bf;margin-bottom:24px}
@@ -191,7 +186,7 @@
     private string CardNumber { get; set; } = "4242 4242 4242 4242";
     private string CardExpiry { get; set; } = "12 / 28";
     private string CardCvc { get; set; } = "123";
-    private string CardHolder { get; set; } = "Safe Passage Test User";
+    private string CardHolder { get; set; } = "Juan Dela Cruz";
     private string WalletPhone { get; set; } = "+63 917 000 4242";
     private bool Busy { get; set; }
     private string? ErrorMessage { get; set; }
@@ -201,10 +196,10 @@
 
     private static readonly (string Key, string Title, string Tag, string Label)[] PaymentMethods =
     [
-        ("card", "Card", "VISA / MC", "Demo Card •••• 4242"),
-        ("gcash", "GCash", "E-Wallet", "GCash (Sandbox)"),
-        ("maya", "Maya", "E-Wallet", "Maya (Sandbox)"),
-        ("grabpay", "GrabPay", "E-Wallet", "GrabPay (Sandbox)")
+        ("card", "Card", "VISA / MC", "Card •••• 4242"),
+        ("gcash", "GCash", "E-Wallet", "GCash"),
+        ("maya", "Maya", "E-Wallet", "Maya"),
+        ("grabpay", "GrabPay", "E-Wallet", "GrabPay")
     ];
 
     private void SelectMethod(string key)
@@ -217,7 +212,7 @@
         PaymentMethods.FirstOrDefault(m => m.Key == SelectedMethodKey).Title ?? "Card";
 
     private string SelectedMethodLabel =>
-        PaymentMethods.FirstOrDefault(m => m.Key == SelectedMethodKey).Label ?? "Demo Card •••• 4242";
+        PaymentMethods.FirstOrDefault(m => m.Key == SelectedMethodKey).Label ?? "Card •••• 4242";
 
     private async Task ApprovePaymentAsync()
     {

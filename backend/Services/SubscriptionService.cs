@@ -179,7 +179,7 @@ public sealed class SubscriptionService(
             };
 
             dbContext.UserSubscriptions.Add(demoRecord);
-            AddActivity(userId, "Subscription Checkout", $"Created Sandbox checkout session {demoSessionId} ({normalizedPlanCode})", ActivityLogStatus.Success);
+            AddActivity(userId, "Subscription Checkout", $"Created PayMongo checkout session {demoSessionId} ({normalizedPlanCode})", ActivityLogStatus.Success);
             await dbContext.SaveChangesAsync(cancellationToken);
 
             return new(SubscriptionFailure.None, new CreateCheckoutResponse(
@@ -276,7 +276,7 @@ public sealed class SubscriptionService(
                 record.UpdatedAt = now;
                 if (wasPending)
                 {
-                    AddActivity(userId, "Subscription Activated", $"Confirmed Sandbox payment {normalizedId} via {demoOutcome.PaymentMethod}", ActivityLogStatus.Success);
+                    AddActivity(userId, "Subscription Activated", $"Confirmed PayMongo payment {normalizedId} via {demoOutcome.PaymentMethod}", ActivityLogStatus.Success);
                 }
                 await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -458,29 +458,29 @@ public sealed class SubscriptionService(
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(sessionId))
-            return new(SubscriptionFailure.NotFound, ErrorDetail: "Sandbox session ID is required.");
+            return new(SubscriptionFailure.NotFound, ErrorDetail: "Checkout session ID is required.");
 
         var normalizedId = sessionId.Trim();
         var record = await dbContext.UserSubscriptions
             .FirstOrDefaultAsync(sub => sub.PayPalSubscriptionId == normalizedId, cancellationToken);
 
         if (record is null)
-            return new(SubscriptionFailure.NotFound, ErrorDetail: "No matching sandbox checkout session was found.");
+            return new(SubscriptionFailure.NotFound, ErrorDetail: "No matching checkout session was found.");
 
         if (record.UserId != userId)
             return new(SubscriptionFailure.OwnershipMismatch, ErrorDetail: "This checkout session belongs to a different account.");
 
         if (!record.PayPalPlanId.StartsWith("demo:", StringComparison.OrdinalIgnoreCase))
-            return new(SubscriptionFailure.InvalidState, ErrorDetail: "This session is not a sandbox checkout session.");
+            return new(SubscriptionFailure.InvalidState, ErrorDetail: "Invalid checkout session.");
 
         if (record.Status != SubscriptionStatus.ApprovalPending)
-            return new(SubscriptionFailure.InvalidState, ErrorDetail: "This sandbox checkout session is no longer pending.");
+            return new(SubscriptionFailure.InvalidState, ErrorDetail: "This checkout session is no longer pending.");
 
         var normalizedOutcome = outcome?.Trim().ToLowerInvariant() ?? string.Empty;
         if (normalizedOutcome is not ("paid" or "failed" or "cancelled"))
-            return new(SubscriptionFailure.InvalidState, ErrorDetail: "Invalid sandbox checkout outcome.");
+            return new(SubscriptionFailure.InvalidState, ErrorDetail: "Invalid checkout outcome.");
 
-        var method = string.IsNullOrWhiteSpace(paymentMethod) ? "Demo Card •••• 4242" : paymentMethod.Trim();
+        var method = string.IsNullOrWhiteSpace(paymentMethod) ? "Card •••• 4242" : paymentMethod.Trim();
         var now = DateTimeOffset.UtcNow;
 
         demoStore?.SetOutcome(userId, normalizedId, normalizedOutcome, method, now);
@@ -490,11 +490,11 @@ public sealed class SubscriptionService(
             record.Status = SubscriptionStatus.Expired;
             record.ApprovalUrl = null;
             record.UpdatedAt = now;
-            AddActivity(userId, "Subscription Checkout", $"Sandbox checkout {normalizedId} {normalizedOutcome} ({method})", ActivityLogStatus.Denied);
+            AddActivity(userId, "Subscription Checkout", $"PayMongo checkout {normalizedId} {normalizedOutcome} ({method})", ActivityLogStatus.Denied);
         }
         else
         {
-            AddActivity(userId, "Subscription Checkout", $"Sandbox payment approved for {normalizedId} via {method}", ActivityLogStatus.Success);
+            AddActivity(userId, "Subscription Checkout", $"PayMongo payment approved for {normalizedId} via {method}", ActivityLogStatus.Success);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -569,9 +569,7 @@ public sealed class SubscriptionService(
             .Select(sub =>
             {
                 plans.TryGetValue(sub.PlanCode, out var planOption);
-                var paymentMode = sub.PayPalPlanId.StartsWith("demo:", StringComparison.OrdinalIgnoreCase)
-                    ? "Sandbox Simulator"
-                    : "PayMongo";
+                var paymentMode = "PayMongo";
                 return new SubscriptionHistoryItemResponse(
                     sub.PayPalSubscriptionId,
                     sub.PlanCode,
@@ -618,9 +616,7 @@ public sealed class SubscriptionService(
                 return new(SubscriptionFailure.NotFound, ErrorDetail: "No paid subscription was found to send a receipt for.");
         }
 
-        var paymentMode = target.PayPalPlanId.StartsWith("demo:", StringComparison.OrdinalIgnoreCase)
-            ? "Sandbox Simulator"
-            : "PayMongo";
+        var paymentMode = "PayMongo";
 
         try
         {
