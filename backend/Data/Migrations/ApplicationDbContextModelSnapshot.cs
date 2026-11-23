@@ -311,6 +311,23 @@ namespace SafePassage.Api.Data.Migrations
                     b.ToTable("AdminEmailChangeTokens");
                 });
 
+            modelBuilder.Entity("SafePassage.Api.Models.BackupEmailVerificationToken", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("TEXT");
+                    b.Property<DateTimeOffset>("CreatedAt").HasColumnType("TEXT");
+                    b.Property<DateTimeOffset>("ExpiresAt").HasColumnType("TEXT");
+                    b.Property<int>("FailedAttempts").HasColumnType("INTEGER");
+                    b.Property<string>("NewEmail").IsRequired().HasMaxLength(320).HasColumnType("TEXT");
+                    b.Property<string>("OtpHash").IsRequired().HasMaxLength(64).HasColumnType("TEXT");
+                    b.Property<string>("TokenHash").IsRequired().HasMaxLength(64).HasColumnType("TEXT");
+                    b.Property<DateTimeOffset?>("UsedAt").HasColumnType("TEXT");
+                    b.Property<Guid>("UserId").HasColumnType("TEXT");
+                    b.HasKey("Id");
+                    b.HasIndex("TokenHash").IsUnique();
+                    b.HasIndex("UserId", "ExpiresAt");
+                    b.ToTable("BackupEmailVerificationTokens");
+                });
+
             modelBuilder.Entity("SafePassage.Api.Models.ActivityLog", b =>
                 {
                     b.Property<Guid>("Id")
@@ -688,6 +705,10 @@ namespace SafePassage.Api.Data.Migrations
                         .HasMaxLength(320)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("BackupEmail")
+                        .HasMaxLength(320)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("FacebookUserId")
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
@@ -733,6 +754,10 @@ namespace SafePassage.Api.Data.Migrations
 
                     b.HasIndex("Email")
                         .IsUnique();
+
+                    b.HasIndex("BackupEmail")
+                        .IsUnique()
+                        .HasFilter("\"BackupEmail\" IS NOT NULL");
 
                     b.HasIndex("FacebookUserId")
                         .IsUnique()

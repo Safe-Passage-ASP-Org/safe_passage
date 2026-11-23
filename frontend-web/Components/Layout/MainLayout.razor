@@ -80,6 +80,7 @@
     {
         Navigation.LocationChanged += HandleLocationChanged;
         AlertCount.Changed += HandleAlertCountChanged;
+        Api.ProfileChanged += HandleProfileChanged;
         await RefreshAlertCountAsync();
     }
 
@@ -103,11 +104,13 @@
     }
 
     private void HandleAlertCountChanged() => _ = InvokeAsync(StateHasChanged);
+    private void HandleProfileChanged() => _ = InvokeAsync(StateHasChanged);
 
     public void Dispose()
     {
         Navigation.LocationChanged -= HandleLocationChanged;
         AlertCount.Changed -= HandleAlertCountChanged;
+        Api.ProfileChanged -= HandleProfileChanged;
     }
 }
 

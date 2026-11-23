@@ -233,6 +233,7 @@ public sealed class AccountActivationServiceTests
             CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task SendAdminEmailChangeVerificationAsync(string email, string username, string verificationUrl, string otpCode, int lifetimeMinutes, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task SendBackupEmailVerificationAsync(string email, string username, string verificationUrl, string otpCode, int lifetimeMinutes, CancellationToken cancellationToken) => Task.CompletedTask;
 
         public Task SendSubscriptionReceiptAsync(
             SubscriptionReceiptEmail receipt,

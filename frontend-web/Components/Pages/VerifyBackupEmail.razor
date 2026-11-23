@@ -1,0 +1,64 @@
+@page "/verify-backup-email"
+@layout AuthLayout
+@using SafePassage.Web.Services
+@inject AdminApiClient Api
+@inject IJSRuntime JS
+
+<PageTitle>Verify Backup Email – Safe Passage</PageTitle>
+<main class="backup-verification-page">
+    <section class="backup-verification-card" role="status">
+        <div class="backup-verification-mark" aria-hidden="true">✓</div>
+        @if (Working)
+        {
+            <h1>Verifying your backup email…</h1>
+            <p>Please wait while Safe Passage checks your one-time link.</p>
+        }
+        else if (!string.IsNullOrWhiteSpace(Error))
+        {
+            <h1>Verification failed</h1>
+            <p class="backup-verification-error">@Error</p>
+            <a href="/login">Return to sign in</a>
+        }
+        else
+        {
+            <h1>Backup email verified</h1>
+            <p>Your backup email is ready to use for account recovery.</p>
+            <a href="/settings">Return to Settings</a>
+        }
+    </section>
+</main>
+
+<style>
+    .backup-verification-page{min-height:100vh;display:grid;place-items:center;padding:24px;background:#f6f8fa;color:#1f2328;font-family:system-ui,sans-serif}
+    .backup-verification-card{width:min(100%,440px);padding:32px;border:1px solid #d8dee4;border-radius:9px;background:white;text-align:center}
+    .backup-verification-mark{width:44px;height:44px;display:grid;place-items:center;margin:0 auto 18px;border-radius:50%;background:#dafbe1;color:#1a7f37;font-weight:750}
+    .backup-verification-card h1{font-size:21px;margin:0 0 8px}
+    .backup-verification-card p{color:#64748b;font-size:13px;line-height:1.6}
+    .backup-verification-card a{display:inline-block;margin-top:10px;color:#0969da;font-weight:650;text-decoration:none}
+    .backup-verification-error{color:#b42318!important}
+</style>
+
+@code {
+    private bool Working = true;
+    private bool Attempted;
+    private string? Error;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Attempted) return;
+        Attempted = true;
+        try
+        {
+            var token = await JS.InvokeAsync<string?>("safePassageAuthSession.getBackupEmailToken");
+            if (string.IsNullOrWhiteSpace(token))
+                throw new InvalidOperationException("This verification link is missing its token. Request a new backup email verification from Profile Settings.");
+            await Api.VerifyBackupEmailLinkAsync(token);
+        }
+        catch (Exception ex) { Error = ex.Message; }
+        finally
+        {
+            Working = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

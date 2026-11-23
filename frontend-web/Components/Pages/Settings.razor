@@ -41,13 +41,39 @@
             <section class="settings-panel">
                 <div class="settings-profile-row">
                     <div class="settings-avatar" aria-hidden="true">@AvatarInitials</div>
-                    <div class="settings-profile-info"><strong>@(Api.CurrentUsername ?? "—")</strong><span>@(Api.CurrentRole ?? "User")</span></div>
+                    <div class="settings-profile-info"><strong>@(ProfileName ?? Api.CurrentUsername ?? "—")</strong><span>@(Api.CurrentRole ?? "User")</span></div>
                 </div>
+                <form class="settings-form settings-profile-form" @onsubmit="SaveProfileAsync" @onsubmit:preventDefault="true">
+                    <label>Name<input maxlength="200" required autocomplete="name" @bind="ProfileName" /></label>
+                    @if (!string.IsNullOrWhiteSpace(ProfileError)) { <div class="settings-alert error" role="alert">@ProfileError</div> }
+                    @if (!string.IsNullOrWhiteSpace(ProfileNotice)) { <div class="settings-alert ok" role="status">@ProfileNotice</div> }
+                    <button class="settings-save-btn" type="submit" disabled="@SavingProfile">@(SavingProfile ? "Saving…" : "Save name")</button>
+                </form>
                 <dl class="settings-details">
-                    <div><dt>Name</dt><dd>@(Api.CurrentUsername ?? "—")</dd></div>
-                    <div><dt>Email</dt><dd>@(Api.CurrentEmail ?? "Not available")</dd></div>
-                    <div><dt>Role</dt><dd>@(Api.CurrentRole ?? "User")</dd></div>
+                    <div><dt>Username</dt><dd>@(ProfileUsername ?? "—")</dd></div>
+                    <div><dt>Sign-in email</dt><dd>@(ProfileEmail ?? Api.CurrentEmail ?? "Not available")</dd></div>
                 </dl>
+            </section>
+            <section class="settings-panel backup-email-panel">
+                <h3>Backup email</h3>
+                <p class="settings-note">Add an alternate address for account recovery. It becomes active only after you verify it using the email link or 6-digit code.</p>
+                @if (!string.IsNullOrWhiteSpace(ProfileBackupEmail))
+                {
+                    <p class="settings-verified-email"><span class="settings-verified-dot" aria-hidden="true"></span>Verified: <strong>@ProfileBackupEmail</strong></p>
+                }
+                <form class="settings-form" @onsubmit="RequestBackupEmailAsync" @onsubmit:preventDefault="true">
+                    <label>Backup email address<input type="email" required maxlength="320" autocomplete="email" @bind="BackupEmailDraft" /></label>
+                    @if (!string.IsNullOrWhiteSpace(BackupEmailError)) { <div class="settings-alert error" role="alert">@BackupEmailError</div> }
+                    @if (!string.IsNullOrWhiteSpace(BackupEmailNotice)) { <div class="settings-alert ok" role="status">@BackupEmailNotice</div> }
+                    <button class="settings-save-btn" type="submit" disabled="@SendingBackupEmail">@(SendingBackupEmail ? "Sending…" : "Send verification")</button>
+                </form>
+                @if (BackupEmailVerificationSent)
+                {
+                    <form class="settings-form settings-email-verify" @onsubmit="VerifyBackupEmailOtpAsync" @onsubmit:preventDefault="true">
+                        <label>6-digit verification code<input inputmode="numeric" autocomplete="one-time-code" required minlength="6" maxlength="6" pattern="[0-9]{6}" @bind="BackupEmailOtp" /></label>
+                        <button class="settings-save-btn" type="submit" disabled="@VerifyingBackupEmail">@(VerifyingBackupEmail ? "Verifying…" : "Verify backup email")</button>
+                    </form>
+                }
             </section>
         }
         else if (ActiveSection == "account")
@@ -130,6 +156,10 @@
     .settings-panel{padding:20px 22px;border:1px solid #d8dee4;border-radius:7px;background:#fff}
     .settings-panel h3{margin:0 0 7px;color:#1f2328;font-size:15px;font-weight:600}
     .settings-profile-row{display:flex;align-items:center;gap:13px;padding-bottom:18px;border-bottom:1px solid #e5e7eb}
+    .settings-profile-form{margin:18px 0}
+    .backup-email-panel{margin-top:16px}
+    .settings-verified-email{display:flex;align-items:center;gap:7px;margin:0 0 15px;color:#334155;font-size:12px}
+    .settings-verified-dot{width:8px;height:8px;border-radius:50%;background:#1f883d}
     .settings-avatar{width:48px;height:48px;flex:0 0 auto;border-radius:50%;background:var(--sp-accent,#087f75);color:#fff;font-size:15px;font-weight:700;display:grid;place-items:center}
     .settings-profile-info{display:flex;flex-direction:column;gap:4px;min-width:0}
     .settings-profile-info strong{color:#1f2328;font-size:14px}
@@ -165,19 +195,29 @@
 
 @code {
     private string ActiveSection = "profile";
+    private string? ProfileName, ProfileUsername, ProfileEmail, ProfileBackupEmail;
+    private string ProfileError = "", ProfileNotice = "", BackupEmailDraft = "", BackupEmailOtp = "", BackupEmailError = "", BackupEmailNotice = "";
     private string CurrentPassword = "", NewPassword = "", ConfirmPassword = "", PasswordError = "", PasswordNotice = "";
     private string NewEmail = "", EmailOtp = "", EmailError = "", EmailNotice = "";
     private bool SavingPassword;
+    private bool SavingProfile, SendingBackupEmail, VerifyingBackupEmail, BackupEmailVerificationSent;
     private bool SendingEmailCode, VerifyingEmail, EmailVerificationSent;
     private UserSubscriptionDto? CurrentSubscription;
 
     protected override async Task OnInitializedAsync()
     {
-        if (!Api.IsAdministrator)
+        try
         {
+            var profile = await Api.GetProfileAsync();
+            ProfileName = profile.Name;
+            ProfileUsername = profile.Username;
+            ProfileEmail = profile.Email;
+            ProfileBackupEmail = profile.BackupEmail;
+        }
+        catch (Exception ex) { ProfileError = ex.Message; }
+        if (!Api.IsAdministrator)
             try { CurrentSubscription = await Api.GetMySubscriptionAsync(); }
             catch { /* Keep account settings accessible if subscription data is unavailable. */ }
-        }
     }
 
     private string AvatarInitials
@@ -197,6 +237,51 @@
     private void ShowAccount() => ActiveSection = "account";
     private void ShowDevices() => ActiveSection = "devices";
     private void ShowSubscription() => ActiveSection = "subscription";
+
+    private async Task SaveProfileAsync()
+    {
+        ProfileError = ProfileNotice = "";
+        SavingProfile = true;
+        try
+        {
+            var profile = await Api.UpdateProfileNameAsync(ProfileName?.Trim() ?? "");
+            ProfileName = profile.Name;
+            ProfileNotice = "Your name was updated.";
+        }
+        catch (Exception ex) { ProfileError = ex.Message; }
+        finally { SavingProfile = false; }
+    }
+
+    private async Task RequestBackupEmailAsync()
+    {
+        BackupEmailError = BackupEmailNotice = "";
+        SendingBackupEmail = true;
+        try
+        {
+            await Api.RequestBackupEmailVerificationAsync(BackupEmailDraft.Trim());
+            BackupEmailVerificationSent = true;
+            BackupEmailOtp = "";
+            BackupEmailNotice = $"A verification link and 6-digit code were sent to {BackupEmailDraft.Trim()}.";
+        }
+        catch (Exception ex) { BackupEmailError = ex.Message; }
+        finally { SendingBackupEmail = false; }
+    }
+
+    private async Task VerifyBackupEmailOtpAsync()
+    {
+        BackupEmailError = BackupEmailNotice = "";
+        VerifyingBackupEmail = true;
+        try
+        {
+            var profile = await Api.VerifyBackupEmailOtpAsync(BackupEmailOtp.Trim());
+            ProfileBackupEmail = profile.BackupEmail;
+            BackupEmailDraft = BackupEmailOtp = "";
+            BackupEmailVerificationSent = false;
+            BackupEmailNotice = "Backup email verified successfully.";
+        }
+        catch (Exception ex) { BackupEmailError = ex.Message; }
+        finally { VerifyingBackupEmail = false; }
+    }
 
     private async Task ChangePasswordAsync()
     {

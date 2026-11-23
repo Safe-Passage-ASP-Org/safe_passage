@@ -37,6 +37,13 @@ public interface IActivationEmailSender
         string otpCode,
         int lifetimeMinutes,
         CancellationToken cancellationToken);
+    Task SendBackupEmailVerificationAsync(
+        string email,
+        string username,
+        string verificationUrl,
+        string otpCode,
+        int lifetimeMinutes,
+        CancellationToken cancellationToken);
     Task SendSubscriptionReceiptAsync(
         SubscriptionReceiptEmail receipt,
         CancellationToken cancellationToken);
@@ -184,6 +191,33 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
         catch (SmtpException exception) { throw new EmailDeliveryException("The SMTP server could not deliver the email change verification.", exception); }
         catch (FormatException exception) { throw new EmailDeliveryException("The email change recipient address is invalid.", exception); }
         catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the email change verification.", exception); }
+        catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
+    }
+
+    public async Task SendBackupEmailVerificationAsync(
+        string email, string username, string verificationUrl, string otpCode, int lifetimeMinutes,
+        CancellationToken cancellationToken)
+    {
+        var settings = options.Value;
+        if (string.IsNullOrWhiteSpace(settings.Host) || settings.Port is < 1 or > 65535 || string.IsNullOrWhiteSpace(settings.FromAddress))
+            throw new EmailDeliveryException("SMTP is not configured to send backup email verification.");
+        try
+        {
+            using var message = new MailMessage
+            {
+                From = string.IsNullOrWhiteSpace(settings.FromName) ? new MailAddress(settings.FromAddress) : new MailAddress(settings.FromAddress, settings.FromName),
+                Subject = "Verify your Safe Passage backup email",
+                Body = $"Hello {username},\n\nUse this one-time link to verify the backup email address for your Safe Passage account:\n\n{verificationUrl}\n\nOr enter this 6-digit code in Profile Settings:\n\n    {otpCode}\n\nBoth expire in {lifetimeMinutes} minutes. If you did not request this, ignore this email.",
+                IsBodyHtml = false
+            };
+            message.To.Add(new MailAddress(email));
+            using var client = new SmtpClient(settings.Host, settings.Port) { EnableSsl = settings.EnableSsl, Timeout = 15000 };
+            if (!string.IsNullOrWhiteSpace(settings.Username)) client.Credentials = new NetworkCredential(settings.Username, settings.Password);
+            await client.SendMailAsync(message, cancellationToken);
+        }
+        catch (SmtpException exception) { throw new EmailDeliveryException("The SMTP server could not deliver the backup email verification.", exception); }
+        catch (FormatException exception) { throw new EmailDeliveryException("The backup email recipient address is invalid.", exception); }
+        catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the backup email verification.", exception); }
         catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
     }
 

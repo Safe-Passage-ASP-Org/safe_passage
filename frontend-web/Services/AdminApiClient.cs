@@ -14,7 +14,9 @@ public sealed class AdminApiClient(HttpClient http)
     public string? AccessToken { get; private set; }
     public string? CurrentUsername { get; private set; }
     public string? CurrentEmail { get; private set; }
+    public string? CurrentBackupEmail { get; private set; }
     public string? CurrentRole { get; private set; }
+    public event Action? ProfileChanged;
     public bool IsAdministrator =>
         string.Equals(CurrentRole, "Admin", StringComparison.OrdinalIgnoreCase)
         || string.Equals(CurrentRole, "Administrator", StringComparison.OrdinalIgnoreCase)
@@ -303,7 +305,7 @@ public sealed class AdminApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
-    public void SignOut() { SetToken(null); CurrentUsername = null; CurrentEmail = null; }
+    public void SignOut() { SetToken(null); CurrentUsername = null; CurrentEmail = null; CurrentBackupEmail = null; }
 
     public async Task<List<AdminUser>> GetUsersAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminUser>>("api/admin/users", cancellationToken) ?? [];
@@ -407,6 +409,59 @@ public sealed class AdminApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
+    public async Task<UserProfile> GetProfileAsync(CancellationToken cancellationToken = default)
+    {
+        var profile = await http.GetFromJsonAsync<UserProfile>("api/profile", cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty profile response.");
+        ApplyProfile(profile);
+        return profile;
+    }
+
+    public async Task<UserProfile> UpdateProfileNameAsync(string name, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PutAsJsonAsync("api/profile", new { name }, cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        var profile = await response.Content.ReadFromJsonAsync<UserProfile>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty profile response.");
+        ApplyProfile(profile);
+        return profile;
+    }
+
+    public async Task RequestBackupEmailVerificationAsync(string email, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/profile/backup-email/request", new { email }, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task<UserProfile> VerifyBackupEmailOtpAsync(string code, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/profile/backup-email/verify-otp", new { code }, cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        var profile = await response.Content.ReadFromJsonAsync<UserProfile>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty profile response.");
+        ApplyProfile(profile);
+        return profile;
+    }
+
+    public async Task<UserProfile> VerifyBackupEmailLinkAsync(string token, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/profile/backup-email/verify-link", new { token }, cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        var profile = await response.Content.ReadFromJsonAsync<UserProfile>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty profile response.");
+        ApplyProfile(profile);
+        return profile;
+    }
+
+    private void ApplyProfile(UserProfile profile)
+    {
+        CurrentUsername = profile.Name;
+        CurrentEmail = profile.Email;
+        CurrentBackupEmail = profile.BackupEmail;
+        CurrentRole = profile.Role;
+        ProfileChanged?.Invoke();
+    }
+
     public async Task RequestAdminEmailChangeAsync(string newEmail, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync("api/auth/admin-email-change/request", new { newEmail }, cancellationToken);
@@ -494,7 +549,7 @@ public sealed class AdminApiClient(HttpClient http)
         return result?.CompletionUrl ?? throw new InvalidOperationException("The API did not return an OIDC sign-in continuation.");
     }
 
-    public void ClearToken() { SetToken(null); CurrentUsername = null; CurrentEmail = null; }
+    public void ClearToken() { SetToken(null); CurrentUsername = null; CurrentEmail = null; CurrentBackupEmail = null; }
 
     public async Task<AdminApplicationAccess> GetApplicationAccessAsync(Guid id, CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<AdminApplicationAccess>($"api/admin/applications/{id}/access", cancellationToken)
@@ -683,6 +738,7 @@ public sealed class AdminApiClient(HttpClient http)
 }
 
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
+public sealed record UserProfile(string Name, string Username, string Email, string? BackupEmail, string Role);
 public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
     string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null);
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
