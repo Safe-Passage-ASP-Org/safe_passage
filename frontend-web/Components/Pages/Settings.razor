@@ -21,6 +21,9 @@
             </button>
             @if (!Api.IsAdministrator)
             {
+                <button type="button" class="settings-nav-item @SectionClass("notifications")" aria-current="@(ActiveSection == "notifications" ? "page" : null)" @onclick="ShowNotifications">
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 0 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z" /></svg><span>Notifications</span>
+                </button>
                 <button type="button" class="settings-nav-item @SectionClass("appearance")" aria-current="@(ActiveSection == "appearance" ? "page" : null)" @onclick="ShowAppearance">
                     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14h1.1a2.4 2.4 0 0 0 1.7-4.1.8.8 0 0 1 .6-1.4H13a2 2 0 0 0 2-2A6.5 6.5 0 0 0 8 1ZM4.5 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm2-3a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm4 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm2 3a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" /></svg><span>Appearance</span>
                 </button>
@@ -138,6 +141,20 @@
                 </div>
             </section>
         }
+        else if (ActiveSection == "notifications" && !Api.IsAdministrator)
+        {
+            <header class="settings-content-heading"><h2>Notifications</h2><p>Manage how Safe Passage sign-in requests reach your devices.</p></header>
+            <section class="settings-panel notification-settings-panel">
+                <div class="notification-settings-icon" aria-hidden="true">
+                    <svg viewBox="0 0 16 16"><path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 0 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z" /></svg>
+                </div>
+                <div>
+                    <h3>Sign-in approval requests</h3>
+                    <p class="settings-note">When a sign-in needs approval, Safe Passage sends the request to your trusted mobile device. Open Safe Passage Mobile to review and approve or deny it.</p>
+                    <p class="settings-note notification-settings-help">Push notification permissions and delivery are managed on each phone in <strong>Safe Passage Mobile → Settings → Push Notifications</strong>.</p>
+                </div>
+            </section>
+        }
     </section>
 </div>
 
@@ -166,6 +183,12 @@
     .backup-email-panel{margin-top:16px}
     .settings-verified-email{display:flex;align-items:center;gap:7px;margin:0 0 15px;color:#334155;font-size:12px}
     .settings-verified-dot{width:8px;height:8px;border-radius:50%;background:#1f883d}
+    .notification-settings-panel{display:flex;align-items:flex-start;gap:15px}
+    .notification-settings-icon{width:40px;height:40px;flex:0 0 auto;display:grid;place-items:center;border-radius:8px;background:#eaf2f8;color:#0969da}
+    .notification-settings-icon svg{width:20px;height:20px;fill:currentColor}
+    .notification-settings-panel h3{margin:1px 0 7px}
+    .notification-settings-panel .settings-note:last-child{margin-bottom:0}
+    .notification-settings-help strong{color:#334155}
     .settings-avatar{width:48px;height:48px;flex:0 0 auto;border-radius:50%;background:var(--sp-accent,#087f75);color:#fff;font-size:15px;font-weight:700;display:grid;place-items:center}
     .settings-profile-info{display:flex;flex-direction:column;gap:4px;min-width:0}
     .settings-profile-info strong{color:#1f2328;font-size:14px}
@@ -257,6 +280,7 @@
     private void ShowProfile() => ActiveSection = "profile";
     private void ShowAccount() => ActiveSection = "account";
     private void ShowDevices() => ActiveSection = "devices";
+    private void ShowNotifications() => ActiveSection = "notifications";
     private void ShowAppearance() => ActiveSection = "appearance";
 
     private async Task SetThemeAsync(string theme)
