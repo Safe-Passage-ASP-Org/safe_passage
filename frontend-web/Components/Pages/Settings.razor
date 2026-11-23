@@ -25,12 +25,6 @@
                     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14h1.1a2.4 2.4 0 0 0 1.7-4.1.8.8 0 0 1 .6-1.4H13a2 2 0 0 0 2-2A6.5 6.5 0 0 0 8 1ZM4.5 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm2-3a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm4 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm2 3a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" /></svg><span>Appearance</span>
                 </button>
             }
-            @if (!Api.IsAdministrator)
-            {
-                <button type="button" class="settings-nav-item @SectionClass("subscription")" aria-current="@(ActiveSection == "subscription" ? "page" : null)" @onclick="ShowSubscription">
-                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2zm2 0v1h10V3zm0 3v7h10V6z" /></svg><span>Subscription</span>
-                </button>
-            }
         </div>
 
         <div class="settings-nav-footer">
@@ -126,18 +120,6 @@
             <header class="settings-content-heading"><h2>Trusted devices</h2><p>Review registered devices and their trust status.</p></header>
             <section class="settings-panel settings-link-panel"><div><h3>@(Api.IsAdministrator ? "Manage devices" : "Your devices")</h3><p class="settings-note">@(Api.IsAdministrator ? "Review device enrollment and manage trust for registered users." : "View the devices registered to your account.")</p></div><a class="settings-action-link" href="/devices">Open devices <span aria-hidden="true">→</span></a></section>
         }
-        else if (ActiveSection == "subscription" && !Api.IsAdministrator)
-        {
-            <header class="settings-content-heading"><h2>Subscription</h2><p>View your current plan and billing options.</p></header>
-            <section class="settings-panel">
-                @if (CurrentSubscription is not null)
-                {
-                    <div class="settings-sub-row"><strong>@CurrentSubscription.PlanName</strong><span class="settings-sub-status">@(CurrentSubscription.HasActiveEntitlement ? "Active entitlement" : CurrentSubscription.Status)</span></div>
-                }
-                <p class="settings-note">Manage your Safe Passage plan and renewal status.</p>
-                <a class="settings-action-link" href="/subscription">Manage subscription <span aria-hidden="true">→</span></a>
-            </section>
-        }
         else if (ActiveSection == "appearance" && !Api.IsAdministrator)
         {
             <header class="settings-content-heading"><h2>Appearance</h2><p>Choose how Safe Passage looks while you are signed in.</p></header>
@@ -210,9 +192,6 @@
     .settings-link-panel .settings-note{margin:0}
     .settings-action-link{display:inline-flex;align-items:center;gap:7px;flex:0 0 auto;padding:7px 11px;border:1px solid #d8dee4;border-radius:6px;color:#0969da;text-decoration:none;font-size:12px;font-weight:600}
     .settings-action-link:hover{background:#f6f8fa;text-decoration:none}
-    .settings-sub-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-    .settings-sub-row strong{color:#1f2328;font-size:14px}
-    .settings-sub-status{padding:3px 8px;border-radius:12px;background:#e5f5ed;color:#087f5b;font-size:10px;font-weight:700}
     .appearance-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:560px}
     .appearance-option{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #d8dee4;border-radius:7px;background:#fff;color:#1f2328;text-align:left;cursor:pointer}
     .appearance-option:hover{border-color:#0969da}
@@ -241,7 +220,6 @@
     private bool SavingProfile, SendingBackupEmail, VerifyingBackupEmail, BackupEmailVerificationSent;
     private string SelectedTheme = "light";
     private bool SendingEmailCode, VerifyingEmail, EmailVerificationSent;
-    private UserSubscriptionDto? CurrentSubscription;
 
     protected override async Task OnInitializedAsync()
     {
@@ -254,9 +232,6 @@
             ProfileBackupEmail = profile.BackupEmail;
         }
         catch (Exception ex) { ProfileError = ex.Message; }
-        if (!Api.IsAdministrator)
-            try { CurrentSubscription = await Api.GetMySubscriptionAsync(); }
-            catch { /* Keep account settings accessible if subscription data is unavailable. */ }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -282,7 +257,6 @@
     private void ShowProfile() => ActiveSection = "profile";
     private void ShowAccount() => ActiveSection = "account";
     private void ShowDevices() => ActiveSection = "devices";
-    private void ShowSubscription() => ActiveSection = "subscription";
     private void ShowAppearance() => ActiveSection = "appearance";
 
     private async Task SetThemeAsync(string theme)
