@@ -541,11 +541,13 @@
     {
         if (!IsAdminLogin && Api.IsAdministrator)
         {
+            await JS.InvokeVoidAsync("safePassageAppearance.reset");
             Api.SignOut();
             throw new InvalidOperationException("Administrator accounts must use Admin Login, verify their email, then approve the request on a trusted mobile device.");
         }
         if (IsAdminLogin && !Api.IsAdministrator)
         {
+            await JS.InvokeVoidAsync("safePassageAppearance.reset");
             Api.SignOut();
             throw new InvalidOperationException("This account does not have administrator access. Use User Login instead.");
         }

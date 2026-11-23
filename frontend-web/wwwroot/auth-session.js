@@ -26,3 +26,32 @@ window.safePassageAuthSession = {
         return token;
     }
 };
+
+window.safePassageAppearance = {
+    _key: "safePassage.userTheme",
+    getTheme() {
+        const theme = window.sessionStorage.getItem(this._key);
+        return theme === "dark" ? "dark" : "light";
+    },
+    setTheme(theme, isAuthenticatedUser) {
+        if (!isAuthenticatedUser || (theme !== "light" && theme !== "dark")) {
+            this.reset();
+            return;
+        }
+        window.sessionStorage.setItem(this._key, theme);
+        document.documentElement.dataset.spTheme = theme;
+    },
+    initialize(isAuthenticatedUser) {
+        if (!isAuthenticatedUser) {
+            this.reset();
+            return "light";
+        }
+        const theme = this.getTheme();
+        document.documentElement.dataset.spTheme = theme;
+        return theme;
+    },
+    reset() {
+        window.sessionStorage.removeItem(this._key);
+        document.documentElement.dataset.spTheme = "light";
+    }
+};

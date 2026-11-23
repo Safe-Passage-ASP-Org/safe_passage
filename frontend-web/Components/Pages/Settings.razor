@@ -21,6 +21,12 @@
             </button>
             @if (!Api.IsAdministrator)
             {
+                <button type="button" class="settings-nav-item @SectionClass("appearance")" aria-current="@(ActiveSection == "appearance" ? "page" : null)" @onclick="ShowAppearance">
+                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14h1.1a2.4 2.4 0 0 0 1.7-4.1.8.8 0 0 1 .6-1.4H13a2 2 0 0 0 2-2A6.5 6.5 0 0 0 8 1ZM4.5 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm2-3a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm4 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm2 3a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" /></svg><span>Appearance</span>
+                </button>
+            }
+            @if (!Api.IsAdministrator)
+            {
                 <button type="button" class="settings-nav-item @SectionClass("subscription")" aria-current="@(ActiveSection == "subscription" ? "page" : null)" @onclick="ShowSubscription">
                     <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2zm2 0v1h10V3zm0 3v7h10V6z" /></svg><span>Subscription</span>
                 </button>
@@ -132,6 +138,24 @@
                 <a class="settings-action-link" href="/subscription">Manage subscription <span aria-hidden="true">→</span></a>
             </section>
         }
+        else if (ActiveSection == "appearance" && !Api.IsAdministrator)
+        {
+            <header class="settings-content-heading"><h2>Appearance</h2><p>Choose how Safe Passage looks while you are signed in.</p></header>
+            <section class="settings-panel appearance-panel">
+                <h3>Theme</h3>
+                <p class="settings-note">Your choice applies to this signed-in session and resets to Light when you sign out.</p>
+                <div class="appearance-options" role="radiogroup" aria-label="Theme">
+                    <button type="button" class="appearance-option @(SelectedTheme == "light" ? "selected" : "")" role="radio" aria-checked="@(SelectedTheme == "light")" @onclick='() => SetThemeAsync("light")'>
+                        <span class="appearance-preview light-preview" aria-hidden="true"><i></i><i></i><i></i></span>
+                        <span><strong>Light</strong><small>Default appearance</small></span>
+                    </button>
+                    <button type="button" class="appearance-option @(SelectedTheme == "dark" ? "selected" : "")" role="radio" aria-checked="@(SelectedTheme == "dark")" @onclick='() => SetThemeAsync("dark")'>
+                        <span class="appearance-preview dark-preview" aria-hidden="true"><i></i><i></i><i></i></span>
+                        <span><strong>Dark</strong><small>Low-light appearance</small></span>
+                    </button>
+                </div>
+            </section>
+        }
     </section>
 </div>
 
@@ -189,6 +213,20 @@
     .settings-sub-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
     .settings-sub-row strong{color:#1f2328;font-size:14px}
     .settings-sub-status{padding:3px 8px;border-radius:12px;background:#e5f5ed;color:#087f5b;font-size:10px;font-weight:700}
+    .appearance-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;max-width:560px}
+    .appearance-option{display:flex;align-items:center;gap:12px;padding:12px;border:1px solid #d8dee4;border-radius:7px;background:#fff;color:#1f2328;text-align:left;cursor:pointer}
+    .appearance-option:hover{border-color:#0969da}
+    .appearance-option.selected{border-color:#0969da;box-shadow:0 0 0 2px #0969da22}
+    .appearance-option>span:last-child{display:grid;gap:3px}
+    .appearance-option strong{font-size:13px}
+    .appearance-option small{color:#64748b;font-size:11px}
+    .appearance-preview{width:76px;height:48px;flex:0 0 auto;display:grid;grid-template-columns:18px 1fr;grid-template-rows:repeat(2,1fr);gap:3px;padding:5px;border:1px solid #d8dee4;border-radius:4px;background:#fff}
+    .appearance-preview i{display:block;border-radius:2px;background:#dbeafe}
+    .appearance-preview i:first-child{grid-row:span 2;background:#0f172a}
+    .appearance-preview i:nth-child(2){background:#e2e8f0}
+    .dark-preview{background:#0d1117;border-color:#30363d}
+    .dark-preview i,.dark-preview i:first-child{background:#21262d}
+    .dark-preview i:nth-child(2){background:#30363d}
     @@media(max-width:760px){.settings-layout{grid-template-columns:190px minmax(0,1fr);gap:20px}.settings-sidebar{padding-right:12px}}
     @@media(max-width:600px){.settings-layout{grid-template-columns:1fr;gap:18px}.settings-sidebar{min-height:0;padding:0 0 14px;border-right:0;border-bottom:1px solid #d8dee4}.settings-nav-group{grid-template-columns:repeat(2,minmax(0,1fr))}.settings-nav-footer{padding-top:8px}.settings-content-heading h2{font-size:20px}.settings-panel{padding:16px}.settings-link-panel{align-items:flex-start;flex-direction:column}.settings-details>div{grid-template-columns:100px minmax(0,1fr)}}
 </style>
@@ -201,6 +239,7 @@
     private string NewEmail = "", EmailOtp = "", EmailError = "", EmailNotice = "";
     private bool SavingPassword;
     private bool SavingProfile, SendingBackupEmail, VerifyingBackupEmail, BackupEmailVerificationSent;
+    private string SelectedTheme = "light";
     private bool SendingEmailCode, VerifyingEmail, EmailVerificationSent;
     private UserSubscriptionDto? CurrentSubscription;
 
@@ -220,6 +259,13 @@
             catch { /* Keep account settings accessible if subscription data is unavailable. */ }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || Api.IsAdministrator || string.IsNullOrWhiteSpace(Api.AccessToken)) return;
+        SelectedTheme = await JS.InvokeAsync<string>("safePassageAppearance.getTheme");
+        StateHasChanged();
+    }
+
     private string AvatarInitials
     {
         get
@@ -237,6 +283,14 @@
     private void ShowAccount() => ActiveSection = "account";
     private void ShowDevices() => ActiveSection = "devices";
     private void ShowSubscription() => ActiveSection = "subscription";
+    private void ShowAppearance() => ActiveSection = "appearance";
+
+    private async Task SetThemeAsync(string theme)
+    {
+        if (Api.IsAdministrator || theme is not ("light" or "dark")) return;
+        SelectedTheme = theme;
+        await JS.InvokeVoidAsync("safePassageAppearance.setTheme", theme, true);
+    }
 
     private async Task SaveProfileAsync()
     {
@@ -334,6 +388,7 @@
     private async Task SignOutAsync()
     {
         if (!await JS.InvokeAsync<bool>("confirm", "Are you sure you want to sign out?")) return;
+        await JS.InvokeVoidAsync("safePassageAppearance.reset");
         Api.SignOut();
         Navigation.NavigateTo("/login", forceLoad: true);
     }

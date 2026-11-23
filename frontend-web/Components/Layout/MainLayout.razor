@@ -2,6 +2,7 @@
 @inject SafePassage.Web.Services.AdminApiClient Api
 @inject SafePassage.Web.Services.SecurityAlertCountService AlertCount
 @inject NavigationManager Navigation
+@inject IJSRuntime JS
 @implements IDisposable
 
 <div class="sp-shell">
@@ -82,6 +83,13 @@
         AlertCount.Changed += HandleAlertCountChanged;
         Api.ProfileChanged += HandleProfileChanged;
         await RefreshAlertCountAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        var isAuthenticatedUser = !string.IsNullOrWhiteSpace(Api.AccessToken) && !Api.IsAdministrator;
+        await JS.InvokeVoidAsync("safePassageAppearance.initialize", isAuthenticatedUser);
     }
 
     protected override void OnInitialized()

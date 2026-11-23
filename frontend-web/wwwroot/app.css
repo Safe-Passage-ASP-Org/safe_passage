@@ -33,6 +33,53 @@
     --sp-shadow-md:        0 4px 6px -1px rgba(0,0,0,.08), 0 2px 4px -2px rgba(0,0,0,.04);
 }
 
+/* User-selected appearance. The attribute is set only for an authenticated
+   user session and is cleared when that session signs out. */
+:root[data-sp-theme="dark"] {
+    color-scheme: dark;
+    --sp-bg-page: #0d1117;
+    --sp-bg-card: #161b22;
+    --sp-topbar-bg: #161b22;
+    --sp-topbar-border: #30363d;
+    --sp-text-primary: #e6edf3;
+    --sp-text-secondary: #b1bac4;
+    --sp-text-muted: #8b949e;
+    --sp-shadow-sm: 0 1px 3px rgba(0,0,0,.28);
+    --sp-shadow-md: 0 4px 10px rgba(0,0,0,.32);
+}
+
+:root[data-sp-theme="dark"] body { color: var(--sp-text-primary); background: var(--sp-bg-page); }
+:root[data-sp-theme="dark"] .sp-content { color: var(--sp-text-primary); }
+:root[data-sp-theme="dark"] .sp-content :is(.sp-card, .sp-stat-card, [class*="-card"], [class*="-panel"], [class*="-summary"], [class*="-modal"]) {
+    color: var(--sp-text-primary);
+    background-color: var(--sp-bg-card);
+    border-color: #30363d;
+}
+:root[data-sp-theme="dark"] .sp-content :is(h1, h2, h3, h4, h5, h6, p, label, dt, dd, td, th, li, small, strong) {
+    color: var(--sp-text-primary);
+}
+:root[data-sp-theme="dark"] .sp-content :is(input, select, textarea) {
+    color: #e6edf3;
+    background-color: #0d1117;
+    border-color: #484f58;
+}
+:root[data-sp-theme="dark"] .sp-content :is(input, select, textarea)::placeholder { color: #8b949e; }
+:root[data-sp-theme="dark"] .sp-content :is(table, th, td, hr, [class*="-row"], [class*="-heading"]) { border-color: #30363d; }
+:root[data-sp-theme="dark"] .sp-content :is(th, thead) { background-color: #21262d; }
+:root[data-sp-theme="dark"] .sp-content a:not(.settings-action-link) { color: #58a6ff; }
+:root[data-sp-theme="dark"] .settings-sidebar,
+:root[data-sp-theme="dark"] .settings-content-heading,
+:root[data-sp-theme="dark"] .settings-details > div { border-color: #30363d; }
+:root[data-sp-theme="dark"] .settings-nav-item { color: #c9d1d9; }
+:root[data-sp-theme="dark"] .settings-nav-item:hover { background: #21262d; color: #f0f6fc; }
+:root[data-sp-theme="dark"] .settings-nav-item.active { background: #1f2937; color: #f0f6fc; }
+:root[data-sp-theme="dark"] .settings-nav-signout { color: #ff7b72; }
+:root[data-sp-theme="dark"] .appearance-option { color: #e6edf3; background: #0d1117; border-color: #30363d; }
+:root[data-sp-theme="dark"] .appearance-option small { color: #8b949e; }
+:root[data-sp-theme="dark"] .appearance-preview { background: #f8fafc; }
+:root[data-sp-theme="dark"] .settings-alert.error { background: #3d1f24; color: #ffb3ad; }
+:root[data-sp-theme="dark"] .settings-alert.ok { background: #122a21; color: #7ee2b8; }
+
 /* ── Reset & Base ───────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
