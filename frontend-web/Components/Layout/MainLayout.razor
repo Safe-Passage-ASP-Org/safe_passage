@@ -2,7 +2,6 @@
 @inject SafePassage.Web.Services.AdminApiClient Api
 @inject SafePassage.Web.Services.SecurityAlertCountService AlertCount
 @inject NavigationManager Navigation
-@inject IJSRuntime JS
 @implements IDisposable
 
 <div class="sp-shell">
@@ -38,28 +37,15 @@
                     </a>
                 </div>
 
-                <!-- Profile Dropdown -->
+                <!-- Signed-in account identity -->
                 <div class="sp-profile-wrapper">
-                    <button class="sp-profile-btn" type="button"
-                            @onclick="ToggleProfileDropdown" aria-expanded="@(IsProfileMenuOpen ? "true" : "false")" aria-haspopup="true">
+                    <div class="sp-profile-identity" aria-label="Signed-in account">
                         <div class="sp-avatar">@AvatarInitials</div>
                         <div class="sp-profile-info">
                             <span class="sp-profile-name">@(Api.CurrentUsername ?? (Api.IsAdministrator ? "Administrator" : "User"))</span>
                             <span class="sp-profile-role">@(Api.CurrentRole ?? "Signed in")</span>
                         </div>
-                        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="currentColor" viewBox="0 0 16 16" class="ms-2 text-muted">
-                            <path d="M7.247 11.14 2.451 5.658C1.885 5.013 2.345 4 3.204 4h9.592a1 1 0 0 1 .753 1.659l-4.796 5.48a1 1 0 0 1-1.506 0z"/>
-                        </svg>
-                    </button>
-                    @if (IsProfileMenuOpen)
-                    {
-                        <div class="sp-dropdown-backdrop" @onclick="CloseProfileDropdown"></div>
-                        <ul class="dropdown-menu dropdown-menu-end sp-dropdown show" role="menu">
-                            <li><a class="dropdown-item" href="/settings" @onclick="CloseProfileDropdown">Account Settings</a></li>
-                            <li><hr class="dropdown-divider" /></li>
-                            <li><button class="dropdown-item text-danger" type="button" @onclick="SignOut">Sign Out</button></li>
-                        </ul>
-                    }
+                    </div>
                 </div>
             </div>
         </header>
@@ -72,8 +58,6 @@
 </div>
 
 @code {
-    private bool IsProfileMenuOpen;
-
     private string AvatarInitials
     {
         get
@@ -115,25 +99,10 @@
 
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
     {
-        IsProfileMenuOpen = false;
         _ = InvokeAsync(RefreshAlertCountAsync);
     }
 
     private void HandleAlertCountChanged() => _ = InvokeAsync(StateHasChanged);
-
-    private void ToggleProfileDropdown() => IsProfileMenuOpen = !IsProfileMenuOpen;
-
-    private void CloseProfileDropdown() => IsProfileMenuOpen = false;
-
-    private async Task SignOut()
-    {
-        if (!await JS.InvokeAsync<bool>("confirm", "Are you sure you want to sign out?"))
-            return;
-
-        IsProfileMenuOpen = false;
-        Api.SignOut();
-        Navigation.NavigateTo("/login", forceLoad: true);
-    }
 
     public void Dispose()
     {
