@@ -133,7 +133,13 @@
         else if (ActiveSection == "devices")
         {
             <header class="settings-content-heading"><h2>Trusted devices</h2><p>Review registered devices and their trust status.</p></header>
-            <section class="settings-panel settings-link-panel"><div><h3>@(Api.IsAdministrator ? "Manage devices" : "Your devices")</h3><p class="settings-note">@(Api.IsAdministrator ? "Review device enrollment and manage trust for registered users." : "View the devices registered to your account.")</p></div><a class="settings-action-link" href="/devices">Open devices <span aria-hidden="true">→</span></a></section>
+            <section class="settings-panel settings-link-panel">
+                <div>
+                    <h3>@(Api.IsAdministrator ? "Manage devices" : "My devices")</h3>
+                    <p class="settings-note">@(Api.IsAdministrator ? "Review device enrollment and manage trust for registered users." : "View the devices registered to your account and their trust status.")</p>
+                </div>
+                <a class="settings-action-link" href="/devices">@(Api.IsAdministrator ? "Manage devices" : "View my devices") <span aria-hidden="true">→</span></a>
+            </section>
         }
         else if (ActiveSection == "appearance")
         {
