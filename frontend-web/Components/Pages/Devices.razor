@@ -2,6 +2,7 @@
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
 @inject SecurityAlertCountService AlertCount
+@inject AdminNotificationService AdminNotifications
 
 <PageTitle>@(Api.IsAdministrator ? "Devices" : "My Devices") – Safe Passage</PageTitle>
 
@@ -113,7 +114,7 @@
     private async Task RunActionAsync(Func<Task> operation, string success)
     {
         Busy = true; Error = ""; Notice = "";
-        try { await operation(); Notice = success; await LoadAsync(); await AlertCount.RefreshAsync(); }
+        try { await operation(); Notice = success; await LoadAsync(); await AlertCount.RefreshAsync(); if (Api.IsAdministrator) await AdminNotifications.RefreshAsync(); }
         catch (Exception exception) { Error = exception.Message; }
         finally { Busy = false; }
     }

@@ -1,6 +1,7 @@
 @inherits LayoutComponentBase
 @inject SafePassage.Web.Services.AdminApiClient Api
 @inject SafePassage.Web.Services.SecurityAlertCountService AlertCount
+@inject SafePassage.Web.Services.AdminNotificationService AdminNotifications
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @implements IDisposable
@@ -27,14 +28,14 @@
 
                 @if (Api.IsAdministrator || Api.CurrentRole == "Auditor")
                 {
-                    <div class="sp-bell-wrapper" title="@AlertTitle">
-                        <a class="sp-icon-btn" aria-label="@AlertTitle" href="/alerts">
+                    <div class="sp-bell-wrapper" title="@BellTitle">
+                        <a class="sp-icon-btn" aria-label="@BellTitle" href="@BellHref">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                                 <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 0 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z"/>
                             </svg>
-                            @if (AlertCount.Count is > 0)
+                            @if (BellCount is > 0)
                             {
-                                <span class="sp-badge">@(AlertCount.Count > 99 ? "99+" : AlertCount.Count.ToString())</span>
+                                <span class="sp-badge">@BellBadge</span>
                             }
                         </a>
                     </div>
@@ -83,8 +84,10 @@
     {
         Navigation.LocationChanged += HandleLocationChanged;
         AlertCount.Changed += HandleAlertCountChanged;
+        AdminNotifications.Changed += HandleAdminNotificationsChanged;
         Api.ProfileChanged += HandleProfileChanged;
         await RefreshAlertCountAsync();
+        await RefreshNotificationsAsync();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -100,26 +103,39 @@
             Navigation.NavigateTo("/login");
     }
 
-    private string AlertTitle => AlertCount.Count is int count
-        ? $"Security Alerts ({count} pending device approval{(count == 1 ? "" : "s")})"
-        : "Security Alerts";
+    private int? BellCount => Api.IsAdministrator ? AdminNotifications.Count : AlertCount.Count;
+    private string BellBadge => BellCount is int count && count > 99 ? "99+" : BellCount?.ToString() ?? "";
+    private string BellHref => Api.IsAdministrator ? "/notifications" : "/alerts";
+    private string BellTitle => Api.IsAdministrator
+        ? AdminNotifications.Count is int count ? $"Notifications ({count} pending item{(count == 1 ? "" : "s")})" : "Notifications"
+        : AlertCount.Count is int alertCount ? $"Security Alerts ({alertCount} pending device approval{(alertCount == 1 ? "" : "s")})" : "Security Alerts";
 
     private Task RefreshAlertCountAsync() => Api.IsAdministrator || Api.CurrentRole == "Auditor"
         ? AlertCount.RefreshAsync()
         : Task.CompletedTask;
 
+    private Task RefreshNotificationsAsync() => Api.IsAdministrator
+        ? AdminNotifications.RefreshAsync()
+        : Task.CompletedTask;
+
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
     {
-        _ = InvokeAsync(RefreshAlertCountAsync);
+        _ = InvokeAsync(async () =>
+        {
+            await RefreshAlertCountAsync();
+            await RefreshNotificationsAsync();
+        });
     }
 
     private void HandleAlertCountChanged() => _ = InvokeAsync(StateHasChanged);
+    private void HandleAdminNotificationsChanged() => _ = InvokeAsync(StateHasChanged);
     private void HandleProfileChanged() => _ = InvokeAsync(StateHasChanged);
 
     public void Dispose()
     {
         Navigation.LocationChanged -= HandleLocationChanged;
         AlertCount.Changed -= HandleAlertCountChanged;
+        AdminNotifications.Changed -= HandleAdminNotificationsChanged;
         Api.ProfileChanged -= HandleProfileChanged;
     }
 }

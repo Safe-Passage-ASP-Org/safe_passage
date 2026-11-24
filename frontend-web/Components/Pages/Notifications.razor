@@ -1,0 +1,79 @@
+@page "/notifications"
+@using SafePassage.Web.Services
+@inject AdminNotificationService AdminNotifications
+@implements IDisposable
+
+<PageTitle>Notifications – Safe Passage</PageTitle>
+
+<div class="sp-page-header">
+    <h1 class="sp-page-title">Notifications</h1>
+    <p class="sp-page-subtitle">Review items that need administrator attention.</p>
+</div>
+
+<div class="notifications-toolbar">
+    <span>@(AdminNotifications.Count?.ToString() ?? "—") pending notifications</span>
+    <button type="button" @onclick="RefreshAsync" disabled="@Refreshing">@(Refreshing ? "Refreshing…" : "Refresh")</button>
+</div>
+
+@if (AdminNotifications.Error is not null)
+{
+    <div class="notifications-error" role="alert">Couldn’t load notifications. <button type="button" @onclick="RefreshAsync">Try again</button></div>
+}
+else if (AdminNotifications.Count is null)
+{
+    <div class="sp-card notifications-state" role="status">Loading notifications…</div>
+}
+else if (AdminNotifications.Items.Count == 0)
+{
+    <div class="sp-card notifications-state">You’re all caught up. There are no pending notifications.</div>
+}
+else
+{
+    <section class="notifications-list" aria-label="Pending admin notifications">
+        @foreach (var item in AdminNotifications.Items)
+        {
+            <a class="sp-card notification-item" href="@item.Href">
+                <span class="notification-symbol" aria-hidden="true">•</span>
+                <span class="notification-copy"><small>@item.Category</small><strong>@item.Title</strong><span>@item.Message</span><time datetime="@item.CreatedAt.ToString("O")">@item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy · h:mm tt")</time></span>
+                <span class="notification-open" aria-hidden="true">Review →</span>
+            </a>
+        }
+    </section>
+}
+
+<style>
+    .notifications-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;color:#64748b;font-size:12px}
+    .notifications-toolbar button,.notifications-error button{border:1px solid #cbd5dc;border-radius:5px;padding:8px 11px;background:#fff;color:#334155;font:inherit;cursor:pointer}
+    .notifications-toolbar button:disabled{opacity:.6;cursor:wait}
+    .notifications-error{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:6px;background:#fcecea;color:#9d332b;font-size:13px}
+    .notifications-state{padding:24px;color:#64748b;font-size:13px}
+    .notifications-list{display:grid;gap:10px}
+    .notification-item{display:flex;align-items:center;gap:14px;padding:16px 18px;color:inherit;text-decoration:none;border:1px solid #e2e8f0;border-radius:8px;transition:border-color .15s,transform .15s}
+    .notification-item:hover{border-color:#7fc6bc;transform:translateY(-1px)}
+    .notification-symbol{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border-radius:50%;background:#e5f5ed;color:#087f75;font-size:26px;line-height:1}
+    .notification-copy{display:grid;gap:3px;min-width:0;flex:1}
+    .notification-copy small{color:#087f75;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.45px}
+    .notification-copy strong{font-size:13px}
+    .notification-copy>span{color:#52616b;font-size:12px;overflow-wrap:anywhere}
+    .notification-copy time{margin-top:3px;color:#64748b;font-size:10px}
+    .notification-open{color:#087f75;font-size:11px;font-weight:650;white-space:nowrap}
+    @@media(max-width:560px){.notification-item{align-items:flex-start;padding:14px}.notification-open{display:none}}
+</style>
+
+@code {
+    private bool Refreshing;
+
+    protected override void OnInitialized() => AdminNotifications.Changed += HandleNotificationsChanged;
+
+    private async Task RefreshAsync()
+    {
+        if (Refreshing) return;
+        Refreshing = true;
+        try { await AdminNotifications.RefreshAsync(); }
+        finally { Refreshing = false; }
+    }
+
+    private void HandleNotificationsChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => AdminNotifications.Changed -= HandleNotificationsChanged;
+}

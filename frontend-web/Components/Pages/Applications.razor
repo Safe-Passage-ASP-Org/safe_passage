@@ -1,6 +1,7 @@
 @page "/applications"
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
+@inject AdminNotificationService AdminNotifications
 
 <PageTitle>Applications – Safe Passage</PageTitle>
 <div class="sp-page-header"><h1 class="sp-page-title">Applications</h1><p class="sp-page-subtitle">Register protected applications and assign access to users and groups.</p></div>
@@ -10,7 +11,7 @@
 @if (!string.IsNullOrWhiteSpace(Notice)) { <div class="apps-notice" role="status">@Notice@if (!string.IsNullOrWhiteSpace(NewClientSecret)) { <p>New client secret (shown once): <code>@NewClientSecret</code></p> }</div> }
 @if (PendingVaultSites.Count > 0)
 {
-    <section class="sp-card verification-queue"><h2>Websites awaiting verification</h2><p>Review each website before approving it. Approval enables its owner's saved credentials and 2FA code in the extension.</p>
+    <section id="pending-websites" class="sp-card verification-queue"><h2>Websites awaiting verification</h2><p>Review each website before approving it. Approval enables its owner's saved credentials and 2FA code in the extension.</p>
         @foreach (var site in PendingVaultSites)
         {
             <article><div><strong>@site.Name</strong><span>@site.Email (@site.Username)</span><a href="@site.LoginUrl" target="_blank" rel="noopener noreferrer">@site.LoginUrl</a><small>@site.Category · submitted @site.CreatedAt.ToLocalTime().ToString("g")</small></div>
@@ -127,7 +128,7 @@ else
     private async Task ReviewVaultSiteAsync(PendingVaultSite site, bool verified)
     {
         if (!ReviewingSites.Add(site.Id)) return;
-        try { await Api.ReviewVaultSiteAsync(site.Id, verified); Notice = verified ? $"Verified {site.Name}." : $"Rejected {site.Name}."; await LoadAsync(); }
+        try { await Api.ReviewVaultSiteAsync(site.Id, verified); Notice = verified ? $"Verified {site.Name}." : $"Rejected {site.Name}."; await LoadAsync(); await AdminNotifications.RefreshAsync(); }
         catch (Exception ex) { Error = ex.Message; }
         finally { ReviewingSites.Remove(site.Id); }
     }
