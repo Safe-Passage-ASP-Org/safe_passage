@@ -91,7 +91,14 @@
                 <!-- Signed-in account identity -->
                 <div class="sp-profile-wrapper">
                     <div class="sp-profile-identity" aria-label="Signed-in account">
-                        <div class="sp-avatar">@AvatarInitials</div>
+                        @if (!string.IsNullOrWhiteSpace(Api.CurrentProfileImageData))
+                        {
+                            <img class="sp-avatar sp-avatar-image" src="@Api.CurrentProfileImageData" alt="" />
+                        }
+                        else
+                        {
+                            <div class="sp-avatar">@AvatarInitials</div>
+                        }
                         <div class="sp-profile-info">
                             <span class="sp-profile-name">@(Api.CurrentUsername ?? (Api.IsAdministrator ? "Administrator" : "User"))</span>
                             <span class="sp-profile-role">@(Api.CurrentRole ?? "Signed in")</span>
@@ -133,6 +140,11 @@
         AlertCount.Changed += HandleAlertCountChanged;
         AdminNotifications.Changed += HandleAdminNotificationsChanged;
         Api.ProfileChanged += HandleProfileChanged;
+        if (!string.IsNullOrWhiteSpace(Api.AccessToken))
+        {
+            try { await Api.GetProfileAsync(); }
+            catch { /* Keep the initials avatar if the profile endpoint is temporarily unavailable. */ }
+        }
         await RefreshAlertCountAsync();
         await RefreshNotificationsAsync();
     }

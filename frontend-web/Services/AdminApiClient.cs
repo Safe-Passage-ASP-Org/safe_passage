@@ -16,6 +16,7 @@ public sealed class AdminApiClient(HttpClient http)
     public string? CurrentEmail { get; private set; }
     public string? CurrentBackupEmail { get; private set; }
     public string? CurrentRole { get; private set; }
+    public string? CurrentProfileImageData { get; private set; }
     public event Action? ProfileChanged;
     public bool IsAdministrator =>
         string.Equals(CurrentRole, "Admin", StringComparison.OrdinalIgnoreCase)
@@ -479,6 +480,7 @@ public sealed class AdminApiClient(HttpClient http)
         CurrentEmail = profile.Email;
         CurrentBackupEmail = profile.BackupEmail;
         CurrentRole = profile.Role;
+        CurrentProfileImageData = profile.ProfileImageData;
         ProfileChanged?.Invoke();
     }
 

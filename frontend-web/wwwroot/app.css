@@ -374,6 +374,10 @@ a { color: inherit; text-decoration: none; }
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0;
 }
+.sp-avatar-image {
+    object-fit: cover;
+    overflow: hidden;
+}
 
 .sp-profile-info {
     display: flex;
