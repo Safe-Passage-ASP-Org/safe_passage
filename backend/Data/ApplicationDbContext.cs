@@ -248,6 +248,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(subscription => subscription.PlanCode).HasMaxLength(64).IsRequired();
             entity.Property(subscription => subscription.Status).HasConversion<string>().HasMaxLength(32).IsConcurrencyToken();
             entity.Property(subscription => subscription.ApprovalUrl).HasMaxLength(2048);
+            entity.Property(subscription => subscription.ExpirationReminderPeriodEnd);
             entity.HasOne(subscription => subscription.User).WithMany(user => user.Subscriptions)
                 .HasForeignKey(subscription => subscription.UserId).OnDelete(DeleteBehavior.Cascade);
         });

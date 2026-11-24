@@ -7,7 +7,7 @@ namespace SafePassage.Api.Services;
 public sealed class HttpApiActivationEmailSender(
     HttpClient httpClient,
     IConfiguration configuration,
-    IOptions<SmtpOptions> smtpOptions) : IActivationEmailSender
+    IOptions<SmtpOptions> smtpOptions) : IActivationEmailSender, ISubscriptionExpirationEmailSender
 {
     public async Task SendActivationEmailAsync(
         string email,
@@ -138,6 +138,30 @@ public sealed class HttpApiActivationEmailSender(
         }
 
         await new SmtpEmailSender(smtpOptions).SendSubscriptionReceiptAsync(receipt, cancellationToken);
+    }
+
+    public async Task SendSubscriptionExpirationReminderAsync(
+        SubscriptionExpirationReminderEmail reminder,
+        CancellationToken cancellationToken)
+    {
+        const string subject = "Your Safe Passage subscription period is ending soon";
+        var body = SmtpEmailSender.FormatSubscriptionExpirationReminderBody(reminder);
+
+        var brevoApiKey = configuration["Brevo:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(brevoApiKey))
+        {
+            await SendViaBrevoAsync(brevoApiKey, reminder.RecipientEmail, reminder.Username, subject, body, cancellationToken);
+            return;
+        }
+
+        var resendApiKey = configuration["Resend:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(resendApiKey))
+        {
+            await SendViaResendAsync(resendApiKey, reminder.RecipientEmail, subject, body, cancellationToken);
+            return;
+        }
+
+        await new SmtpEmailSender(smtpOptions).SendSubscriptionExpirationReminderAsync(reminder, cancellationToken);
     }
 
     public async Task SendSignInOtpAsync(

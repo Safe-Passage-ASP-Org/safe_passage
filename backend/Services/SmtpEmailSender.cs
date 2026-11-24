@@ -16,6 +16,21 @@ public sealed record SubscriptionReceiptEmail(
     DateTimeOffset PaidAt,
     string PortalUrl);
 
+public sealed record SubscriptionExpirationReminderEmail(
+    string RecipientEmail,
+    string Username,
+    string PlanName,
+    DateTimeOffset PeriodEnd,
+    int DaysRemaining,
+    string PortalUrl);
+
+public interface ISubscriptionExpirationEmailSender
+{
+    Task SendSubscriptionExpirationReminderAsync(
+        SubscriptionExpirationReminderEmail reminder,
+        CancellationToken cancellationToken);
+}
+
 public interface IActivationEmailSender
 {
     Task SendActivationEmailAsync(
@@ -56,7 +71,7 @@ public interface IActivationEmailSender
         CancellationToken cancellationToken);
 }
 
-public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivationEmailSender
+public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivationEmailSender, ISubscriptionExpirationEmailSender
 {
     public async Task SendActivationEmailAsync(
         string email,
@@ -257,6 +272,50 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
         catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the subscription receipt email.", exception); }
         catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
     }
+
+    public async Task SendSubscriptionExpirationReminderAsync(
+        SubscriptionExpirationReminderEmail reminder,
+        CancellationToken cancellationToken)
+    {
+        var settings = options.Value;
+        if (string.IsNullOrWhiteSpace(settings.Host)
+            || settings.Port is < 1 or > 65535
+            || string.IsNullOrWhiteSpace(settings.FromAddress))
+            throw new EmailDeliveryException("SMTP is not configured to send subscription expiration reminders.");
+
+        try
+        {
+            using var message = new MailMessage
+            {
+                From = string.IsNullOrWhiteSpace(settings.FromName)
+                    ? new MailAddress(settings.FromAddress)
+                    : new MailAddress(settings.FromAddress, settings.FromName),
+                Subject = "Your Safe Passage subscription period is ending soon",
+                Body = FormatSubscriptionExpirationReminderBody(reminder),
+                IsBodyHtml = false
+            };
+            message.To.Add(new MailAddress(reminder.RecipientEmail));
+            using var client = new SmtpClient(settings.Host, settings.Port)
+            {
+                EnableSsl = settings.EnableSsl,
+                Timeout = 15000
+            };
+            if (!string.IsNullOrWhiteSpace(settings.Username))
+                client.Credentials = new NetworkCredential(settings.Username, settings.Password);
+            await client.SendMailAsync(message, cancellationToken);
+        }
+        catch (SmtpException exception) { throw new EmailDeliveryException("The SMTP server could not deliver the subscription expiration reminder.", exception); }
+        catch (FormatException exception) { throw new EmailDeliveryException("The subscription reminder email address is invalid.", exception); }
+        catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the subscription expiration reminder.", exception); }
+        catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
+    }
+
+    internal static string FormatSubscriptionExpirationReminderBody(SubscriptionExpirationReminderEmail reminder) =>
+        $"Hello {reminder.Username},\n\n"
+        + $"Your Safe Passage {reminder.PlanName} subscription period ends on {reminder.PeriodEnd.ToLocalTime():MMMM d, yyyy} (in {reminder.DaysRemaining} day{(reminder.DaysRemaining == 1 ? "" : "s")}).\n\n"
+        + "Review your subscription and billing details to make sure your access continues as expected:\n"
+        + $"{reminder.PortalUrl}\n\n"
+        + "If you have already renewed or updated your subscription, you can ignore this reminder.";
 
     internal static string FormatReceiptBody(SubscriptionReceiptEmail receipt) =>
         $"Hello {receipt.Username},\n\n"

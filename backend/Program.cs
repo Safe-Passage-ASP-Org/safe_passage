@@ -53,6 +53,8 @@ builder.Services.AddScoped<INotificationService, MockNotificationService>();
 builder.Services.AddScoped<IDeviceManagementService, DeviceManagementService>();
 builder.Services.AddScoped<PendingDeviceRegistrationService>();
 builder.Services.AddHttpClient<IActivationEmailSender, HttpApiActivationEmailSender>();
+builder.Services.AddHttpClient<ISubscriptionExpirationEmailSender, HttpApiActivationEmailSender>();
+builder.Services.AddHostedService<SubscriptionExpirationReminderWorker>();
 builder.Services.AddScoped<IAccountActivationService, AccountActivationService>();
 builder.Services.AddScoped<IAdminEmailLoginService, AdminEmailLoginService>();
 builder.Services.AddSingleton<ApplicationCredentialProtector>();
@@ -64,6 +66,8 @@ builder.Services.Configure<AccountActivationOptions>(builder.Configuration.GetSe
 builder.Services.Configure<AdminLoginOptions>(builder.Configuration.GetSection(AdminLoginOptions.SectionName));
 builder.Services.Configure<PayPalOptions>(builder.Configuration.GetSection(PayPalOptions.SectionName));
 builder.Services.Configure<PayMongoOptions>(builder.Configuration.GetSection(PayMongoOptions.SectionName));
+builder.Services.Configure<SubscriptionExpirationReminderOptions>(
+    builder.Configuration.GetSection(SubscriptionExpirationReminderOptions.SectionName));
 builder.Services.AddHttpClient<IPayPalClient, PayPalHttpClient>();
 builder.Services.AddHttpClient<IPayMongoClient, PayMongoHttpClient>();
 builder.Services.AddSingleton<DemoCheckoutStateStore>();
@@ -569,6 +573,25 @@ using (var scope = app.Services.CreateScope())
                     ON "AdminEmailChangeTokens" ("UserId", "ExpiresAt");
                 ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "BackupEmail" character varying(320) NULL;
                 ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "ProfileImageData" character varying(1400000) NULL;
+                CREATE TABLE IF NOT EXISTS "UserSubscriptions" (
+                    "Id" uuid PRIMARY KEY,
+                    "UserId" uuid NOT NULL REFERENCES "Users" ("Id") ON DELETE CASCADE,
+                    "PayPalSubscriptionId" character varying(128) NOT NULL,
+                    "PayPalPlanId" character varying(128) NOT NULL,
+                    "PlanCode" character varying(64) NOT NULL,
+                    "Status" character varying(32) NOT NULL,
+                    "ApprovalUrl" character varying(2048) NULL,
+                    "CurrentPeriodStart" timestamp with time zone NULL,
+                    "CurrentPeriodEnd" timestamp with time zone NULL,
+                    "CancelledAt" timestamp with time zone NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "UpdatedAt" timestamp with time zone NOT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_UserSubscriptions_PayPalSubscriptionId"
+                    ON "UserSubscriptions" ("PayPalSubscriptionId");
+                CREATE INDEX IF NOT EXISTS "IX_UserSubscriptions_UserId_Status"
+                    ON "UserSubscriptions" ("UserId", "Status");
+                ALTER TABLE "UserSubscriptions" ADD COLUMN IF NOT EXISTS "ExpirationReminderPeriodEnd" timestamp with time zone NULL;
                 CREATE UNIQUE INDEX IF NOT EXISTS "IX_Users_BackupEmail"
                     ON "Users" ("BackupEmail") WHERE "BackupEmail" IS NOT NULL;
                 CREATE TABLE IF NOT EXISTS "BackupEmailVerificationTokens" (

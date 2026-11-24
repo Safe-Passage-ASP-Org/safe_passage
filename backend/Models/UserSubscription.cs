@@ -20,6 +20,7 @@ public sealed class UserSubscription
     public string? ApprovalUrl { get; set; }
     public DateTimeOffset? CurrentPeriodStart { get; set; }
     public DateTimeOffset? CurrentPeriodEnd { get; set; }
+    public DateTimeOffset? ExpirationReminderPeriodEnd { get; set; }
     public DateTimeOffset? CancelledAt { get; set; }
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset UpdatedAt { get; set; } = DateTimeOffset.UtcNow;
