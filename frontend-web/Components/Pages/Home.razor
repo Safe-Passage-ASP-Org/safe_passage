@@ -26,6 +26,16 @@
     <div class="sp-stat-card"><span class="sp-stat-label">MFA Events (24h)</span><span class="sp-stat-value">@FormatMetric(MfaEvents)</span><span class="sp-stat-change">Last 24 hours across all logs</span></div>
     <div class="sp-stat-card"><span class="sp-stat-label">Denied Events</span><span class="sp-stat-value" style="color:var(--sp-danger)">@FormatMetric(DeniedEvents)</span><span class="sp-stat-change">All recorded denied activity</span></div>
 </div>
+<section class="home-subscription-summary" aria-labelledby="home-subscriptions-title">
+    <div class="home-subscription-heading">
+        <div><h2 id="home-subscriptions-title">Subscriptions</h2><p>Current paid access and upcoming billing dates.</p></div>
+        <a href="/users">View in Users &amp; Identities â†’</a>
+    </div>
+    <div class="home-subscription-stats">
+        <article class="sp-stat-card"><span class="sp-stat-label">Paid accounts with access</span><span class="sp-stat-value">@FormatMetric(PaidSubscriptionCount)</span><span class="sp-stat-change">Current paid entitlements</span></article>
+        <article class="sp-stat-card"><span class="sp-stat-label">Billing periods ending in 7 days</span><span class="sp-stat-value">@FormatMetric(PeriodsEndingSoonCount)</span><span class="sp-stat-change">Upcoming renewal or scheduled access end</span></article>
+    </div>
+</section>
 <InsightsPanel />
 @if (ShowRecentEvents)
 {
@@ -85,14 +95,16 @@ else
 }
 <style>
     .home-list-sort{display:flex;justify-content:flex-end;align-items:center;gap:8px;color:var(--sp-text-secondary);font-size:12px}.home-list-sort select{border:1px solid var(--sp-topbar-border);border-radius:5px;padding:6px 8px;background:var(--sp-bg-card);color:var(--sp-text-primary);font:inherit;font-size:12px}
+    .home-subscription-summary{margin:20px 0}.home-subscription-heading{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin-bottom:10px}.home-subscription-heading h2{margin:0;color:var(--sp-text-primary);font-size:16px}.home-subscription-heading p{margin:4px 0 0;color:var(--sp-text-secondary);font-size:11px}.home-subscription-heading a{color:var(--sp-accent-dark);font-size:11px;font-weight:650;text-decoration:none;white-space:nowrap}.home-subscription-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,220px),1fr));gap:12px}.home-subscription-stats .sp-stat-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px}
     .home-page-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.home-page-actions{display:flex;align-items:center;gap:8px}.home-refresh{padding:8px 12px;border:1px solid var(--sp-topbar-border);border-radius:5px;background:var(--sp-bg-card);color:var(--sp-text-primary);font-size:12px;font-weight:650;cursor:pointer}.home-refresh:hover:not(:disabled){border-color:#087f75;color:#087f75}.home-refresh:disabled{opacity:.6;cursor:wait}.home-recent-open{display:inline-flex;align-items:center;gap:8px}.home-event-count{display:grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:10px;background:var(--sp-bg-page);color:var(--sp-text-secondary);font-size:10px}
     .home-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.home-events{overflow:hidden}.home-heading{display:flex;justify-content:space-between;align-items:center;padding:17px 20px;border-bottom:1px solid var(--sp-topbar-border)}.home-heading h2{font-size:15px;margin:0;color:var(--sp-text-primary)}.home-heading p{margin:4px 0 0;color:var(--sp-text-secondary);font-size:11px}.home-heading a,.home-dialog-toolbar>a{font-size:11px;color:var(--sp-accent-dark);text-decoration:none;font-weight:650}.home-heading-actions{display:flex;align-items:center;gap:12px}.home-state{padding:20px;color:var(--sp-text-secondary);font-size:13px}.home-event-list{padding:0 18px}.home-event{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid var(--sp-topbar-border)}.home-event:last-child{border-bottom:0}.home-dot{width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:#b5473c}.home-dot.ok{background:#099268}.home-event div{display:grid;gap:3px;flex:1;min-width:0}.home-event strong{font-size:12px;color:var(--sp-text-primary)}.home-event small,.home-event time{font-size:10px;color:var(--sp-text-secondary)}.home-event time{white-space:nowrap}
     .home-events-backdrop{position:fixed;inset:0;z-index:1100;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.52)}.home-events-dialog{width:min(100%,680px);max-height:min(85vh,720px);overflow:auto;background:var(--sp-bg-card);border:1px solid var(--sp-topbar-border);border-radius:10px;box-shadow:var(--sp-shadow-md)}.home-dialog-close{width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:var(--sp-text-secondary);font-size:24px;line-height:1;cursor:pointer}.home-dialog-close:hover{background:var(--sp-bg-page);color:var(--sp-text-primary)}.home-dialog-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--sp-topbar-border)}.home-events-dialog .home-event-list{padding:0 20px}
     .home-launch{flex:0 0 auto;padding:6px 10px;border-radius:4px;background:#087f75;color:#fff;text-decoration:none;font-size:11px;font-weight:700;white-space:nowrap}.home-launch:hover{background:#066d65}.home-launch:focus-visible{outline:3px solid #9de2d1;outline-offset:2px}
-    @@media(max-width:700px){.home-page-header{align-items:flex-start;flex-direction:column}.home-page-actions{width:100%;justify-content:flex-end}.home-events-backdrop{padding:10px}.home-events-dialog{max-height:92vh}.home-event{align-items:flex-start;flex-wrap:wrap}.home-event time{margin-left:19px}.home-dialog-toolbar{align-items:flex-start;flex-direction:column}}
+    @@media(max-width:700px){.home-page-header{align-items:flex-start;flex-direction:column}.home-page-actions{width:100%;justify-content:flex-end}.home-subscription-heading{align-items:flex-start;flex-direction:column}.home-events-backdrop{padding:10px}.home-events-dialog{max-height:92vh}.home-event{align-items:flex-start;flex-wrap:wrap}.home-event time{margin-left:19px}.home-dialog-toolbar{align-items:flex-start;flex-direction:column}}
 </style>
 @code {
     private int? TotalUsers, TrustedDevices, MfaEvents, DeniedEvents, TotalApplications, PendingAccessRequests, PendingRequests;
+    private int? PaidSubscriptionCount, PeriodsEndingSoonCount;
     private bool Loading = true;
     private bool ShowRecentEvents;
     private string Error = "";
@@ -120,6 +132,7 @@ else
         Loading = true;
         Error = "";
         TotalUsers = TrustedDevices = MfaEvents = DeniedEvents = TotalApplications = PendingAccessRequests = PendingRequests = null;
+        PaidSubscriptionCount = PeriodsEndingSoonCount = null;
         RecentEvents = [];
 
         try
@@ -153,6 +166,13 @@ else
             var accessRequests = await accessRequestsTask;
 
             TotalUsers = users.Count;
+            var now = DateTimeOffset.UtcNow;
+            var paidUsers = users.Where(user => user.Subscription is { HasActiveEntitlement: true }).ToList();
+            PaidSubscriptionCount = paidUsers.Count;
+            PeriodsEndingSoonCount = paidUsers.Count(user =>
+                user.Subscription is { CurrentPeriodEnd: { } periodEnd }
+                && periodEnd > now
+                && periodEnd <= now.AddDays(7));
             TrustedDevices = devices.Count(device => device.Status == "ACTIVE" && device.TrustStatus == "TRUSTED");
             TotalApplications = applications.Count;
             PendingAccessRequests = accessRequests.Count;
