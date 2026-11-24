@@ -5,7 +5,15 @@
 <PageTitle>Dashboard – Safe Passage</PageTitle>
 <div class="sp-page-header home-page-header">
     <div><h1 class="sp-page-title">Dashboard</h1><p class="sp-page-subtitle">@(Api.IsAdministrator ? "Current identity, device, and security activity from the platform." : "Your account and assigned applications.")</p></div>
-    <button class="home-refresh" type="button" @onclick="LoadDashboardAsync" disabled="@Loading">@(Loading ? "Refreshing…" : "Refresh")</button>
+    <div class="home-page-actions">
+        @if (Api.IsAdministrator)
+        {
+            <button class="home-refresh home-recent-open" type="button" @onclick="() => ShowRecentEvents = true" disabled="@Loading" aria-haspopup="dialog">
+                Recent Security Events <span class="home-event-count">@RecentEvents.Count</span>
+            </button>
+        }
+        <button class="home-refresh" type="button" @onclick="LoadDashboardAsync" disabled="@Loading">@(Loading ? "Refreshing…" : "Refresh")</button>
+    </div>
 </div>
 @if (!string.IsNullOrWhiteSpace(Error)) { <div class="home-error" role="alert">@Error</div> }
 @if (Api.IsAdministrator)
@@ -18,19 +26,26 @@
     <div class="sp-stat-card"><span class="sp-stat-label">MFA Events (24h)</span><span class="sp-stat-value">@FormatMetric(MfaEvents)</span><span class="sp-stat-change">Last 24 hours across all logs</span></div>
     <div class="sp-stat-card"><span class="sp-stat-label">Denied Events</span><span class="sp-stat-value" style="color:var(--sp-danger)">@FormatMetric(DeniedEvents)</span><span class="sp-stat-change">All recorded denied activity</span></div>
 </div>
-<section class="sp-card home-events">
-    <div class="home-heading">
-        <h2>Recent Security Events</h2>
-        <div class="home-heading-actions">
-            <div class="home-list-sort"><label for="home-event-sort">Sort</label><select id="home-event-sort" @bind="EventSort"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="user">User A–Z</option></select></div>
-            <a href="/activity-logs">View activity logs →</a>
-        </div>
+<InsightsPanel />
+@if (ShowRecentEvents)
+{
+    <div class="home-events-backdrop" @onclick="() => ShowRecentEvents = false">
+        <section class="home-events-dialog" role="dialog" aria-modal="true" aria-labelledby="recent-events-title" @onclick:stopPropagation="true">
+            <div class="home-heading">
+                <div><h2 id="recent-events-title">Recent Security Events</h2><p>Latest recorded activity across the platform.</p></div>
+                <button class="home-dialog-close" type="button" @onclick="() => ShowRecentEvents = false" aria-label="Close recent security events">×</button>
+            </div>
+            <div class="home-dialog-toolbar">
+                <div class="home-list-sort"><label for="home-event-sort">Sort</label><select id="home-event-sort" @bind="EventSort"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="user">User A–Z</option></select></div>
+                <a href="/activity-logs">View activity logs →</a>
+            </div>
+            @if (Loading) { <p class="home-state" role="status">Loading dashboard…</p> }
+            else if (!string.IsNullOrWhiteSpace(Error)) { <p class="home-state">Recent activity could not be loaded.</p> }
+            else if (RecentEvents.Count == 0) { <p class="home-state">No activity has been recorded yet.</p> }
+            else { <div class="home-event-list">@foreach (var item in SortedRecentEvents) { <div class="home-event"><span class="home-dot @(item.Status.Equals("Success", StringComparison.OrdinalIgnoreCase) ? "ok" : "bad")"></span><div><strong>@item.Action</strong><small>@item.Username · @item.Resource</small></div><time>@item.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</time></div> }</div> }
+        </section>
     </div>
-    @if (Loading) { <p class="home-state" role="status">Loading dashboard…</p> }
-    else if (!string.IsNullOrWhiteSpace(Error)) { <p class="home-state">Recent activity could not be loaded.</p> }
-    else if (RecentEvents.Count == 0) { <p class="home-state">No activity has been recorded yet.</p> }
-    else { <div class="home-event-list">@foreach (var item in SortedRecentEvents) { <div class="home-event"><span class="home-dot @(item.Status.Equals("Success", StringComparison.OrdinalIgnoreCase) ? "ok" : "bad")"></span><div><strong>@item.Action</strong><small>@item.Username · @item.Resource</small></div><time>@item.Timestamp.ToLocalTime().ToString("MMM d, HH:mm")</time></div> }</div> }
-</section>
+}
 }
 else
 {
@@ -69,16 +84,17 @@ else
     </section>
 }
 <style>
-    .home-list-sort{display:flex;justify-content:flex-end;align-items:center;gap:8px;color:#64748b;font-size:12px}.home-list-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:6px 8px;background:#fff;color:#334155;font:inherit;font-size:12px}
-    .home-heading-actions{display:flex;align-items:center;gap:12px}
-    .home-page-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.home-refresh{padding:8px 12px;border:1px solid #cbd5dc;border-radius:5px;background:#fff;color:#334155;font-size:12px;font-weight:650;cursor:pointer}.home-refresh:hover:not(:disabled){border-color:#087f75;color:#087f75}.home-refresh:disabled{opacity:.6;cursor:wait}
-    .home-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.home-events{overflow:hidden}.home-heading{display:flex;justify-content:space-between;align-items:center;padding:17px 20px;border-bottom:1px solid #edf0f2}.home-heading h2{font-size:15px;margin:0}.home-heading a{font-size:11px;color:#087f75;text-decoration:none;font-weight:650}.home-state{padding:20px;color:#64748b;font-size:13px}.home-event-list{padding:0 18px}.home-event{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid #edf0f2}.home-event:last-child{border-bottom:0}.home-dot{width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:#b5473c}.home-dot.ok{background:#099268}.home-event div{display:grid;gap:3px;flex:1;min-width:0}.home-event strong{font-size:12px;color:#26353c}.home-event small,.home-event time{font-size:10px;color:#64748b}.home-event time{white-space:nowrap}
+    .home-list-sort{display:flex;justify-content:flex-end;align-items:center;gap:8px;color:var(--sp-text-secondary);font-size:12px}.home-list-sort select{border:1px solid var(--sp-topbar-border);border-radius:5px;padding:6px 8px;background:var(--sp-bg-card);color:var(--sp-text-primary);font:inherit;font-size:12px}
+    .home-page-header{display:flex;justify-content:space-between;align-items:center;gap:16px}.home-page-actions{display:flex;align-items:center;gap:8px}.home-refresh{padding:8px 12px;border:1px solid var(--sp-topbar-border);border-radius:5px;background:var(--sp-bg-card);color:var(--sp-text-primary);font-size:12px;font-weight:650;cursor:pointer}.home-refresh:hover:not(:disabled){border-color:#087f75;color:#087f75}.home-refresh:disabled{opacity:.6;cursor:wait}.home-recent-open{display:inline-flex;align-items:center;gap:8px}.home-event-count{display:grid;place-items:center;min-width:18px;height:18px;padding:0 5px;border-radius:10px;background:var(--sp-bg-page);color:var(--sp-text-secondary);font-size:10px}
+    .home-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.home-events{overflow:hidden}.home-heading{display:flex;justify-content:space-between;align-items:center;padding:17px 20px;border-bottom:1px solid var(--sp-topbar-border)}.home-heading h2{font-size:15px;margin:0;color:var(--sp-text-primary)}.home-heading p{margin:4px 0 0;color:var(--sp-text-secondary);font-size:11px}.home-heading a,.home-dialog-toolbar>a{font-size:11px;color:var(--sp-accent-dark);text-decoration:none;font-weight:650}.home-heading-actions{display:flex;align-items:center;gap:12px}.home-state{padding:20px;color:var(--sp-text-secondary);font-size:13px}.home-event-list{padding:0 18px}.home-event{display:flex;align-items:center;gap:11px;padding:13px 0;border-bottom:1px solid var(--sp-topbar-border)}.home-event:last-child{border-bottom:0}.home-dot{width:8px;height:8px;flex:0 0 auto;border-radius:50%;background:#b5473c}.home-dot.ok{background:#099268}.home-event div{display:grid;gap:3px;flex:1;min-width:0}.home-event strong{font-size:12px;color:var(--sp-text-primary)}.home-event small,.home-event time{font-size:10px;color:var(--sp-text-secondary)}.home-event time{white-space:nowrap}
+    .home-events-backdrop{position:fixed;inset:0;z-index:1100;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.52)}.home-events-dialog{width:min(100%,680px);max-height:min(85vh,720px);overflow:auto;background:var(--sp-bg-card);border:1px solid var(--sp-topbar-border);border-radius:10px;box-shadow:var(--sp-shadow-md)}.home-dialog-close{width:32px;height:32px;border:0;border-radius:6px;background:transparent;color:var(--sp-text-secondary);font-size:24px;line-height:1;cursor:pointer}.home-dialog-close:hover{background:var(--sp-bg-page);color:var(--sp-text-primary)}.home-dialog-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 20px;border-bottom:1px solid var(--sp-topbar-border)}.home-events-dialog .home-event-list{padding:0 20px}
     .home-launch{flex:0 0 auto;padding:6px 10px;border-radius:4px;background:#087f75;color:#fff;text-decoration:none;font-size:11px;font-weight:700;white-space:nowrap}.home-launch:hover{background:#066d65}.home-launch:focus-visible{outline:3px solid #9de2d1;outline-offset:2px}
-    @@media(max-width:520px){.home-page-header{align-items:flex-start}.home-refresh{flex:0 0 auto}.home-heading{flex-direction:column;align-items:flex-start;gap:8px}.home-heading-actions{width:100%;justify-content:space-between}}
+    @@media(max-width:700px){.home-page-header{align-items:flex-start;flex-direction:column}.home-page-actions{width:100%;justify-content:flex-end}.home-events-backdrop{padding:10px}.home-events-dialog{max-height:92vh}.home-event{align-items:flex-start;flex-wrap:wrap}.home-event time{margin-left:19px}.home-dialog-toolbar{align-items:flex-start;flex-direction:column}}
 </style>
 @code {
     private int? TotalUsers, TrustedDevices, MfaEvents, DeniedEvents, TotalApplications, PendingAccessRequests, PendingRequests;
     private bool Loading = true;
+    private bool ShowRecentEvents;
     private string Error = "";
     private string EventSort = "newest", ApplicationSort = "name-asc";
     private List<AdminActivity> RecentEvents = [];

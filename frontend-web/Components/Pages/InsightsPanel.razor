@@ -1,13 +1,11 @@
-@page "/reports"
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
 
-<PageTitle>Insights &amp; Reports – Safe Passage</PageTitle>
 <div class="sp-page-header report-page-header">
-    <div><h1 class="sp-page-title">Insights &amp; Reports</h1><p class="sp-page-subtitle">Explore sign-in activity, MFA outcomes, device trust, and application coverage.</p></div>
+    <div><h2 class="sp-page-title">Security insights</h2><p class="sp-page-subtitle">Sign-in trends and activity patterns for the selected reporting window.</p></div>
     <div class="report-controls">
         <label for="report-window">Reporting window</label>
-        <select id="report-window" aria-label="Reporting window" @bind="SelectedWindow">
+        <select id="report-window" aria-label="Reporting window" @bind="SelectedWindow" @bind:after="LoadAsync">
             <option value="24h">Last 24 hours</option>
             <option value="7d">Last 7 days</option>
             <option value="30d">Last 30 days</option>
@@ -26,15 +24,7 @@ else if (!string.IsNullOrWhiteSpace(Error))
 }
 else
 {
-    <div class="report-coverage-note">Showing @WindowActivity.Count events from the selected window (up to 2,000 server-filtered records).</div>
-    <section class="report-metrics" aria-label="Report summary">
-        <article class="sp-stat-card"><span class="sp-stat-label">Login success rate</span><strong class="sp-stat-value">@(LoginSuccessRate is decimal rate ? $"{rate:F1}%" : "N/A")</strong><span class="sp-stat-change">@LoginSuccessCount successful of @LoginEvents.Count total login events</span></article>
-        <article class="sp-stat-card"><span class="sp-stat-label">Denied events</span><strong class="sp-stat-value">@DeniedCount</strong><span class="sp-stat-change">All event types in this window</span></article>
-        <article class="sp-stat-card"><span class="sp-stat-label">MFA denials</span><strong class="sp-stat-value">@MfaDenialCount</strong><span class="sp-stat-change">Denied MFA-related events</span></article>
-        <article class="sp-stat-card"><span class="sp-stat-label">Trusted devices</span><strong class="sp-stat-value">@TrustedCount / @Devices.Count</strong><span class="sp-stat-change">Active and trusted of registered devices</span></article>
-        <article class="sp-stat-card"><span class="sp-stat-label">Pending device approvals</span><strong class="sp-stat-value">@PendingDeviceCount</strong><span class="sp-stat-change"><a href="/alerts">Review security alerts</a></span></article>
-        <article class="sp-stat-card"><span class="sp-stat-label">Registered applications</span><strong class="sp-stat-value">@Applications.Count</strong><span class="sp-stat-change"><a href="/applications">Manage OIDC applications</a></span></article>
-    </section>
+    <div class="report-coverage-note">Showing @WindowActivity.Count events from the selected window (up to 2,000 server-filtered records). Login success rate: <strong>@(LoginSuccessRate is decimal rate ? $"{rate:F1}%" : "N/A")</strong> (@LoginSuccessCount successful of @LoginEvents.Count login events).</div>
 
     <div class="report-grid">
         <section class="sp-card report-panel">
@@ -93,11 +83,11 @@ else
             </tbody></table></div>
         }
     </section>
-    <p class="report-footnote">Activity metrics use server-side date-range filtering (up to 2,000 events per window). Device and application figures show their current registry state.</p>
+    <p class="report-footnote">Activity metrics use server-side date-range filtering (up to 2,000 events per window). <a href="/activity-logs">Open the full activity log</a>.</p>
 }
 
 <style>
-    .report-page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}.report-controls{display:flex;align-items:center;gap:8px;flex:0 0 auto}.report-controls label{color:#64748b;font-size:11px}.report-controls select,.report-controls button{border:1px solid #cbd5dc;border-radius:5px;padding:8px 10px;background:#fff;color:#334155;font:inherit;font-size:12px}.report-controls button{background:#087f75;border-color:#087f75;color:#fff;font-weight:650;cursor:pointer}.report-controls button:disabled{opacity:.6;cursor:wait}.report-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.report-state{padding:22px;color:#64748b;font-size:13px}.report-coverage-note,.report-footnote{margin:0 0 12px;color:#64748b;font-size:11px;line-height:1.5}.report-footnote{margin:14px 0}.report-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,180px),1fr));gap:12px}.report-metrics .sp-stat-card{display:flex;flex-direction:column;align-items:flex-start;gap:6px;min-width:0;padding:16px}.report-metrics .sp-stat-value{font-size:24px}.report-metrics .sp-stat-change a{color:#087f75;text-decoration:none}.report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:14px;margin-top:14px}.report-panel{min-width:0;padding:18px}.report-panel-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}.report-panel-heading h2{margin:0 0 4px;font-size:15px}.report-panel-heading p{margin:0;color:#64748b;font-size:11px}.report-panel-heading>a{color:#087f75;font-size:11px;font-weight:650;text-decoration:none;white-space:nowrap}.report-legend{display:flex;gap:14px;margin:0 0 12px;color:#64748b;font-size:10px}.report-legend span{display:flex;align-items:center;gap:5px}.report-legend i{width:8px;height:8px;border-radius:2px}.report-legend i.success,.report-bar .success{background:#12977a}.report-legend i.denied,.report-bar .denied{background:#c25349}.report-timeline{display:grid;gap:8px}.report-timeline-row{display:grid;grid-template-columns:58px minmax(0,1fr) 22px;align-items:center;gap:8px}.report-bucket-label,.report-bucket-total{color:#64748b;font-size:10px}.report-bucket-total{text-align:right}.report-track{height:12px;border-radius:3px;background:#f1f5f4;overflow:hidden}.report-bar{display:flex;height:100%;min-width:0;border-radius:3px;overflow:hidden}.report-bar .success,.report-bar .denied{height:100%}.report-event-list{display:grid;gap:13px}.report-event-row{display:grid;grid-template-columns:minmax(100px,1fr) minmax(60px,1.4fr) 26px;gap:10px;align-items:center}.report-event-row>span{overflow:hidden;color:#334155;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.report-event-row>strong{color:#52616b;font-size:11px;text-align:right}.report-event-track{height:8px;border-radius:8px;background:#f1f5f4;overflow:hidden}.report-event-track i{display:block;height:100%;border-radius:8px;background:#087f75}.report-empty{padding:12px 0;color:#64748b;font-size:12px}.report-denied-panel{margin-top:14px;padding-bottom:0}.report-table-scroll{overflow:auto}.report-table{width:100%;border-collapse:collapse;min-width:580px}.report-table th{padding:10px;text-align:left;background:#f8fafb;color:#64748b;font-size:9px;letter-spacing:.5px;text-transform:uppercase}.report-table td{padding:11px 10px;border-top:1px solid #edf0f2;color:#334155;font-size:11px}.report-table td:first-child{white-space:nowrap;color:#64748b}.report-footnote{margin-top:12px}
+    .report-page-header{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}.report-page-header h2{margin:0}.report-controls{display:flex;align-items:center;gap:8px;flex:0 0 auto}.report-controls label{color:var(--sp-text-secondary);font-size:11px}.report-controls select,.report-controls button{border:1px solid var(--sp-topbar-border);border-radius:5px;padding:8px 10px;background:var(--sp-bg-card);color:var(--sp-text-primary);font:inherit;font-size:12px}.report-controls button{background:#087f75;border-color:#087f75;color:#fff;font-weight:650;cursor:pointer}.report-controls button:disabled{opacity:.6;cursor:wait}.report-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.report-state{padding:22px;color:var(--sp-text-secondary);font-size:13px}.report-coverage-note,.report-footnote{margin:0 0 12px;color:var(--sp-text-secondary);font-size:11px;line-height:1.5}.report-footnote{margin:14px 0}.report-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,360px),1fr));gap:14px;margin-top:14px}.report-panel{min-width:0;padding:18px}.report-panel-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:16px}.report-panel-heading h2{margin:0 0 4px;font-size:15px;color:var(--sp-text-primary)}.report-panel-heading p{margin:0;color:var(--sp-text-secondary);font-size:11px}.report-panel-heading>a,.report-footnote a{color:var(--sp-accent-dark);font-size:11px;font-weight:650;text-decoration:none;white-space:nowrap}.report-legend{display:flex;gap:14px;margin:0 0 12px;color:var(--sp-text-secondary);font-size:10px}.report-legend span{display:flex;align-items:center;gap:5px}.report-legend i{width:8px;height:8px;border-radius:2px}.report-legend i.success,.report-bar .success{background:#12977a}.report-legend i.denied,.report-bar .denied{background:#c25349}.report-timeline{display:grid;gap:8px}.report-timeline-row{display:grid;grid-template-columns:58px minmax(0,1fr) 22px;align-items:center;gap:8px}.report-bucket-label,.report-bucket-total{color:var(--sp-text-secondary);font-size:10px}.report-bucket-total{text-align:right}.report-track{height:12px;border-radius:3px;background:color-mix(in srgb,var(--sp-bg-page) 75%, #12977a 25%);overflow:hidden}.report-bar{display:flex;height:100%;min-width:0;border-radius:3px;overflow:hidden}.report-bar .success,.report-bar .denied{height:100%}.report-event-list{display:grid;gap:13px}.report-event-row{display:grid;grid-template-columns:minmax(100px,1fr) minmax(60px,1.4fr) 26px;gap:10px;align-items:center}.report-event-row>span{overflow:hidden;color:var(--sp-text-primary);font-size:11px;text-overflow:ellipsis;white-space:nowrap}.report-event-row>strong{color:var(--sp-text-secondary);font-size:11px;text-align:right}.report-event-track{height:8px;border-radius:8px;background:var(--sp-bg-page);overflow:hidden}.report-event-track i{display:block;height:100%;border-radius:8px;background:#087f75}.report-empty{padding:12px 0;color:var(--sp-text-secondary);font-size:12px}.report-denied-panel{margin-top:14px;padding-bottom:0}.report-table-scroll{overflow:auto}.report-table{width:100%;border-collapse:collapse;min-width:580px}.report-table th{padding:10px;text-align:left;background:var(--sp-bg-page);color:var(--sp-text-secondary);font-size:9px;letter-spacing:.5px;text-transform:uppercase}.report-table td{padding:11px 10px;border-top:1px solid var(--sp-topbar-border);color:var(--sp-text-primary);font-size:11px}.report-table td:first-child{white-space:nowrap;color:var(--sp-text-secondary)}.report-footnote{margin-top:12px}
     @@media(max-width:700px){.report-page-header{align-items:flex-start;flex-direction:column}.report-controls{flex-wrap:wrap}.report-grid{grid-template-columns:1fr}}
 </style>
 
@@ -106,8 +96,6 @@ else
     private string Error = "";
     private string SelectedWindow = "7d";
     private List<AdminActivity> Activity = [];
-    private List<AdminDevice> Devices = [];
-    private List<AdminApplication> Applications = [];
 
     private DateTimeOffset WindowStart => SelectedWindow switch
     {
@@ -119,10 +107,6 @@ else
     private List<AdminActivity> LoginEvents => WindowActivity.Where(item => item.Action.Contains("login", StringComparison.OrdinalIgnoreCase)).ToList();
     private int LoginSuccessCount => LoginEvents.Count(item => item.Status.Equals("Success", StringComparison.OrdinalIgnoreCase));
     private decimal? LoginSuccessRate => LoginEvents.Count == 0 ? null : (decimal)LoginSuccessCount * 100 / LoginEvents.Count;
-    private int DeniedCount => WindowActivity.Count(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase));
-    private int MfaDenialCount => WindowActivity.Count(item => item.Action.Contains("MFA", StringComparison.OrdinalIgnoreCase) && item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase));
-    private int TrustedCount => Devices.Count(device => device.Status == "ACTIVE" && device.TrustStatus == "TRUSTED");
-    private int PendingDeviceCount => Devices.Count(device => device.Status == "PENDING_APPROVAL");
     private List<AdminActivity> RecentDeniedEvents => WindowActivity.Where(item => item.Status.Equals("Denied", StringComparison.OrdinalIgnoreCase)).OrderByDescending(item => item.Timestamp).Take(10).ToList();
     private List<EventSummary> EventBreakdown
     {
@@ -171,13 +155,7 @@ else
         Error = "";
         try
         {
-            var activityTask = Api.GetAdminActivityAsync(from: WindowStart, limit: 2000);
-            var devicesTask = Api.GetDevicesAsync();
-            var applicationsTask = Api.GetApplicationsAsync();
-            await Task.WhenAll(activityTask, devicesTask, applicationsTask);
-            Activity = await activityTask;
-            Devices = await devicesTask;
-            Applications = await applicationsTask;
+            Activity = await Api.GetAdminActivityAsync(from: WindowStart, limit: 2000);
         }
         catch (Exception exception)
         {
