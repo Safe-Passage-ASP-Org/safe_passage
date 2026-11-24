@@ -90,8 +90,8 @@
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender) return;
-        var isAuthenticatedUser = !string.IsNullOrWhiteSpace(Api.AccessToken) && !Api.IsAdministrator;
-        await JS.InvokeVoidAsync("safePassageAppearance.initialize", isAuthenticatedUser);
+        var isAuthenticated = !string.IsNullOrWhiteSpace(Api.AccessToken);
+        await JS.InvokeVoidAsync("safePassageAppearance.initialize", isAuthenticated, Api.IsAdministrator);
     }
 
     protected override void OnInitialized()

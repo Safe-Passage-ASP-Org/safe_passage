@@ -19,12 +19,9 @@
             <button type="button" class="settings-nav-item @SectionClass("devices")" aria-current="@(ActiveSection == "devices" ? "page" : null)" @onclick="ShowDevices">
                 <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1h8a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1Zm0 1v10h8V2zm3 11v1h2v-1z" /></svg><span>Trusted devices</span>
             </button>
-            @if (!Api.IsAdministrator)
-            {
-                <button type="button" class="settings-nav-item @SectionClass("appearance")" aria-current="@(ActiveSection == "appearance" ? "page" : null)" @onclick="ShowAppearance">
-                    <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14h1.1a2.4 2.4 0 0 0 1.7-4.1.8.8 0 0 1 .6-1.4H13a2 2 0 0 0 2-2A6.5 6.5 0 0 0 8 1ZM4.5 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm2-3a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm4 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm2 3a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" /></svg><span>Appearance</span>
-                </button>
-            }
+            <button type="button" class="settings-nav-item @SectionClass("appearance")" aria-current="@(ActiveSection == "appearance" ? "page" : null)" @onclick="ShowAppearance">
+                <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1a7 7 0 1 0 0 14h1.1a2.4 2.4 0 0 0 1.7-4.1.8.8 0 0 1 .6-1.4H13a2 2 0 0 0 2-2A6.5 6.5 0 0 0 8 1ZM4.5 8a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm2-3a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm4 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm2 3a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" /></svg><span>Appearance</span>
+            </button>
         </div>
 
         <div class="settings-nav-footer">
@@ -120,7 +117,7 @@
             <header class="settings-content-heading"><h2>Trusted devices</h2><p>Review registered devices and their trust status.</p></header>
             <section class="settings-panel settings-link-panel"><div><h3>@(Api.IsAdministrator ? "Manage devices" : "Your devices")</h3><p class="settings-note">@(Api.IsAdministrator ? "Review device enrollment and manage trust for registered users." : "View the devices registered to your account.")</p></div><a class="settings-action-link" href="/devices">Open devices <span aria-hidden="true">→</span></a></section>
         }
-        else if (ActiveSection == "appearance" && !Api.IsAdministrator)
+        else if (ActiveSection == "appearance")
         {
             <header class="settings-content-heading"><h2>Appearance</h2><p>Choose how Safe Passage looks while you are signed in.</p></header>
             <section class="settings-panel appearance-panel">
@@ -236,8 +233,8 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || Api.IsAdministrator || string.IsNullOrWhiteSpace(Api.AccessToken)) return;
-        SelectedTheme = await JS.InvokeAsync<string>("safePassageAppearance.getTheme");
+        if (!firstRender || string.IsNullOrWhiteSpace(Api.AccessToken)) return;
+        SelectedTheme = await JS.InvokeAsync<string>("safePassageAppearance.getTheme", Api.IsAdministrator);
         StateHasChanged();
     }
 
@@ -261,9 +258,9 @@
 
     private async Task SetThemeAsync(string theme)
     {
-        if (Api.IsAdministrator || theme is not ("light" or "dark")) return;
+        if (theme is not ("light" or "dark")) return;
         SelectedTheme = theme;
-        await JS.InvokeVoidAsync("safePassageAppearance.setTheme", theme, true);
+        await JS.InvokeVoidAsync("safePassageAppearance.setTheme", theme, true, Api.IsAdministrator);
     }
 
     private async Task SaveProfileAsync()

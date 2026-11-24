@@ -28,30 +28,37 @@ window.safePassageAuthSession = {
 };
 
 window.safePassageAppearance = {
-    _key: "safePassage.userTheme",
-    getTheme() {
-        const theme = window.sessionStorage.getItem(this._key);
+    _keys: {
+        user: "safePassage.userTheme",
+        admin: "safePassage.adminTheme"
+    },
+    _keyFor(isAdmin) {
+        return isAdmin ? this._keys.admin : this._keys.user;
+    },
+    getTheme(isAdmin = false) {
+        const theme = window.sessionStorage.getItem(this._keyFor(isAdmin));
         return theme === "dark" ? "dark" : "light";
     },
-    setTheme(theme, isAuthenticatedUser) {
-        if (!isAuthenticatedUser || (theme !== "light" && theme !== "dark")) {
+    setTheme(theme, isAuthenticated, isAdmin = false) {
+        if (!isAuthenticated || (theme !== "light" && theme !== "dark")) {
             this.reset();
             return;
         }
-        window.sessionStorage.setItem(this._key, theme);
+        window.sessionStorage.setItem(this._keyFor(isAdmin), theme);
         document.documentElement.dataset.spTheme = theme;
     },
-    initialize(isAuthenticatedUser) {
-        if (!isAuthenticatedUser) {
+    initialize(isAuthenticated, isAdmin = false) {
+        if (!isAuthenticated) {
             this.reset();
             return "light";
         }
-        const theme = this.getTheme();
+        const theme = this.getTheme(isAdmin);
         document.documentElement.dataset.spTheme = theme;
         return theme;
     },
     reset() {
-        window.sessionStorage.removeItem(this._key);
+        window.sessionStorage.removeItem(this._keys.user);
+        window.sessionStorage.removeItem(this._keys.admin);
         document.documentElement.dataset.spTheme = "light";
     }
 };
