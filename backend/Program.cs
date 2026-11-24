@@ -625,6 +625,24 @@ using (var scope = app.Services.CreateScope())
                     ADD COLUMN IF NOT EXISTS "Category" character varying(64) NOT NULL DEFAULT 'Other',
                     ADD COLUMN IF NOT EXISTS "AutoFillUsername" character varying(320) NOT NULL DEFAULT '',
                     ADD COLUMN IF NOT EXISTS "EncryptedAutoFillPassword" character varying(2048) NOT NULL DEFAULT '';
+                ALTER TABLE "Applications"
+                    ADD COLUMN IF NOT EXISTS "IsPublished" boolean NOT NULL DEFAULT false,
+                    ADD COLUMN IF NOT EXISTS "AllowAccessRequests" boolean NOT NULL DEFAULT false;
+                CREATE TABLE IF NOT EXISTS "ApplicationAccessRequests" (
+                    "Id" uuid PRIMARY KEY,
+                    "ApplicationId" uuid NOT NULL REFERENCES "Applications" ("Id") ON DELETE CASCADE,
+                    "UserId" uuid NOT NULL REFERENCES "Users" ("Id") ON DELETE CASCADE,
+                    "Status" character varying(32) NOT NULL,
+                    "Reason" character varying(1000) NOT NULL,
+                    "RequestedAt" timestamp with time zone NOT NULL,
+                    "ReviewedByUserId" uuid NULL,
+                    "ReviewedAt" timestamp with time zone NULL,
+                    "DecisionNote" character varying(1000) NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS "IX_ApplicationAccessRequests_ApplicationId_UserId"
+                    ON "ApplicationAccessRequests" ("ApplicationId", "UserId") WHERE "Status" = 'Pending';
+                CREATE INDEX IF NOT EXISTS "IX_ApplicationAccessRequests_UserId_RequestedAt"
+                    ON "ApplicationAccessRequests" ("UserId", "RequestedAt");
                 ALTER TABLE "MfaSessions"
                     ADD COLUMN IF NOT EXISTS "Purpose" character varying(64) NOT NULL DEFAULT 'Login';
                 CREATE TABLE IF NOT EXISTS "VaultSites" (

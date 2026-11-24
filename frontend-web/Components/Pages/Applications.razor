@@ -36,7 +36,7 @@ else
             {
                 <p class="app-launch-preview">Launch URL: <a href="@app.LaunchUrl" target="_blank" rel="noopener noreferrer">@app.LaunchUrl ↗</a></p>
             }
-            <p class="app-catalog-state">@(app.IsPublished ? (app.AllowAccessRequests ? "Published · access requests enabled" : "Published · assignments only") : "Hidden from user catalog")</p>
+            <p class="app-catalog-state">@(app.IsPublished ? (app.AllowAccessRequests ? "Published · users may request access" : "Published · users can browse, admin assignment required") : "Hidden from user catalog")</p>
             <div class="app-access-summary"><div><strong>@app.UserAccessCount</strong><span>users</span></div><div><strong>@app.GroupAccessCount</strong><span>groups</span></div></div>
             <div class="app-card-footer"><button @onclick="() => OpenEdit(app)" disabled="@Saving">Edit details</button><button @onclick="() => OpenAccessAsync(app)" disabled="@Saving">Manage access →</button></div></article>
     }
@@ -54,6 +54,8 @@ else
             <label>Description (Optional)<textarea rows="3" maxlength="2000" @bind="Draft.Description"></textarea></label>
             <label>Auto Fill Username/Email (Optional)<input maxlength="320" autocomplete="off" @bind="Draft.AutoFillUsername" /></label>
             <label>Auto Fill Password (Optional)<input type="password" maxlength="1024" autocomplete="new-password" @bind="Draft.AutoFillPassword" /><small>@(Editing is not null && Draft.HasAutoFillPassword ? "A password is saved encrypted. Leave blank to keep the saved password; enter a new one to replace it." : "The password is stored encrypted.")</small></label>
+            <label class="apps-check"><input type="checkbox" @bind="Draft.IsPublished" /> Show this application in users’ Browse applications catalog</label>
+            <label class="apps-check"><input type="checkbox" @bind="Draft.AllowAccessRequests" disabled="@(!Draft.IsPublished)" /> Allow users to request access (admin approval required)</label>
             @if (!string.IsNullOrWhiteSpace(FormError)) { <div class="apps-alert" role="alert">@FormError</div> }
             <footer>
                 @if (Editing is not null) { <button type="button" class="apps-delete" @onclick="DeleteAppAsync" disabled="@Saving">Delete</button> }
@@ -133,7 +135,7 @@ else
         finally { ReviewingSites.Remove(site.Id); }
     }
     private void OpenCreate() { Editing = null; Draft = new(); FormError = ""; EditModal = true; }
-    private void OpenEdit(AdminApplication app) { Editing = app; Draft = new() { Name = app.Name, Description = app.Description, LaunchUrl = app.LaunchUrl, Category = app.Category, AutoFillUsername = app.AutoFillUsername, HasAutoFillPassword = app.HasAutoFillPassword }; FormError = ""; EditModal = true; }
+    private void OpenEdit(AdminApplication app) { Editing = app; Draft = new() { Name = app.Name, Description = app.Description, LaunchUrl = app.LaunchUrl, Category = app.Category, AutoFillUsername = app.AutoFillUsername, HasAutoFillPassword = app.HasAutoFillPassword, IsPublished = app.IsPublished, AllowAccessRequests = app.AllowAccessRequests }; FormError = ""; EditModal = true; }
     private void CloseModals() { if (!Saving) { EditModal = false; AccessApp = null; } }
     private async Task SaveAppAsync()
     {

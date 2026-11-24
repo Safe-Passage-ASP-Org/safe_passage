@@ -518,7 +518,7 @@ public sealed class AdminApiClient(HttpClient http)
 
     public async Task<string?> SaveApplicationAsync(AdminApplicationForm application, Guid? id, CancellationToken cancellationToken = default)
     {
-        var payload = new { application.Name, application.Description, LoginUrl = application.LaunchUrl, application.Category, application.AutoFillUsername, application.AutoFillPassword };
+        var payload = new { application.Name, application.Description, LoginUrl = application.LaunchUrl, application.Category, application.AutoFillUsername, application.AutoFillPassword, application.IsPublished, application.AllowAccessRequests };
         using var response = id is null
             ? await http.PostAsJsonAsync("api/admin/applications", payload, cancellationToken)
             : await http.PutAsJsonAsync($"api/admin/applications/{id}", payload, cancellationToken);
@@ -779,7 +779,7 @@ public sealed record PendingVaultSite(Guid Id, string Name, string LoginUrl, str
 public sealed record CatalogApplication(Guid Id, string Name, string Description, string LaunchUrl, bool IsAssigned, bool AllowAccessRequests, string? RequestStatus);
 public sealed record MyApplicationAccessRequest(Guid Id, Guid ApplicationId, string ApplicationName, string Status, string Reason, DateTimeOffset RequestedAt, DateTimeOffset? ReviewedAt, string? DecisionNote);
 public sealed record AdminAccessRequest(Guid Id, Guid ApplicationId, string ApplicationName, Guid UserId, string Username, string Email, string Status, string Reason, DateTimeOffset RequestedAt, DateTimeOffset? ReviewedAt, string? DecisionNote);
-public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; public string LaunchUrl { get; set; } = ""; public string Category { get; set; } = ""; public string AutoFillUsername { get; set; } = ""; public string AutoFillPassword { get; set; } = ""; public bool HasAutoFillPassword { get; set; } }
+public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; public string LaunchUrl { get; set; } = ""; public string Category { get; set; } = ""; public string AutoFillUsername { get; set; } = ""; public string AutoFillPassword { get; set; } = ""; public bool HasAutoFillPassword { get; set; } public bool IsPublished { get; set; } public bool AllowAccessRequests { get; set; } }
 public sealed class VaultSiteForm { public string Name { get; set; } = ""; public string LoginUrl { get; set; } = ""; public string Category { get; set; } = "Other"; public string Description { get; set; } = ""; public string AutoFillUsername { get; set; } = ""; public string Password { get; set; } = ""; public string TotpSecret { get; set; } = ""; public bool ClearTotpSecret { get; set; } public bool HasPassword { get; set; } public bool HasTotpSecret { get; set; } }
 public sealed record AdminApplicationAccess(List<Guid> UserIds, List<Guid> GroupIds);
 public sealed record AdminActivity(Guid Id, DateTimeOffset Timestamp, string Username, string Action, string Resource, string Status, string? DeviceId = null, string? Reason = null);
