@@ -292,6 +292,67 @@ a { color: inherit; text-decoration: none; }
     border: 2px solid #fff;
 }
 
+/* Admin notification popover, anchored to the bell. */
+.sp-bell-wrapper { position: relative; z-index: 11; }
+.sp-bell-wrapper > .sp-icon-btn { padding: 0; font: inherit; }
+.sp-bell-wrapper > .sp-icon-btn:focus-visible,
+.sp-notification-panel button:focus-visible,
+.sp-notification-panel a:focus-visible { outline: 2px solid var(--sp-accent); outline-offset: 2px; }
+.sp-notification-backdrop { position: fixed; inset: 0; z-index: 1; border: 0; background: transparent; cursor: default; }
+.sp-notification-panel {
+    position: absolute;
+    z-index: 2;
+    top: calc(100% + 10px);
+    right: -170px;
+    display: flex;
+    flex-direction: column;
+    width: min(420px, calc(100vw - 20px));
+    max-height: min(620px, calc(100vh - var(--sp-topbar-height) - 20px));
+    overflow: hidden;
+    color: #1f2937;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 14px 40px rgba(15,23,42,.24);
+}
+.sp-notification-header { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 18px 12px; }
+.sp-notification-header h2 { margin:0;font-size:17px;font-weight:700;color:inherit; }
+.sp-notification-header>div { display:flex;align-items:center;gap:12px; }
+.sp-notification-header a { color:#0969da;text-decoration:none;font-size:12px;font-weight:600;white-space:nowrap; }
+.sp-notification-header a:hover { text-decoration:underline; }
+.sp-notification-refresh { width:28px;height:28px;border:0;border-radius:50%;background:transparent;color:#64748b;font-size:20px;line-height:1;cursor:pointer; }
+.sp-notification-refresh:hover { background:#f1f5f9;color:#0f172a; }
+.sp-notification-section-title { padding:5px 18px 9px;color:#64748b;font-size:11px;font-weight:650; }
+.sp-notification-list { overflow-y:auto;padding:0 6px 8px; }
+.sp-notification-item { display:flex;align-items:flex-start;gap:11px;padding:11px 10px;color:inherit;text-decoration:none;border-radius:8px; }
+.sp-notification-item:hover { background:#f1f5f9; }
+.sp-notification-mark { display:grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border-radius:50%;font-size:13px;font-weight:750; }
+.sp-notification-mark.device { background:#eaf2ff;color:#2563eb; }
+.sp-notification-mark.application { background:#e5f5ed;color:#087f5b; }
+.sp-notification-mark.website { background:#fff5df;color:#946200; }
+.sp-notification-copy { display:grid;gap:3px;min-width:0; }
+.sp-notification-copy small { color:#64748b;font-size:9px;font-weight:700;letter-spacing:.45px;text-transform:uppercase; }
+.sp-notification-copy strong { color:inherit;font-size:12px;font-weight:700; }
+.sp-notification-copy>span { color:#52616b;font-size:12px;line-height:1.4;overflow-wrap:anywhere; }
+.sp-notification-copy time { color:#64748b;font-size:10px; }
+.sp-notification-message { margin:0 14px 14px;padding:18px 12px;border-radius:8px;background:#f8fafc;color:#64748b;text-align:center;font-size:12px; }
+.sp-notification-message.error { display:flex;align-items:center;justify-content:center;gap:8px;background:#fef2f2;color:#b42318; }
+.sp-notification-message button { border:0;background:none;color:inherit;font:inherit;font-weight:700;text-decoration:underline;cursor:pointer; }
+:root[data-sp-theme="dark"] .sp-notification-panel { color:#e6edf3;background:#161b22;border-color:#30363d; }
+:root[data-sp-theme="dark"] .sp-notification-header a { color:#58a6ff; }
+:root[data-sp-theme="dark"] .sp-notification-refresh { color:#aab6c2; }
+:root[data-sp-theme="dark"] .sp-notification-refresh:hover,
+:root[data-sp-theme="dark"] .sp-notification-item:hover { background:#21262d;color:#f0f6fc; }
+:root[data-sp-theme="dark"] .sp-notification-copy>span,
+:root[data-sp-theme="dark"] .sp-notification-copy small,
+:root[data-sp-theme="dark"] .sp-notification-copy time,
+:root[data-sp-theme="dark"] .sp-notification-section-title { color:#aab6c2; }
+:root[data-sp-theme="dark"] .sp-notification-message { background:#0d1117;color:#aab6c2; }
+:root[data-sp-theme="dark"] .sp-notification-message.error { background:#3d1f24;color:#ffb3ad; }
+@media(max-width:600px) {
+    .sp-notification-panel { right:-168px;width:min(420px,calc(100vw - 16px)); }
+}
+
 /* Signed-in account identity */
 .sp-profile-identity {
     display: flex;
