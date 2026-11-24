@@ -31,7 +31,7 @@
                     <div class="sp-bell-wrapper">
                         @if (Api.IsAdministrator)
                         {
-                            <button type="button" class="sp-icon-btn" aria-label="@BellTitle" aria-expanded="@NotificationOpen" aria-controls="admin-notification-panel" title="@BellTitle" @onclick="ToggleNotificationPanel">
+                            <button type="button" class="sp-icon-btn" aria-label="@BellTitle" aria-expanded="@NotificationOpen" aria-controls="admin-notification-panel" title="@BellTitle" @onclick="ToggleNotificationPanelAsync">
                                 <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                                     <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 0 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z"/>
                                 </svg>
@@ -147,6 +147,8 @@
         }
         await RefreshAlertCountAsync();
         await RefreshNotificationsAsync();
+        if (Api.IsAdministrator)
+            _ = RefreshNotificationsPeriodicallyAsync(_notificationRefreshCancellation.Token);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -168,8 +170,15 @@
         ? AdminNotifications.Count is int count ? $"Notifications ({count} pending item{(count == 1 ? "" : "s")})" : "Notifications"
         : AlertCount.Count is int alertCount ? $"Security Alerts ({alertCount} pending device approval{(alertCount == 1 ? "" : "s")})" : "Security Alerts";
     private bool NotificationOpen;
+    private readonly CancellationTokenSource _notificationRefreshCancellation = new();
 
-    private void ToggleNotificationPanel() => NotificationOpen = !NotificationOpen;
+    private async Task ToggleNotificationPanelAsync()
+    {
+        NotificationOpen = !NotificationOpen;
+        if (NotificationOpen && Api.IsAdministrator)
+            await AdminNotifications.RefreshAsync(_notificationRefreshCancellation.Token);
+    }
+
     private void CloseNotificationPanel() => NotificationOpen = false;
     private static string NotificationMark(string category) => category switch
     {
@@ -194,6 +203,17 @@
         ? AdminNotifications.RefreshAsync()
         : Task.CompletedTask;
 
+    private async Task RefreshNotificationsPeriodicallyAsync(CancellationToken cancellationToken)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(30));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+                await AdminNotifications.RefreshAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+    }
+
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
     {
         NotificationOpen = false;
@@ -210,6 +230,8 @@
 
     public void Dispose()
     {
+        _notificationRefreshCancellation.Cancel();
+        _notificationRefreshCancellation.Dispose();
         Navigation.LocationChanged -= HandleLocationChanged;
         AlertCount.Changed -= HandleAlertCountChanged;
         AdminNotifications.Changed -= HandleAdminNotificationsChanged;
