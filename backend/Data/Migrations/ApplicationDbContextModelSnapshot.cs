@@ -725,6 +725,10 @@ namespace SafePassage.Api.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ProfileImageData")
+                        .HasMaxLength(1400000)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
@@ -1026,8 +1030,6 @@ namespace SafePassage.Api.Data.Migrations
                     b.Navigation("ApplicationAccess");
 
                     b.Navigation("UserGroups");
-
-                    b.Navigation("VaultSites");
                 });
 
             modelBuilder.Entity("SafePassage.Api.Models.User", b =>
@@ -1043,6 +1045,8 @@ namespace SafePassage.Api.Data.Migrations
                     b.Navigation("MfaSessions");
 
                     b.Navigation("UserGroups");
+
+                    b.Navigation("VaultSites");
                 });
 #pragma warning restore 612, 618
         }

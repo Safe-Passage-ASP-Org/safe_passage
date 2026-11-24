@@ -24,6 +24,7 @@ public sealed class ProfileController(
     ILogger<ProfileController> logger) : ControllerBase
 {
     private static readonly TimeSpan TokenLifetime = TimeSpan.FromMinutes(10);
+    private const int MaxProfileImageBytes = 1024 * 1024;
 
     [HttpGet]
     public async Task<ActionResult<ProfileResponse>> Get(CancellationToken cancellationToken)
@@ -48,6 +49,42 @@ public sealed class ProfileController(
         {
             Id = Guid.NewGuid(), UserId = user.Id, Timestamp = DateTimeOffset.UtcNow,
             Action = "Profile updated", Resource = "Profile", Status = ActivityLogStatus.Success
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Ok(ToProfile(user));
+    }
+
+    [HttpPut("image")]
+    public async Task<ActionResult<ProfileResponse>> UpdateImage(
+        [FromBody] UpdateProfileImageRequest request, CancellationToken cancellationToken)
+    {
+        var user = await GetCurrentUserAsync(cancellationToken);
+        if (user is null) return Unauthorized();
+
+        if (!TryValidateProfileImage(request.ImageData, out var error))
+            return Problem(statusCode: 400, title: "Invalid profile picture", detail: error);
+
+        user.ProfileImageData = request.ImageData;
+        dbContext.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(), UserId = user.Id, Timestamp = DateTimeOffset.UtcNow,
+            Action = "Profile picture updated", Resource = "Profile", Status = ActivityLogStatus.Success
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return Ok(ToProfile(user));
+    }
+
+    [HttpDelete("image")]
+    public async Task<ActionResult<ProfileResponse>> DeleteImage(CancellationToken cancellationToken)
+    {
+        var user = await GetCurrentUserAsync(cancellationToken);
+        if (user is null) return Unauthorized();
+
+        user.ProfileImageData = null;
+        dbContext.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(), UserId = user.Id, Timestamp = DateTimeOffset.UtcNow,
+            Action = "Profile picture removed", Resource = "Profile", Status = ActivityLogStatus.Success
         });
         await dbContext.SaveChangesAsync(cancellationToken);
         return Ok(ToProfile(user));
@@ -187,7 +224,69 @@ public sealed class ProfileController(
     }
 
     private static ProfileResponse ToProfile(User user) =>
-        new(user.FullName ?? user.Username, user.Username, user.Email, user.BackupEmail, user.Role);
+        new(user.FullName ?? user.Username, user.Username, user.Email, user.BackupEmail, user.Role, user.ProfileImageData);
+
+    private static bool TryValidateProfileImage(string? imageData, out string error)
+    {
+        error = "";
+        if (string.IsNullOrWhiteSpace(imageData))
+        {
+            error = "Choose a JPG, PNG, or WebP image to upload.";
+            return false;
+        }
+
+        var separator = imageData.IndexOf(',');
+        if (separator < 0)
+        {
+            error = "The selected image could not be read.";
+            return false;
+        }
+
+        var header = imageData[..separator];
+        var payload = imageData[(separator + 1)..];
+        var contentType = header switch
+        {
+            "data:image/jpeg;base64" => "image/jpeg",
+            "data:image/png;base64" => "image/png",
+            "data:image/webp;base64" => "image/webp",
+            _ => ""
+        };
+        if (contentType.Length == 0)
+        {
+            error = "Use a JPG, PNG, or WebP image.";
+            return false;
+        }
+
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(payload); }
+        catch (FormatException)
+        {
+            error = "The selected image could not be read.";
+            return false;
+        }
+
+        if (bytes.Length == 0 || bytes.Length > MaxProfileImageBytes)
+        {
+            error = "Choose an image smaller than 1 MB.";
+            return false;
+        }
+
+        var validSignature = contentType switch
+        {
+            "image/jpeg" => bytes.Length >= 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF,
+            "image/png" => bytes.Length >= 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47
+                && bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A,
+            "image/webp" => bytes.Length >= 12 && bytes.AsSpan(0, 4).SequenceEqual("RIFF"u8) && bytes.AsSpan(8, 4).SequenceEqual("WEBP"u8),
+            _ => false
+        };
+        if (!validSignature)
+        {
+            error = "The selected file is not a valid image of the reported type.";
+            return false;
+        }
+
+        return true;
+    }
 
     private static string Hash(string value) =>
         Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(value)));
@@ -199,8 +298,9 @@ public sealed class ProfileController(
     }
 
     public sealed record UpdateProfileRequest(string? Name);
+    public sealed record UpdateProfileImageRequest(string? ImageData);
     public sealed record BackupEmailRequest(string? Email);
     public sealed record BackupEmailOtpRequest(string? Code);
     public sealed record BackupEmailLinkRequest(string? Token);
-    public sealed record ProfileResponse(string Name, string Username, string Email, string? BackupEmail, string Role);
+    public sealed record ProfileResponse(string Name, string Username, string Email, string? BackupEmail, string Role, string? ProfileImageData);
 }

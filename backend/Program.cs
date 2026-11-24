@@ -568,6 +568,7 @@ using (var scope = app.Services.CreateScope())
                 CREATE INDEX IF NOT EXISTS "IX_AdminEmailChangeTokens_UserId_ExpiresAt"
                     ON "AdminEmailChangeTokens" ("UserId", "ExpiresAt");
                 ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "BackupEmail" character varying(320) NULL;
+                ALTER TABLE "Users" ADD COLUMN IF NOT EXISTS "ProfileImageData" character varying(1400000) NULL;
                 CREATE UNIQUE INDEX IF NOT EXISTS "IX_Users_BackupEmail"
                     ON "Users" ("BackupEmail") WHERE "BackupEmail" IS NOT NULL;
                 CREATE TABLE IF NOT EXISTS "BackupEmailVerificationTokens" (

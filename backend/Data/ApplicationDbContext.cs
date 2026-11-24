@@ -53,6 +53,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(user => user.Email).HasMaxLength(320).IsRequired();
             entity.Property(user => user.BackupEmail).HasMaxLength(320);
             entity.Property(user => user.FullName).HasMaxLength(200);
+            entity.Property(user => user.ProfileImageData).HasMaxLength(1_400_000);
             entity.Property(user => user.PhoneNumber).HasMaxLength(32);
             entity.Property(user => user.Role).HasMaxLength(64).IsRequired();
             entity.Property(user => user.FacebookUserId).HasMaxLength(128);

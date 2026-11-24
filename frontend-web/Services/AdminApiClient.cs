@@ -427,6 +427,26 @@ public sealed class AdminApiClient(HttpClient http)
         return profile;
     }
 
+    public async Task<UserProfile> UpdateProfileImageAsync(string imageData, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PutAsJsonAsync("api/profile/image", new { imageData }, cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        var profile = await response.Content.ReadFromJsonAsync<UserProfile>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty profile response.");
+        ApplyProfile(profile);
+        return profile;
+    }
+
+    public async Task<UserProfile> RemoveProfileImageAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await http.DeleteAsync("api/profile/image", cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        var profile = await response.Content.ReadFromJsonAsync<UserProfile>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty profile response.");
+        ApplyProfile(profile);
+        return profile;
+    }
+
     public async Task RequestBackupEmailVerificationAsync(string email, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync("api/profile/backup-email/request", new { email }, cancellationToken);
@@ -739,7 +759,7 @@ public sealed class AdminApiClient(HttpClient http)
 }
 
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
-public sealed record UserProfile(string Name, string Username, string Email, string? BackupEmail, string Role);
+public sealed record UserProfile(string Name, string Username, string Email, string? BackupEmail, string Role, string? ProfileImageData = null);
 public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
     string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null,
     UserSubscriptionDto? Subscription = null);
