@@ -1,0 +1,35 @@
+@if (IsOpen)
+{
+    <div class="sp-confirm-backdrop" @onclick="CancelAsync">
+        <section class="sp-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="sp-confirm-title" aria-describedby="sp-confirm-message" @onclick:stopPropagation="true">
+            <div class="sp-confirm-icon" aria-hidden="true"><svg viewBox="0 0 16 16"><path d="M8 1a7 7 0 1 0 0 14A7 7 0 0 0 8 1Zm0 1.25A5.75 5.75 0 1 1 8 13.75 5.75 5.75 0 0 1 8 2.25Zm-.625 2.5v4.5h1.25v-4.5h-1.25Zm0 5.5v1.25h1.25v-1.25h-1.25Z" /></svg></div>
+            <div class="sp-confirm-copy"><h2 id="sp-confirm-title">@Title</h2><p id="sp-confirm-message">@Message</p></div>
+            <div class="sp-confirm-actions">
+                <button type="button" class="sp-confirm-cancel" @onclick="CancelAsync" disabled="@IsBusy">@CancelLabel</button>
+                <button type="button" class="@(IsDestructive ? "sp-confirm-danger" : "sp-confirm-primary")" @onclick="ConfirmAsync" disabled="@IsBusy">@(IsBusy ? "Please wait…" : ConfirmLabel)</button>
+            </div>
+        </section>
+    </div>
+}
+<style>
+    .sp-confirm-backdrop{position:fixed;inset:0;z-index:1300;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.5)}
+    .sp-confirm-dialog{width:min(100%,420px);display:grid;grid-template-columns:42px minmax(0,1fr);gap:16px;padding:24px;background:var(--sp-bg-card,#fff);color:var(--sp-text-primary,#1f2328);border:1px solid var(--sp-topbar-border,#d8dee4);border-radius:10px;box-shadow:var(--sp-shadow-md,0 20px 55px rgba(15,23,42,.24))}
+    .sp-confirm-icon{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:rgba(180,35,24,.1);color:#b42318}.sp-confirm-icon svg{width:19px;height:19px;fill:currentColor}
+    .sp-confirm-copy h2{margin:0 0 6px;font-size:17px;font-weight:650}.sp-confirm-copy p{margin:0;color:var(--sp-text-muted,#64748b);font-size:13px;line-height:1.5;overflow-wrap:anywhere}
+    .sp-confirm-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:9px;padding-top:6px}.sp-confirm-actions button{min-height:36px;padding:8px 13px;border:1px solid var(--sp-topbar-border,#d8dee4);border-radius:6px;font:inherit;font-size:12px;font-weight:650;cursor:pointer}.sp-confirm-actions button:disabled{opacity:.6;cursor:wait}
+    .sp-confirm-cancel{background:var(--sp-bg-card,#fff);color:var(--sp-text-primary,#1f2328)}.sp-confirm-cancel:hover{background:var(--sp-bg-page,#f6f8fa)}
+    .sp-confirm-danger{background:#b42318;color:#fff;border-color:#b42318!important}.sp-confirm-danger:hover{background:#912018}.sp-confirm-primary{background:var(--sp-accent,#087f75);color:#fff;border-color:var(--sp-accent,#087f75)!important}
+</style>
+@code {
+    [Parameter] public bool IsOpen { get; set; }
+    [Parameter] public string Title { get; set; } = "Confirm action";
+    [Parameter] public string Message { get; set; } = "Are you sure you want to continue?";
+    [Parameter] public string ConfirmLabel { get; set; } = "Confirm";
+    [Parameter] public string CancelLabel { get; set; } = "Cancel";
+    [Parameter] public bool IsDestructive { get; set; } = true;
+    [Parameter] public bool IsBusy { get; set; }
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    private Task ConfirmAsync() => IsBusy ? Task.CompletedTask : OnConfirm.InvokeAsync();
+    private Task CancelAsync() => IsBusy ? Task.CompletedTask : OnCancel.InvokeAsync();
+}

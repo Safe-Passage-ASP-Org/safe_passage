@@ -162,24 +162,12 @@
     </section>
 </div>
 
-@if (ShowSignOutConfirmation)
-{
-    <div class="settings-confirm-backdrop" @onclick="CloseSignOutConfirmation">
-        <section class="settings-confirm-dialog" role="alertdialog" aria-modal="true" aria-labelledby="signout-title" aria-describedby="signout-description" @onclick:stopPropagation="true">
-            <div class="settings-confirm-icon" aria-hidden="true">
-                <svg viewBox="0 0 16 16"><path d="M6 2h8v12H6v-2h2v1h4V3H8v1H6zm1 3 3 3-3 3V9H1V7h6z" /></svg>
-            </div>
-            <div class="settings-confirm-copy">
-                <h2 id="signout-title">Sign out?</h2>
-                <p id="signout-description">You’ll need to sign in again to access your Safe Passage account.</p>
-            </div>
-            <div class="settings-confirm-actions">
-                <button type="button" class="settings-confirm-cancel" @onclick="CloseSignOutConfirmation">Cancel</button>
-                <button type="button" class="settings-confirm-accept" @onclick="ConfirmSignOutAsync">Sign out</button>
-            </div>
-        </section>
-    </div>
-}
+<ConfirmationDialog IsOpen="@ShowSignOutConfirmation"
+                    Title="Sign out?"
+                    Message="You’ll need to sign in again to access your Safe Passage account."
+                    ConfirmLabel="Sign out"
+                    OnCancel="CloseSignOutConfirmation"
+                    OnConfirm="ConfirmSignOutAsync" />
 
 <style>
     .settings-page-heading{margin-bottom:22px}
@@ -195,18 +183,6 @@
     .settings-nav-signout{color:#b42318}
     .settings-nav-signout svg{color:#b42318}
     .settings-nav-signout:hover{background:#fff1f0;color:#b42318}
-    .settings-confirm-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.48)}
-    .settings-confirm-dialog{width:min(100%,420px);display:grid;grid-template-columns:42px minmax(0,1fr);gap:16px;padding:24px;background:var(--sp-bg-card,#fff);color:var(--sp-text-primary,#1f2328);border:1px solid var(--sp-topbar-border,#d8dee4);border-radius:10px;box-shadow:var(--sp-shadow-md,0 20px 55px rgba(15,23,42,.24))}
-    .settings-confirm-icon{width:40px;height:40px;display:grid;place-items:center;border-radius:50%;background:rgba(180,35,24,.1);color:#b42318}
-    .settings-confirm-icon svg{width:18px;height:18px;fill:currentColor}
-    .settings-confirm-copy h2{margin:0 0 6px;font-size:17px;font-weight:650}
-    .settings-confirm-copy p{margin:0;color:var(--sp-text-muted,#64748b);font-size:13px;line-height:1.5}
-    .settings-confirm-actions{grid-column:1/-1;display:flex;justify-content:flex-end;gap:9px;padding-top:6px}
-    .settings-confirm-actions button{min-height:36px;padding:8px 13px;border:1px solid var(--sp-topbar-border,#d8dee4);border-radius:6px;font:inherit;font-size:12px;font-weight:650;cursor:pointer}
-    .settings-confirm-cancel{background:var(--sp-bg-card,#fff);color:var(--sp-text-primary,#1f2328)}
-    .settings-confirm-cancel:hover{background:var(--sp-bg-page,#f6f8fa)}
-    .settings-confirm-accept{background:#b42318;color:#fff;border-color:#b42318!important}
-    .settings-confirm-accept:hover{background:#912018}
     .settings-content{min-width:0}
     .settings-content-heading{padding:0 0 14px;margin:0 0 16px;border-bottom:1px solid #d8dee4}
     .settings-content-heading h2{margin:0 0 5px;color:#1f2328;font-size:22px;font-weight:600}
