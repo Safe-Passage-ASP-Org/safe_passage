@@ -30,7 +30,8 @@ public sealed class UsersController(
         var users = await dbContext.Users.AsNoTracking()
             .OrderBy(user => user.Username)
             .Select(user => new UserSummary(user.Id, user.Username, user.Email, user.IsActive, user.IsEmailVerified, user.Role,
-                user.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList(), user.FullName, user.PhoneNumber))
+                user.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList(), user.FullName, user.PhoneNumber,
+                user.ProfileImageData))
             .ToListAsync(cancellationToken);
         var subscriptions = await subscriptionService.GetUserSubscriptionsAsync(
             users.Select(user => user.Id).ToArray(), cancellationToken);
@@ -43,7 +44,8 @@ public sealed class UsersController(
         var user = await dbContext.Users.AsNoTracking()
             .Where(candidate => candidate.Id == id)
             .Select(candidate => new UserSummary(candidate.Id, candidate.Username, candidate.Email, candidate.IsActive, candidate.IsEmailVerified, candidate.Role,
-                candidate.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList(), candidate.FullName, candidate.PhoneNumber))
+                candidate.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList(), candidate.FullName,
+                candidate.PhoneNumber, candidate.ProfileImageData))
             .SingleOrDefaultAsync(cancellationToken);
         if (user is null) return NotFound();
         var subscriptions = await subscriptionService.GetUserSubscriptionsAsync([user.Id], cancellationToken);
@@ -59,7 +61,7 @@ public sealed class UsersController(
                 new UserSummary(candidate.Id, candidate.Username, candidate.Email, candidate.IsActive,
                     candidate.IsEmailVerified, candidate.Role,
                     candidate.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList(),
-                    candidate.FullName, candidate.PhoneNumber),
+                    candidate.FullName, candidate.PhoneNumber, candidate.ProfileImageData),
                 candidate.BackupEmail))
             .SingleOrDefaultAsync(cancellationToken);
         if (user is null) return NotFound();
@@ -245,7 +247,8 @@ public sealed class UsersController(
 
     private static UserSummary ToSummary(User user, IEnumerable<Group> groups) =>
         new(user.Id, user.Username, user.Email, user.IsActive, user.IsEmailVerified, user.Role,
-            groups.Select(group => group.Name).OrderBy(name => name).ToList(), user.FullName, user.PhoneNumber);
+            groups.Select(group => group.Name).OrderBy(name => name).ToList(), user.FullName, user.PhoneNumber,
+            user.ProfileImageData);
 
     private void AddAudit(string action, string resource, Guid? targetUserId = null, string? deviceId = null, string? reason = null)
     {
@@ -274,6 +277,6 @@ public sealed class UsersController(
         string Description, string VerificationStatus, DateTimeOffset CreatedAt, DateTimeOffset? VerifiedAt,
         bool HasPassword, bool HasTotpSecret);
     public sealed record UserSummary(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
-        string Role, List<string> Groups, string? FullName, string? PhoneNumber,
+        string Role, List<string> Groups, string? FullName, string? PhoneNumber, string? ProfileImageData = null,
         UserSubscriptionResponse? Subscription = null);
 }

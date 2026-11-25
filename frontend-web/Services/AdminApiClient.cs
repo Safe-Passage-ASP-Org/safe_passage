@@ -768,7 +768,7 @@ public sealed record LoginResult(bool MfaRequired, string? SessionToken, string 
 public sealed record UserProfile(string Name, string Username, string Email, string? BackupEmail, string Role, string? ProfileImageData = null);
 public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
     string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null,
-    UserSubscriptionDto? Subscription = null);
+    UserSubscriptionDto? Subscription = null, string? ProfileImageData = null);
 public sealed record AdminUserDetails(AdminUser User, string? BackupEmail, List<AdminUserSavedSite> Sites);
 public sealed record AdminUserSavedSite(Guid Id, string Name, string LoginUrl, string Category, string Description,
     string VerificationStatus, DateTimeOffset CreatedAt, DateTimeOffset? VerifiedAt, bool HasPassword, bool HasTotpSecret);
