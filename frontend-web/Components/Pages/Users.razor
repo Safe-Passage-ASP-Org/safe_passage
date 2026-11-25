@@ -104,7 +104,7 @@
                             <p>Test-only expiry editor for this account. Choose a local date and time inside the configured reminder window. The automatic email worker sends its warning on the next scheduled check; the account must be active and email-verified.</p>
                             <label for="test-subscription-expiry">Test expiry date and time (local)</label>
                             <div class="expiry-test-controls">
-                                <input id="test-subscription-expiry" type="datetime-local" step="60" value="@ExpiryTestDateTime" @onchange="UpdateExpiryTestDateTime" disabled="@SavingExpiryTest" />
+                                <input id="test-subscription-expiry" type="datetime-local" step="60" value="@ExpiryTestDateTime" @oninput="UpdateExpiryTestDateTime" disabled="@SavingExpiryTest" />
                                 <button type="button" class="user-primary" @onclick="SaveExpiryTestDateTimeAsync" disabled="@(SavingExpiryTest || string.IsNullOrWhiteSpace(ExpiryTestDateTime))">@(SavingExpiryTest ? "Saving…" : "Update expiry date")</button>
                             </div>
                             @if (!string.IsNullOrWhiteSpace(ExpiryTestError)) { <p class="expiry-test-message error" role="alert">@ExpiryTestError</p> }
@@ -264,6 +264,11 @@
         finally { DetailsLoading = false; }
     }
     private void CloseDetails() { DetailsModalOpen = false; SelectedDetails = null; SelectedSummary = null; DetailsError = ""; }
+    private void UpdateExpiryTestDateTime(ChangeEventArgs args)
+    {
+        ExpiryTestDateTime = args.Value?.ToString() ?? "";
+        ExpiryTestError = ExpiryTestNotice = "";
+    }
     private void OpenEditFromDetails(AdminUser user) { CloseDetails(); OpenEdit(user); }
     private static string GetSiteIconUrl(string loginUrl)
     {
@@ -275,18 +280,21 @@
     private void HandleSiteIconError(Guid siteId) => BrokenSiteIcons.Add(siteId);
     private static string SiteInitials(string name) => string.Join("", name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => part[0])).ToUpperInvariant();
     private static bool IsSubscriptionExpiryTestAccount(string email) => email.Equals("jayshangodornes@gmail.com", StringComparison.OrdinalIgnoreCase);
-    private void UpdateExpiryTestDateTime(ChangeEventArgs args)
-    {
-        ExpiryTestDateTime = args.Value?.ToString() ?? "";
-        ExpiryTestError = ExpiryTestNotice = "";
-    }
     private async Task SaveExpiryTestDateTimeAsync()
     {
         ExpiryTestError = ExpiryTestNotice = "";
         if (SelectedDetails is null || !IsSubscriptionExpiryTestAccount(SelectedDetails.User.Email)) return;
-        if (!DateTime.TryParseExact(ExpiryTestDateTime, "yyyy-MM-dd'T'HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var localPeriodEnd))
+        var acceptedDateTimeFormats = new[]
         {
-            ExpiryTestError = "Choose a valid expiry date and time.";
+            "yyyy-MM-dd'T'HH:mm",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss.FFFFFFF"
+        };
+        if (!DateTime.TryParseExact(ExpiryTestDateTime, acceptedDateTimeFormats, CultureInfo.InvariantCulture,
+                DateTimeStyles.None, out var localPeriodEnd)
+            && !DateTime.TryParse(ExpiryTestDateTime, CultureInfo.InvariantCulture, DateTimeStyles.None, out localPeriodEnd))
+        {
+            ExpiryTestError = "The selected date and time could not be read. Choose it again.";
             return;
         }
 

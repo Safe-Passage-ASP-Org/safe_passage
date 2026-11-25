@@ -32,8 +32,16 @@ window.safePassageAuthSession = {
         return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
     },
     getUtcOffsetMinutes(value) {
-        const date = new Date(value);
-        if (Number.isNaN(date.getTime())) throw new Error("Choose a valid expiry date and time.");
+        const parts = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(value);
+        if (!parts) throw new Error("The browser could not read the selected local date and time.");
+        const [, year, month, day, hour, minute, second = "0"] = parts;
+        const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second));
+        if (date.getFullYear() !== Number(year)
+            || date.getMonth() !== Number(month) - 1
+            || date.getDate() !== Number(day)
+            || date.getHours() !== Number(hour)
+            || date.getMinutes() !== Number(minute))
+            throw new Error("Choose a real local date and time.");
         return -date.getTimezoneOffset();
     }
 };

@@ -241,7 +241,7 @@ public sealed class UsersController(
         if (request.UtcOffsetMinutes is < -840 or > 840)
             return BadRequest(new { message = "The selected time has an invalid local timezone offset." });
         if (request.LocalPeriodEnd == default)
-            return BadRequest(new { message = "Choose a valid expiry date and time." });
+            return BadRequest(new { message = "The request did not include the selected expiry date and time." });
         var localPeriodEnd = DateTime.SpecifyKind(request.LocalPeriodEnd, DateTimeKind.Unspecified);
         DateTimeOffset periodEnd;
         try
@@ -250,7 +250,7 @@ public sealed class UsersController(
         }
         catch (ArgumentException)
         {
-            return BadRequest(new { message = "Choose a valid expiry date and time." });
+            return BadRequest(new { message = "The selected date and time cannot be represented in that timezone." });
         }
         var now = DateTimeOffset.UtcNow;
         var reminderWindow = TimeSpan.FromDays(Math.Clamp(reminderOptions.Value.LeadTimeDays, 1, 30));
