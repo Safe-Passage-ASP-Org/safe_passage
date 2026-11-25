@@ -557,8 +557,8 @@
             Navigation.NavigateTo(completionUrl, forceLoad: true);
             return;
         }
-        // Route based on role: non-admins land on /dashboard, admins on /users.
-        Navigation.NavigateTo(Api.IsAdministrator ? "/users" : "/dashboard");
+        // Both administrators and users start on their role-aware dashboard.
+        Navigation.NavigateTo("/dashboard");
     }
 
     private async Task CancelMfa()
