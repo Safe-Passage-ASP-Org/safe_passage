@@ -50,6 +50,32 @@ public sealed class UsersController(
         return Ok(user with { Subscription = subscriptions[user.Id] });
     }
 
+    [HttpGet("{id:guid}/details")]
+    public async Task<ActionResult<UserDetailsResponse>> GetDetails(Guid id, CancellationToken cancellationToken)
+    {
+        var user = await dbContext.Users.AsNoTracking()
+            .Where(candidate => candidate.Id == id)
+            .Select(candidate => new UserDetailsBase(
+                new UserSummary(candidate.Id, candidate.Username, candidate.Email, candidate.IsActive,
+                    candidate.IsEmailVerified, candidate.Role,
+                    candidate.UserGroups.Select(link => link.Group.Name).OrderBy(name => name).ToList(),
+                    candidate.FullName, candidate.PhoneNumber),
+                candidate.BackupEmail))
+            .SingleOrDefaultAsync(cancellationToken);
+        if (user is null) return NotFound();
+
+        var sites = await dbContext.VaultSites.AsNoTracking()
+            .Where(site => site.UserId == id)
+            .OrderBy(site => site.Name)
+            .Select(site => new UserVaultSiteSummary(site.Id, site.Name, site.LoginUrl, site.Category,
+                site.Description, site.VerificationStatus, site.CreatedAt, site.VerifiedAt,
+                site.EncryptedPassword != "", site.EncryptedTotpSecret != ""))
+            .ToListAsync(cancellationToken);
+        var subscriptions = await subscriptionService.GetUserSubscriptionsAsync([id], cancellationToken);
+
+        return Ok(new UserDetailsResponse(user.User with { Subscription = subscriptions[id] }, user.BackupEmail, sites));
+    }
+
     [HttpPost]
     public async Task<ActionResult<UserSummary>> Create([FromBody] UserRequest request, CancellationToken cancellationToken)
     {
@@ -242,6 +268,11 @@ public sealed class UsersController(
 
     public sealed record UserRequest(string? Username, string? Email, string? Role, List<string>? Groups);
     public sealed record UserStatusRequest(bool IsActive);
+    private sealed record UserDetailsBase(UserSummary User, string? BackupEmail);
+    public sealed record UserDetailsResponse(UserSummary User, string? BackupEmail, List<UserVaultSiteSummary> Sites);
+    public sealed record UserVaultSiteSummary(Guid Id, string Name, string LoginUrl, string Category,
+        string Description, string VerificationStatus, DateTimeOffset CreatedAt, DateTimeOffset? VerifiedAt,
+        bool HasPassword, bool HasTotpSecret);
     public sealed record UserSummary(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
         string Role, List<string> Groups, string? FullName, string? PhoneNumber,
         UserSubscriptionResponse? Subscription = null);

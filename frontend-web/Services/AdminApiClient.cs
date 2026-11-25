@@ -311,6 +311,10 @@ public sealed class AdminApiClient(HttpClient http)
     public async Task<List<AdminUser>> GetUsersAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminUser>>("api/admin/users", cancellationToken) ?? [];
 
+    public async Task<AdminUserDetails> GetAdminUserDetailsAsync(Guid id, CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<AdminUserDetails>($"api/admin/users/{id}/details", cancellationToken)
+        ?? throw new InvalidOperationException("The user details response was empty.");
+
     public async Task<List<AdminRole>> GetRolesAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminRole>>("api/admin/roles", cancellationToken) ?? [];
 
@@ -765,6 +769,9 @@ public sealed record UserProfile(string Name, string Username, string Email, str
 public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
     string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null,
     UserSubscriptionDto? Subscription = null);
+public sealed record AdminUserDetails(AdminUser User, string? BackupEmail, List<AdminUserSavedSite> Sites);
+public sealed record AdminUserSavedSite(Guid Id, string Name, string LoginUrl, string Category, string Description,
+    string VerificationStatus, DateTimeOffset CreatedAt, DateTimeOffset? VerifiedAt, bool HasPassword, bool HasTotpSecret);
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
 public sealed class AdminGroupForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
 public sealed record DevicePostureInfo(bool? ScreenLockEnabled, bool? IsRootedOrJailbroken, DateTimeOffset? ReportedAt);
