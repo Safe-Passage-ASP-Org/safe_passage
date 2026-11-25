@@ -17,7 +17,9 @@ public sealed class AdminAccessRequestsController(ApplicationDbContext dbContext
         [FromQuery] string status = "Pending", CancellationToken cancellationToken = default)
     {
         var query = dbContext.ApplicationAccessRequests.AsNoTracking();
-        if (!string.Equals(status, "All", StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(status, "Reviewed", StringComparison.OrdinalIgnoreCase))
+            query = query.Where(request => request.Status != "Pending");
+        else if (!string.Equals(status, "All", StringComparison.OrdinalIgnoreCase))
             query = query.Where(request => request.Status == status);
 
         var requests = await query.OrderByDescending(request => request.RequestedAt)
@@ -32,6 +34,10 @@ public sealed class AdminAccessRequestsController(ApplicationDbContext dbContext
                 request.Reason,
                 request.RequestedAt,
                 request.ReviewedAt,
+                request.ReviewedByUserId == null ? null : dbContext.Users
+                    .Where(reviewer => reviewer.Id == request.ReviewedByUserId)
+                    .Select(reviewer => reviewer.FullName ?? reviewer.Username)
+                    .FirstOrDefault(),
                 request.DecisionNote))
             .ToListAsync(cancellationToken);
         return Ok(requests);
@@ -101,15 +107,20 @@ public sealed class AdminAccessRequestsController(ApplicationDbContext dbContext
             return Conflict(new { message = "Another administrator has already reviewed this request." });
         }
 
+        var reviewerName = await dbContext.Users.AsNoTracking()
+            .Where(reviewer => reviewer.Id == reviewerId)
+            .Select(reviewer => reviewer.FullName ?? reviewer.Username)
+            .SingleOrDefaultAsync(cancellationToken);
+
         return Ok(new AdminAccessRequestSummary(
             request.Id, request.ApplicationId, request.Application.Name, request.UserId,
             request.User.Username, request.User.Email, request.Status, request.Reason,
-            request.RequestedAt, request.ReviewedAt, request.DecisionNote));
+            request.RequestedAt, request.ReviewedAt, reviewerName, request.DecisionNote));
     }
 
     public sealed record AccessRequestDecision(bool Approve, string? Note);
     public sealed record AdminAccessRequestSummary(
         Guid Id, Guid ApplicationId, string ApplicationName, Guid UserId, string Username,
         string Email, string Status, string Reason, DateTimeOffset RequestedAt,
-        DateTimeOffset? ReviewedAt, string? DecisionNote);
+        DateTimeOffset? ReviewedAt, string? ReviewerName, string? DecisionNote);
 }
