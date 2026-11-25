@@ -363,6 +363,13 @@ public sealed class AdminApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
+    public async Task SetTestSubscriptionExpiryAsync(Guid userId, DateOnly periodEndDate, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PutAsJsonAsync(
+            $"api/admin/users/{userId}/test-subscription-expiry", new { periodEndDate }, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
     public async Task<List<AdminDevice>> GetDevicesAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<AdminDevice>>("api/devices", cancellationToken) ?? [];
 

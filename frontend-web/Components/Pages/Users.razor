@@ -1,4 +1,5 @@
 @page "/users"
+@using System.Globalization
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
 
@@ -94,7 +95,22 @@
                         <div><dt>Plan</dt><dd>@(account.Subscription?.PlanName ?? "Free")</dd></div><div><dt>Status</dt><dd>@SubscriptionStatus(account)</dd></div>
                         @if (account.Subscription?.CurrentPeriodStart is { } periodStart) { <div><dt>Period started</dt><dd>@periodStart.ToLocalTime().ToString("MMM d, yyyy")</dd></div> }
                         @if (account.Subscription?.CurrentPeriodEnd is { } periodEnd) { <div><dt>@(account.Subscription.CancelAtPeriodEnd ? "Access until" : "Renews on")</dt><dd>@periodEnd.ToLocalTime().ToString("MMM d, yyyy")</dd></div> }
-                    </dl></section>
+                    </dl>
+                    @if (IsSubscriptionExpiryTestAccount(account.Email))
+                    {
+                        <div class="expiry-test-editor">
+                            <h4>Subscription reminder test</h4>
+                            <p>Test-only expiry editor for this account. Choose a UTC date inside the configured reminder window. The automatic email worker sends its warning on the next scheduled check; the account must be active and email-verified.</p>
+                            <label for="test-subscription-expiry">Test expiry date (UTC)</label>
+                            <div class="expiry-test-controls">
+                                <input id="test-subscription-expiry" type="date" value="@ExpiryTestDate" @onchange="UpdateExpiryTestDate" disabled="@SavingExpiryTest" />
+                                <button type="button" class="user-primary" @onclick="SaveExpiryTestDateAsync" disabled="@(SavingExpiryTest || string.IsNullOrWhiteSpace(ExpiryTestDate))">@(SavingExpiryTest ? "Saving…" : "Update expiry date")</button>
+                            </div>
+                            @if (!string.IsNullOrWhiteSpace(ExpiryTestError)) { <p class="expiry-test-message error" role="alert">@ExpiryTestError</p> }
+                            @if (!string.IsNullOrWhiteSpace(ExpiryTestNotice)) { <p class="expiry-test-message success" role="status">@ExpiryTestNotice</p> }
+                        </div>
+                    }
+                    </section>
                     <section class="details-section"><div class="sites-heading"><div><h3>Saved sites</h3><p>Sites added to this user's account</p></div><span>@SelectedDetails.Sites.Count</span></div>
                         @if (SelectedDetails.Sites.Count == 0)
                         {
@@ -160,7 +176,7 @@
     .user-table-card{overflow:hidden}.user-table-heading{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:19px 22px;border-bottom:1px solid #e8edf1}.user-table-heading h2{font-size:16px;margin:0 0 4px}.user-table-heading p{margin:0;color:#64748b;font-size:12px}.user-table-heading>span{color:#64748b;font-size:12px;white-space:nowrap}.user-sort{display:flex;align-items:center;gap:7px;color:#64748b;font-size:11px;white-space:nowrap}.user-sort select{border:1px solid #cbd5dc;border-radius:5px;padding:7px;background:#fff;color:#334155;font:inherit}.user-table-scroll{overflow-x:auto}.user-table{width:100%;border-collapse:collapse;min-width:700px}.user-table th{padding:12px 18px;text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.6px}.user-table td{padding:15px 18px;border-top:1px solid #edf0f2;font-size:13px;vertical-align:middle}.identity-cell{display:flex;align-items:center;gap:10px}.user-avatar{width:32px;height:32px;display:grid;place-items:center;background:#dff3ed;color:#087f75;border-radius:50%;font-size:10px;font-weight:700}.user-name-link{padding:0;border:0;background:none;color:#172b3a;font:inherit;font-weight:650;text-align:left;cursor:pointer}.user-name-link:hover{color:#087f75;text-decoration:underline}.user-email{color:#52616b}.user-status{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:650}.user-status i{width:7px;height:7px;border-radius:50%;background:#099268}.user-status.suspended{color:#64748b}.user-status.suspended i{background:#a1aab2}.user-status.pending{color:#936115}.user-status.pending i{background:#d49421}.user-actions{display:flex;gap:12px;white-space:nowrap}.user-text-button{padding:3px;border:0;background:none;color:#087f75;font-size:12px;font-weight:650;cursor:pointer}.user-text-button.danger{color:#b5473c}.user-text-button:disabled{opacity:.5}.user-state{padding:24px;color:#64748b;font-size:13px}.user-invitation-note{margin:0;color:#64748b;font-size:12px;line-height:1.5}.user-modal-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.48)}.user-modal,.user-details-modal{width:min(100%,480px);max-height:90vh;overflow:auto;background:#fff;border-radius:8px;padding:24px;box-shadow:0 24px 70px rgba(15,23,42,.24)}.user-details-modal{width:min(100%,760px)}.user-modal-heading{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:22px}.user-modal-heading span{font-size:10px;font-weight:700;color:#087f75}.user-modal-heading h2{margin:5px 0 0;font-size:21px}.user-close{border:0;background:transparent;font-size:26px;color:#64748b;cursor:pointer}.user-modal form{display:grid;gap:14px}.user-modal label{display:grid;gap:6px;font-size:12px;font-weight:650;color:#334155}.user-modal input,.user-modal select{width:100%;border:1px solid #cbd5dc;border-radius:5px;padding:10px 11px;font:inherit;font-size:13px;background:#fff}.user-modal input:focus,.user-modal select:focus{outline:2px solid #b7e1d8;border-color:#087f75}.user-modal input:disabled{background:#f8fafb;color:#64748b}.user-modal small{font-weight:400;color:#64748b}.user-modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:8px}
     .user-details-content{display:grid;gap:20px}.details-section{padding-bottom:17px;border-bottom:1px solid #e8edf1}.details-section h3{margin:0 0 12px;font-size:14px;color:#203442}.details-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px 24px;margin:0}.details-grid>div{min-width:0}.details-grid dt{margin-bottom:4px;color:#64748b;font-size:11px}.details-grid dd{margin:0;color:#263b49;font-size:13px;overflow-wrap:anywhere}.details-wide{grid-column:1/-1}.sites-heading{display:flex;justify-content:space-between;align-items:flex-start}.sites-heading h3{margin-bottom:3px}.sites-heading p{margin:0 0 12px;color:#64748b;font-size:12px}.sites-heading>span{display:grid;place-items:center;min-width:26px;height:26px;border-radius:13px;background:#edf6f3;color:#087f75;font-size:12px;font-weight:700}.sites-empty{padding:18px;border:1px dashed #cbd5dc;border-radius:6px;color:#64748b;font-size:13px;text-align:center}.saved-site-list{display:grid;gap:10px}.saved-site-card{padding:13px;border:1px solid #e2e8f0;border-radius:7px;background:#fbfcfd}.saved-site-title{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}.saved-site-title h4{margin:0 0 4px;color:#263b49;font-size:14px}.saved-site-title a{color:#087f75;font-size:11px;overflow-wrap:anywhere}.saved-site-card>p{margin:9px 0 0;color:#52616b;font-size:12px}.site-verification{flex:none;padding:4px 8px;border-radius:12px;background:#edf7f2;color:#087f5b;font-size:10px;font-weight:700}.site-verification.pending{background:#fff5df;color:#936115}.site-verification.rejected{background:#fcecea;color:#a53e34}.saved-site-meta{display:flex;flex-wrap:wrap;gap:7px 14px;margin-top:11px;color:#64748b;font-size:10px}.saved-site-meta span+span:before{content:"•";margin-right:8px;color:#cbd5dc}
     .directory-search{min-width:190px;border:1px solid #cbd5dc;border-radius:5px;padding:8px 10px;background:#fff;color:#334155;font:inherit;font-size:12px}
-    .user-avatar-image{display:block;object-fit:cover;border:1px solid #d8dee4}.saved-site-heading{display:flex;align-items:center;gap:10px;min-width:0}.saved-site-heading>div{min-width:0}.site-icon,.site-icon-fallback{width:34px;height:34px;flex:0 0 34px;border-radius:8px}.site-icon{display:block;object-fit:contain;background:#fff;border:1px solid #e2e8f0;padding:4px}.site-icon-fallback{display:grid;place-items:center;background:#e8f2f0;color:#087f75;font-size:10px;font-weight:700}.user-actions-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-top:2px}.user-actions-footer>span{font-size:12px;font-weight:700;color:#64748b}.user-actions-footer>div{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}.user-danger-action{background:#b5473c}
+    .user-avatar-image{display:block;object-fit:cover;border:1px solid #d8dee4}.saved-site-heading{display:flex;align-items:center;gap:10px;min-width:0}.saved-site-heading>div{min-width:0}.site-icon,.site-icon-fallback{width:34px;height:34px;flex:0 0 34px;border-radius:8px}.site-icon{display:block;object-fit:contain;background:#fff;border:1px solid #e2e8f0;padding:4px}.site-icon-fallback{display:grid;place-items:center;background:#e8f2f0;color:#087f75;font-size:10px;font-weight:700}.user-actions-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;padding-top:2px}.user-actions-footer>span{font-size:12px;font-weight:700;color:#64748b}.user-actions-footer>div{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:8px}.user-danger-action{background:#b5473c}.expiry-test-editor{margin-top:17px;padding:14px;border:1px solid #eed8ac;border-radius:7px;background:#fffaf0}.expiry-test-editor h4{margin:0 0 6px;color:#694d16;font-size:13px}.expiry-test-editor>p{margin:0 0 11px;color:#745f37;font-size:11px;line-height:1.5}.expiry-test-editor>label{display:block;margin-bottom:6px;color:#475569;font-size:11px;font-weight:650}.expiry-test-controls{display:flex;align-items:center;gap:8px}.expiry-test-controls input{min-width:0;border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}.expiry-test-controls .user-primary{padding:8px 11px;font-size:11px}.expiry-test-message{margin:8px 0 0!important;font-size:11px!important}.expiry-test-message.error{color:#9d332b}.expiry-test-message.success{color:#087f5b}
     @@media(max-width:900px){.user-table-heading{flex-wrap:wrap}.directory-search{flex:1;min-width:170px}}
     @@media(max-width:640px){.user-summary{gap:14px;padding:14px;flex-wrap:wrap}.user-summary .user-primary{margin-left:0;width:100%}.user-table-heading{padding:16px}.user-details-modal{padding:18px}.details-grid{grid-template-columns:1fr}.details-wide{grid-column:auto}.saved-site-title{flex-direction:column}}
 </style>
@@ -176,6 +192,10 @@
     private AdminUser? SelectedSummary;
     private AdminUserDetails? SelectedDetails;
     private string DetailsError = "";
+    private string ExpiryTestDate = "";
+    private string ExpiryTestError = "";
+    private string ExpiryTestNotice = "";
+    private bool SavingExpiryTest;
     private readonly HashSet<Guid> BrokenSiteIcons = [];
     private AdminUser? EditingUser;
     private AdminUserForm Draft = new();
@@ -232,8 +252,13 @@
     private static string SiteStatusClass(string status) => status.Equals("Pending", StringComparison.OrdinalIgnoreCase) ? "pending" : status.Equals("Rejected", StringComparison.OrdinalIgnoreCase) ? "rejected" : "";
     private async Task OpenDetailsAsync(AdminUser user)
     {
-        SelectedSummary = user; SelectedDetails = null; DetailsError = ""; DetailsLoading = true; DetailsModalOpen = true; BrokenSiteIcons.Clear();
-        try { SelectedDetails = await Api.GetAdminUserDetailsAsync(user.Id); }
+        SelectedSummary = user; SelectedDetails = null; DetailsError = ""; ExpiryTestError = ExpiryTestNotice = ""; ExpiryTestDate = ""; DetailsLoading = true; DetailsModalOpen = true; BrokenSiteIcons.Clear();
+        try
+        {
+            SelectedDetails = await Api.GetAdminUserDetailsAsync(user.Id);
+            if (SelectedDetails.User.Subscription?.CurrentPeriodEnd is { } periodEnd)
+                ExpiryTestDate = periodEnd.UtcDateTime.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
         catch (Exception exception) { DetailsError = exception.Message; }
         finally { DetailsLoading = false; }
     }
@@ -248,6 +273,33 @@
     }
     private void HandleSiteIconError(Guid siteId) => BrokenSiteIcons.Add(siteId);
     private static string SiteInitials(string name) => string.Join("", name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => part[0])).ToUpperInvariant();
+    private static bool IsSubscriptionExpiryTestAccount(string email) => email.Equals("jayshangodornes@gmail.com", StringComparison.OrdinalIgnoreCase);
+    private void UpdateExpiryTestDate(ChangeEventArgs args)
+    {
+        ExpiryTestDate = args.Value?.ToString() ?? "";
+        ExpiryTestError = ExpiryTestNotice = "";
+    }
+    private async Task SaveExpiryTestDateAsync()
+    {
+        ExpiryTestError = ExpiryTestNotice = "";
+        if (SelectedDetails is null || !IsSubscriptionExpiryTestAccount(SelectedDetails.User.Email)) return;
+        if (!DateOnly.TryParseExact(ExpiryTestDate, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var periodEndDate))
+        {
+            ExpiryTestError = "Choose a valid expiry date.";
+            return;
+        }
+
+        SavingExpiryTest = true;
+        try
+        {
+            await Api.SetTestSubscriptionExpiryAsync(SelectedDetails.User.Id, periodEndDate);
+            SelectedDetails = await Api.GetAdminUserDetailsAsync(SelectedDetails.User.Id);
+            ExpiryTestDate = periodEndDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            ExpiryTestNotice = "Expiry date updated. The reminder email will be sent on the next scheduled check if it falls within the reminder window.";
+        }
+        catch (Exception exception) { ExpiryTestError = exception.Message; }
+        finally { SavingExpiryTest = false; }
+    }
     private void OpenCreate() { EditingUser = null; Draft = new() { Role = "User" }; DraftGroups = ""; FormError = ""; ModalOpen = true; }
     private void OpenEdit(AdminUser user) { EditingUser = user; Draft = new() { Username = user.Username, Email = user.Email, Role = user.Role }; DraftGroups = string.Join(", ", user.Groups); FormError = ""; ModalOpen = true; }
     private void CloseModal() { if (!Saving) ModalOpen = false; }

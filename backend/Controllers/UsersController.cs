@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Security.Claims;
 using SafePassage.Api.Contracts.Subscriptions;
 using SafePassage.Api.Data;
@@ -19,8 +20,10 @@ public sealed class UsersController(
     ApplicationDbContext dbContext,
     IPasswordHasher<User> passwordHasher,
     IAccountActivationService accountActivationService,
-    ISubscriptionService subscriptionService) : ControllerBase
+    ISubscriptionService subscriptionService,
+    IOptions<SubscriptionExpirationReminderOptions> reminderOptions) : ControllerBase
 {
+    private const string SubscriptionExpiryTestEmail = "jayshangodornes@gmail.com";
     private static readonly HashSet<string> Roles = new(StringComparer.OrdinalIgnoreCase)
         { "Admin", "Administrator", "Super Admin", "Auditor", "Operator", "User" };
 
@@ -224,6 +227,42 @@ public sealed class UsersController(
         return NoContent();
     }
 
+    [HttpPut("{id:guid}/test-subscription-expiry")]
+    public async Task<ActionResult<TestSubscriptionExpiryResponse>> SetTestSubscriptionExpiry(
+        Guid id, [FromBody] TestSubscriptionExpiryRequest request, CancellationToken cancellationToken)
+    {
+        var user = await dbContext.Users.SingleOrDefaultAsync(
+            candidate => candidate.Id == id && candidate.Email.ToUpper() == SubscriptionExpiryTestEmail.ToUpper(),
+            cancellationToken);
+        if (user is null) return NotFound(new { message = "The subscription expiry test is limited to its configured account." });
+        if (!user.IsActive || !user.IsEmailVerified)
+            return Conflict(new { message = "The test account must be active and email-verified to receive reminder emails." });
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var latestAllowedDate = today.AddDays(Math.Clamp(reminderOptions.Value.LeadTimeDays, 1, 30));
+        if (request.PeriodEndDate <= today || request.PeriodEndDate > latestAllowedDate)
+            return BadRequest(new { message = $"Choose a date from tomorrow through {latestAllowedDate:yyyy-MM-dd} to test the configured reminder window." });
+
+        var subscription = await dbContext.UserSubscriptions
+            .Where(candidate => candidate.UserId == user.Id
+                && (candidate.Status == SubscriptionStatus.Active || candidate.Status == SubscriptionStatus.Cancelled)
+                && candidate.CurrentPeriodEnd != null)
+            .OrderByDescending(candidate => candidate.CurrentPeriodEnd)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (subscription is null)
+            return Conflict(new { message = "This account has no active or cancelled subscription with an expiry date to edit." });
+
+        var endOfDayUtc = new DateTimeOffset(request.PeriodEndDate.ToDateTime(new TimeOnly(23, 59, 0), DateTimeKind.Utc));
+        subscription.CurrentPeriodEnd = endOfDayUtc;
+        subscription.ExpirationReminderPeriodEnd = null;
+        subscription.UpdatedAt = DateTimeOffset.UtcNow;
+        AddAudit("Test Subscription Expiry Updated", user.Email, targetUserId: user.Id,
+            reason: $"The subscription period end was set to {endOfDayUtc:O} for reminder email testing.");
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new TestSubscriptionExpiryResponse(endOfDayUtc));
+    }
+
     private static string? Validate(UserRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || request.Username.Trim().Length > 100)
@@ -271,6 +310,8 @@ public sealed class UsersController(
 
     public sealed record UserRequest(string? Username, string? Email, string? Role, List<string>? Groups);
     public sealed record UserStatusRequest(bool IsActive);
+    public sealed record TestSubscriptionExpiryRequest(DateOnly PeriodEndDate);
+    public sealed record TestSubscriptionExpiryResponse(DateTimeOffset PeriodEndDate);
     private sealed record UserDetailsBase(UserSummary User, string? BackupEmail);
     public sealed record UserDetailsResponse(UserSummary User, string? BackupEmail, List<UserVaultSiteSummary> Sites);
     public sealed record UserVaultSiteSummary(Guid Id, string Name, string LoginUrl, string Category,
