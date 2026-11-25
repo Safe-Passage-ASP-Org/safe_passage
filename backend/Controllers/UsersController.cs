@@ -238,10 +238,24 @@ public sealed class UsersController(
         if (!user.IsActive || !user.IsEmailVerified)
             return Conflict(new { message = "The test account must be active and email-verified to receive reminder emails." });
 
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        var latestAllowedDate = today.AddDays(Math.Clamp(reminderOptions.Value.LeadTimeDays, 1, 30));
-        if (request.PeriodEndDate <= today || request.PeriodEndDate > latestAllowedDate)
-            return BadRequest(new { message = $"Choose a date from tomorrow through {latestAllowedDate:yyyy-MM-dd} to test the configured reminder window." });
+        if (request.UtcOffsetMinutes is < -840 or > 840)
+            return BadRequest(new { message = "The selected time has an invalid local timezone offset." });
+        if (request.LocalPeriodEnd == default)
+            return BadRequest(new { message = "Choose a valid expiry date and time." });
+        var localPeriodEnd = DateTime.SpecifyKind(request.LocalPeriodEnd, DateTimeKind.Unspecified);
+        DateTimeOffset periodEnd;
+        try
+        {
+            periodEnd = new DateTimeOffset(localPeriodEnd, TimeSpan.FromMinutes(request.UtcOffsetMinutes));
+        }
+        catch (ArgumentException)
+        {
+            return BadRequest(new { message = "Choose a valid expiry date and time." });
+        }
+        var now = DateTimeOffset.UtcNow;
+        var reminderWindow = TimeSpan.FromDays(Math.Clamp(reminderOptions.Value.LeadTimeDays, 1, 30));
+        if (periodEnd <= now || periodEnd.ToUniversalTime() > now.Add(reminderWindow))
+            return BadRequest(new { message = $"Choose a time after now and within the next {reminderWindow.Days} days to test the configured reminder window." });
 
         var subscription = await dbContext.UserSubscriptions
             .Where(candidate => candidate.UserId == user.Id
@@ -252,15 +266,14 @@ public sealed class UsersController(
         if (subscription is null)
             return Conflict(new { message = "This account has no active or cancelled subscription with an expiry date to edit." });
 
-        var endOfDayUtc = new DateTimeOffset(request.PeriodEndDate.ToDateTime(new TimeOnly(23, 59, 0), DateTimeKind.Utc));
-        subscription.CurrentPeriodEnd = endOfDayUtc;
+        subscription.CurrentPeriodEnd = periodEnd;
         subscription.ExpirationReminderPeriodEnd = null;
-        subscription.UpdatedAt = DateTimeOffset.UtcNow;
+        subscription.UpdatedAt = now;
         AddAudit("Test Subscription Expiry Updated", user.Email, targetUserId: user.Id,
-            reason: $"The subscription period end was set to {endOfDayUtc:O} for reminder email testing.");
+            reason: $"The subscription period end was set to {periodEnd:O} for reminder email testing.");
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return Ok(new TestSubscriptionExpiryResponse(endOfDayUtc));
+        return Ok(new TestSubscriptionExpiryResponse(periodEnd));
     }
 
     private static string? Validate(UserRequest request)
@@ -310,8 +323,8 @@ public sealed class UsersController(
 
     public sealed record UserRequest(string? Username, string? Email, string? Role, List<string>? Groups);
     public sealed record UserStatusRequest(bool IsActive);
-    public sealed record TestSubscriptionExpiryRequest(DateOnly PeriodEndDate);
-    public sealed record TestSubscriptionExpiryResponse(DateTimeOffset PeriodEndDate);
+    public sealed record TestSubscriptionExpiryRequest(DateTime LocalPeriodEnd, int UtcOffsetMinutes);
+    public sealed record TestSubscriptionExpiryResponse(DateTimeOffset PeriodEnd);
     private sealed record UserDetailsBase(UserSummary User, string? BackupEmail);
     public sealed record UserDetailsResponse(UserSummary User, string? BackupEmail, List<UserVaultSiteSummary> Sites);
     public sealed record UserVaultSiteSummary(Guid Id, string Name, string LoginUrl, string Category,

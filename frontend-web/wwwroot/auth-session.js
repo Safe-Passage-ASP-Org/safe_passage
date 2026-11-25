@@ -24,6 +24,17 @@ window.safePassageAuthSession = {
         const token = new URLSearchParams(window.location.hash.slice(1)).get("backupEmailToken");
         if (token) window.history.replaceState(null, "", window.location.pathname + window.location.search);
         return token;
+    },
+    toLocalDateTimeInput(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return "";
+        const pad = part => String(part).padStart(2, "0");
+        return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+    },
+    getUtcOffsetMinutes(value) {
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) throw new Error("Choose a valid expiry date and time.");
+        return -date.getTimezoneOffset();
     }
 };
 

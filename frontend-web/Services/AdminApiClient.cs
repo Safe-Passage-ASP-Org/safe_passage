@@ -363,10 +363,10 @@ public sealed class AdminApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
-    public async Task SetTestSubscriptionExpiryAsync(Guid userId, DateOnly periodEndDate, CancellationToken cancellationToken = default)
+    public async Task SetTestSubscriptionExpiryAsync(Guid userId, DateTime localPeriodEnd, int utcOffsetMinutes, CancellationToken cancellationToken = default)
     {
         using var response = await http.PutAsJsonAsync(
-            $"api/admin/users/{userId}/test-subscription-expiry", new { periodEndDate }, cancellationToken);
+            $"api/admin/users/{userId}/test-subscription-expiry", new { localPeriodEnd, utcOffsetMinutes }, cancellationToken);
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
