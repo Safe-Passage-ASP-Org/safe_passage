@@ -19,11 +19,12 @@ public static class DbInitializer
         ApplicationDbContext dbContext,
         IPasswordHasher<User> passwordHasher,
         string? bootstrapAdminEmail = null,
-        string? bootstrapAdminPassword = null)
+        string? bootstrapAdminPassword = null,
+        string? financeDemoLaunchUrl = null)
     {
         EnsureApplication(dbContext, MobileApplicationId, "Safe Passage Mobile", "Safe Passage mobile client.");
         EnsureApplication(dbContext, AdminApplicationId, "Safe Passage Admin", "Safe Passage administration portal.");
-        EnsureApplication(dbContext, FinanceTestApplicationId, "Company Finance Test App", "Demo application for validating Safe Passage access decisions.");
+        EnsureFinanceDemoApplication(dbContext, financeDemoLaunchUrl);
         EnsurePolicy(
             dbContext,
             "Require MFA and trusted devices",
@@ -57,11 +58,14 @@ public static class DbInitializer
         }
     }
 
-    public static void Initialize(ApplicationDbContext dbContext, IPasswordHasher<User> passwordHasher)
+    public static void Initialize(
+        ApplicationDbContext dbContext,
+        IPasswordHasher<User> passwordHasher,
+        string? financeDemoLaunchUrl = null)
     {
         EnsureApplication(dbContext, MobileApplicationId, "Safe Passage Mobile", "Safe Passage mobile client.");
         EnsureApplication(dbContext, AdminApplicationId, "Safe Passage Admin", "Safe Passage administration portal.");
-        EnsureApplication(dbContext, FinanceTestApplicationId, "Company Finance Test App", "Demo application for validating Safe Passage access decisions.");
+        EnsureFinanceDemoApplication(dbContext, financeDemoLaunchUrl);
         EnsurePolicy(
             dbContext,
             "Require MFA and trusted devices",
@@ -368,6 +372,31 @@ public static class DbInitializer
             return;
 
         dbContext.Applications.Add(new Application { Id = id, Name = name, Description = description });
+        dbContext.SaveChanges();
+    }
+
+    private static void EnsureFinanceDemoApplication(ApplicationDbContext dbContext, string? launchUrl)
+    {
+        const string name = "Company Finance Test App";
+        var application = dbContext.Applications.SingleOrDefault(candidate => candidate.Id == FinanceTestApplicationId)
+            ?? dbContext.Applications.SingleOrDefault(candidate => candidate.Name == name);
+
+        if (application is null)
+        {
+            application = new Application { Id = FinanceTestApplicationId, Name = name };
+            dbContext.Applications.Add(application);
+        }
+        else if (application.Id != FinanceTestApplicationId)
+        {
+            // Keep an unrelated application with a colliding display name intact.
+            return;
+        }
+
+        application.Description = "A safe, fictional finance dashboard for demonstrating application access, trusted-device approval, and access denial. No real financial data is used.";
+        application.LaunchUrl = string.IsNullOrWhiteSpace(launchUrl) ? "http://localhost:5092/finance-demo" : launchUrl.Trim();
+        application.Category = "Finance";
+        application.IsPublished = true;
+        application.AllowAccessRequests = true;
         dbContext.SaveChanges();
     }
 

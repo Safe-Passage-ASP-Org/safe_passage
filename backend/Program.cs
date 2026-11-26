@@ -695,11 +695,19 @@ using (var scope = app.Services.CreateScope())
             dbContext.Database.Migrate();
         }
         var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher<User>>();
+        var frontendBaseUrl = app.Configuration["Frontend:BaseUrl"]
+            ?? app.Configuration["Facebook:FrontendUrl"]
+            ?? app.Configuration["GitHub:FrontendUrl"]
+            ?? (app.Environment.IsProduction()
+                ? "https://safe-passage-web.onrender.com"
+                : "http://localhost:5092");
+        var financeDemoLaunchUrl = app.Configuration["FinanceDemo:LaunchUrl"]
+            ?? new Uri(new Uri(frontendBaseUrl.TrimEnd('/') + "/"), "finance-demo").ToString();
         var seedDemoData = app.Environment.IsDevelopment()
             || app.Configuration.GetValue<bool>("Database:SeedDemoData");
         if (seedDemoData)
         {
-            DbInitializer.Initialize(dbContext, passwordHasher);
+            DbInitializer.Initialize(dbContext, passwordHasher, financeDemoLaunchUrl);
         }
         else
         {
@@ -707,7 +715,8 @@ using (var scope = app.Services.CreateScope())
                 dbContext,
                 passwordHasher,
                 app.Configuration["AdminBootstrap:Email"],
-                app.Configuration["AdminBootstrap:Password"]);
+                app.Configuration["AdminBootstrap:Password"],
+                financeDemoLaunchUrl);
         }
     }
     catch (Exception ex)

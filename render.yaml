@@ -36,6 +36,8 @@ services:
         sync: false
       - key: Cors__AllowedOrigins__0
         sync: false
+      - key: FinanceDemo__LaunchUrl
+        value: https://safe-passage-web.onrender.com/finance-demo
 
   - type: web
     name: safepassage-web-admin

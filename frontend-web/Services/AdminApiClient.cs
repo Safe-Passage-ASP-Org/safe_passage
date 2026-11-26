@@ -226,6 +226,25 @@ public sealed class AdminApiClient(HttpClient http)
         throw new InvalidOperationException($"The MFA request is {status?.Status ?? "unavailable"}. Please sign in again.");
     }
 
+    public async Task<ApplicationAccessDecision> VerifyApplicationAccessAsync(
+        Guid applicationId,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync(
+            "api/integrations/access/verify",
+            new { applicationId },
+            cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var problem = await ReadProblemSafeAsync(response, cancellationToken);
+            throw new InvalidOperationException(
+                problem?.Detail ?? problem?.Title ?? "Safe Passage could not verify application access.");
+        }
+
+        return await ReadJsonSafeAsync<ApplicationAccessDecision>(response, cancellationToken)
+            ?? throw new InvalidOperationException("Safe Passage returned an empty application access decision.");
+    }
+
     public async Task ResendMfaApprovalAsync(string sessionToken, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync(
@@ -772,6 +791,7 @@ public sealed class AdminApiClient(HttpClient http)
 }
 
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
+public sealed record ApplicationAccessDecision(bool Allowed, string Reason, Guid ApplicationId, bool RequiresTrustedDevice, DateTimeOffset EvaluatedAt);
 public sealed record UserProfile(string Name, string Username, string Email, string? BackupEmail, string Role, string? ProfileImageData = null);
 public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
     string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null,
