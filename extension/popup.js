@@ -7,6 +7,23 @@ async function getActiveTab() {
   return tab;
 }
 
+chrome.tabs.onActivated.addListener(() => refresh());
+chrome.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
+  if (tab.active && (changeInfo.status === 'complete' || changeInfo.url)) refresh();
+});
+chrome.windows.onFocusChanged.addListener(() => refresh());
+chrome.runtime.onMessage.addListener((message) => {
+  if (message.type === 'SITE_GATE_STATUS_UPDATE') {
+    getActiveTab().then((tab) => {
+      if (tab?.id !== message.tabId) return;
+      const label = document.getElementById('currentSiteLabel');
+      if (label && message.siteName) label.textContent = message.siteName;
+      const status = document.getElementById('statusMsg');
+      if (status) status.textContent = message.status;
+    });
+  }
+});
+
 async function refresh() {
   const statusMsg = document.getElementById('statusMsg');
   const loginView = document.getElementById('loginView');
@@ -98,7 +115,7 @@ document.getElementById('loginBtn').addEventListener('click', async () => {
     statusMsg.textContent = res?.error || 'Login failed';
     return;
   }
-  refresh();
+  await refresh();
   const tab = await getActiveTab();
   if (tab?.id && tab.url?.startsWith('http')) {
     chrome.tabs.sendMessage(tab.id, { type: 'SITE_ACCESS_RETRY', signedIn: true }, () => void chrome.runtime.lastError);

@@ -7,6 +7,8 @@ let assignedAppsCache = [];
 let assignedAppsCacheToken = '';
 let assignedAppsCacheAt = 0;
 
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
 async function getState() {
   const data = await chrome.storage.local.get([
     'apiUrl',
@@ -349,6 +351,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       };
     }
 
+    if (msg.type === 'SITE_GATE_STATUS') {
+      if (sender.tab?.id != null) {
+        chrome.runtime.sendMessage({
+          type: 'SITE_GATE_STATUS_UPDATE', tabId: sender.tab.id,
+          origin: msg.origin, status: msg.status, siteName: msg.siteName || '',
+        }, () => void chrome.runtime.lastError);
+      }
+      return { ok: true };
+    }
+
     if (msg.type === 'AUTHENTICATE_AND_GET_CREDENTIALS') {
       if (!state.accessToken) {
         throw new Error('Sign in via the Safe Passage extension popup first.');
@@ -357,22 +369,27 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!site) throw new Error('Site is not registered in Safe Passage.');
       if (!site.isVerified) throw new Error('This site is awaiting Safe Passage verification before credentials or 2FA can be used.');
 
-      if (!approvalFlows.has(site.origin)) {
+      const approvalKey = `approval:${site.origin}`;
+      const existingApproval = (await chrome.storage.session.get(approvalKey))[approvalKey];
+      let approvedToken;
+      if (existingApproval?.token && existingApproval.expiresAt > Date.now()) {
+        approvedToken = existingApproval.token;
+      } else if (!approvalFlows.has(site.origin)) {
         const approvalFlow = requestSiteApproval(state.apiUrl, state.accessToken, site.origin, sender.tab?.id);
         approvalFlows.set(site.origin, approvalFlow);
         try {
-          var approvedToken = await approvalFlow;
+          approvedToken = await approvalFlow;
         } finally {
           approvalFlows.delete(site.origin);
         }
       } else {
-        var approvedToken = await approvalFlows.get(site.origin);
+        approvedToken = await approvalFlows.get(site.origin);
       }
 
       let username = site.siteUsername || '';
       let password = '';
       let totpCode = '';
-      await chrome.storage.session.set({ [`approval:${site.origin}`]: {
+      await chrome.storage.session.set({ [approvalKey]: {
         token: approvedToken, expiresAt: Date.now() + 5 * 60 * 1000,
         vaultSiteId: site.vaultSiteId || null, applicationId: site.applicationId || null,
       } });

@@ -1,12 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Safe Passage Authenticator & Autofill",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Request Safe Passage MFA on saved application login pages and optionally autofill credentials.",
-  "permissions": ["storage", "activeTab", "tabs"],
+  "permissions": ["storage", "activeTab", "tabs", "sidePanel"],
   "host_permissions": ["<all_urls>"],
+  "side_panel": {
+    "default_path": "popup.html"
+  },
   "action": {
-    "default_popup": "popup.html",
     "default_title": "Safe Passage"
   },
   "background": {
@@ -17,7 +19,6 @@
     {
       "matches": ["<all_urls>"],
       "js": ["content.js"],
-      "all_frames": true,
       "run_at": "document_idle"
     }
   ]
