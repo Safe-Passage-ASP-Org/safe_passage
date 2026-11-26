@@ -29,6 +29,16 @@ public sealed class SubscriptionsController(ISubscriptionService subscriptionSer
         return Ok(subscription);
     }
 
+    [HttpGet("entitlements")]
+    [ProducesResponseType<SubscriptionEntitlementsResponse>(StatusCodes.Status200OK)]
+    public async Task<ActionResult<SubscriptionEntitlementsResponse>> GetMyEntitlements(CancellationToken cancellationToken)
+    {
+        if (!TryGetUserId(out var userId))
+            return Unauthorized();
+
+        return Ok(await subscriptionService.GetUserEntitlementsAsync(userId, cancellationToken));
+    }
+
     [HttpPost("checkout")]
     [ProducesResponseType<CreateCheckoutResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]

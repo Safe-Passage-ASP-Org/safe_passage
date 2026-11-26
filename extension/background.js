@@ -154,6 +154,8 @@ async function getSiteForOrigin(state, origin) {
     return {
       id: vaultSite.id, name: vaultSite.name, origin, vaultSiteId: vaultSite.id,
       vaultSite: true, isVerified: vaultSite.verificationStatus === 'Verified',
+      lockedByPlan: vaultSite.lockedByPlan === true,
+      canGenerateTotpCode: vaultSite.canGenerateTotpCode === true,
       verificationStatus: vaultSite.verificationStatus,
       siteUsername: vaultSite.autoFillUsername || '', hasAutoFillPassword: vaultSite.hasPassword,
     };
@@ -195,7 +197,7 @@ async function getVaultSiteCredentials(apiUrl, approvedToken, vaultSiteId) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.detail || body.title || `Could not retrieve saved credentials (${res.status})`);
-  return { username: body.username || '', password: body.password || '', totpCode: body.totpCode || '' };
+  return { username: body.username || '', password: body.password || '', totpCode: body.totpCode || '', requiresProForTotp: body.requiresProForTotp === true };
 }
 
 async function resendSiteApproval(apiUrl, origin) {
@@ -287,6 +289,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           description: site.description || '', siteUsername: site.autoFillUsername || '',
           verificationStatus: site.verificationStatus,
           hasTotpSecret: site.hasTotpSecret,
+          lockedByPlan: site.lockedByPlan === true,
         })),
       };
     }
@@ -345,7 +348,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         approved: Boolean(approval?.token && approval.expiresAt > Date.now()),
         site: { id: site.id, name: site.name, origin: site.origin, applicationId: site.applicationId || null,
           vaultSiteId: site.vaultSiteId || null, isVerified: site.isVerified !== false,
-          verificationStatus: site.verificationStatus || 'Verified' },
+          verificationStatus: site.verificationStatus || 'Verified', lockedByPlan: site.lockedByPlan === true },
       };
     }
 
@@ -356,6 +359,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const site = await getSiteForOrigin(state, msg.origin);
       if (!site) throw new Error('Site is not registered in Safe Passage.');
       if (!site.isVerified) throw new Error('This site is awaiting Safe Passage verification before credentials or 2FA can be used.');
+      if (site.lockedByPlan) throw new Error('This saved website is over the Free plan limit. Upgrade to Pro or remove another saved website.');
 
       if (!approvalFlows.has(site.origin)) {
         const approvalFlow = requestSiteApproval(state.apiUrl, state.accessToken, site.origin, sender.tab?.id);
@@ -372,12 +376,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       let username = site.siteUsername || '';
       let password = '';
       let totpCode = '';
+      let requiresProForTotp = false;
       await chrome.storage.session.set({ [`approval:${site.origin}`]: {
         token: approvedToken, expiresAt: Date.now() + 5 * 60 * 1000,
         vaultSiteId: site.vaultSiteId || null, applicationId: site.applicationId || null,
       } });
       if (site.vaultSite && site.vaultSiteId) {
-        ({ username, password, totpCode } = await getVaultSiteCredentials(state.apiUrl, approvedToken, site.vaultSiteId));
+        ({ username, password, totpCode, requiresProForTotp } = await getVaultSiteCredentials(state.apiUrl, approvedToken, site.vaultSiteId));
       } else if (site.remoteCredentials && site.applicationId) {
         const verification = await verifyAccess(state.apiUrl, approvedToken, site.applicationId);
         if (verification && verification.allowed === false)
@@ -396,6 +401,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         username,
         password,
         totpCode,
+        requiresProForTotp,
       };
     }
 
@@ -406,6 +412,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const approval = (await chrome.storage.session.get(sessionKey))[sessionKey];
       if (!approval?.token || approval.expiresAt <= Date.now()) throw new Error('Request mobile approval before using this 2FA code.');
       const credentials = await getVaultSiteCredentials(state.apiUrl, approval.token, site.vaultSiteId);
+      if (credentials.requiresProForTotp) throw new Error('Authenticator codes require an active Pro subscription.');
       if (!credentials.totpCode) throw new Error('No 2FA secret is saved for this site.');
       return { ok: true, totpCode: credentials.totpCode };
     }

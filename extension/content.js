@@ -67,7 +67,9 @@
     title.textContent = 'Authenticate with Safe Passage?';
     title.style.cssText = 'font-size:15px;';
     const description = document.createElement('div');
-    description.textContent = site.isVerified === false
+    description.textContent = site.lockedByPlan
+      ? `${site.name} is over the Free plan's saved-website limit. Upgrade to Pro or remove another saved website to use it.`
+      : site.isVerified === false
       ? `${site.name} is waiting for Safe Passage verification. Credentials and 2FA are disabled until an administrator approves this site.`
       : mobileApproved
         ? `Safe Passage approval is active for this ${site.name} sign-in.`
@@ -85,7 +87,11 @@
       approveButton.textContent = 'Approved';
       status.textContent = 'Mobile approval is active for this sign-in.';
     }
-    if (site.isVerified === false) {
+    if (site.lockedByPlan) {
+      approveButton.disabled = true;
+      approveButton.textContent = 'Pro required';
+      status.textContent = 'This site is saved, but its credentials are locked by the current plan.';
+    } else if (site.isVerified === false) {
       approveButton.disabled = true;
       approveButton.textContent = 'Verification pending';
     }
@@ -120,9 +126,11 @@
       const result = await sendMessage({ type: 'AUTHENTICATE_AND_GET_CREDENTIALS', origin });
       mobileApproved = true;
       if (result.username || result.password) fillCredentials(result);
-      status.textContent = result.username || result.password
-        ? 'Approved. Saved credentials were filled in.'
-        : 'Approved. Continue signing in to this site.';
+      status.textContent = result.requiresProForTotp
+        ? 'Username and password were filled. Authenticator codes require an active Pro subscription.'
+        : result.username || result.password
+          ? 'Approved. Saved credentials were filled in.'
+          : 'Approved. Continue signing in to this site.';
       approveButton.textContent = 'Approved';
       resendButton.hidden = true;
     } catch (error) {
