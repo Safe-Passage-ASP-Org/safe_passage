@@ -139,14 +139,35 @@ async function migrateLocalSites(state) {
   await chrome.storage.local.set({ customSites: remaining });
 }
 
-function findAssignedApplication(applications, origin) {
+function isWithinLaunchPath(launchPath, pagePath) {
+  const basePath = launchPath.replace(/\/+$/, '') || '/';
+  const currentPath = pagePath.replace(/\/+$/, '') || '/';
+  return basePath === '/' || currentPath === basePath || currentPath.startsWith(`${basePath}/`);
+}
+
+function findAssignedApplication(applications, pageUrl) {
+  if (!pageUrl) return null;
+  let page;
+  try { page = new URL(pageUrl); }
+  catch { return null; }
+
   return applications.find((app) => {
-    try { return new URL(app.launchUrl).origin === origin; }
+    try {
+      const launch = new URL(app.launchUrl);
+      return app.usesSafePassageNativeAuthentication !== true
+        && launch.origin === page.origin
+        && isWithinLaunchPath(launch.pathname, page.pathname);
+    }
     catch { return false; }
   }) || null;
 }
 
-async function getSiteForOrigin(state, origin) {
+async function getSiteForOrigin(state, origin, pageUrl) {
+  let page;
+  try { page = new URL(pageUrl); }
+  catch { return null; }
+  if (page.origin !== origin) return null;
+
   if (state.accessToken) await migrateLocalSites(state);
   const cached = await chrome.storage.local.get('vaultSitesCache');
   let vaultSites = Array.isArray(cached.vaultSitesCache) ? cached.vaultSitesCache : [];
@@ -164,7 +185,7 @@ async function getSiteForOrigin(state, origin) {
   }
   try {
     const apps = await getAssignedApplications(state.apiUrl, state.accessToken);
-    const app = findAssignedApplication(apps, origin);
+    const app = findAssignedApplication(apps, pageUrl);
     if (app) {
       return {
         id: app.id,
@@ -339,7 +360,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === 'CHECK_ORIGIN') {
-      const site = await getSiteForOrigin(state, msg.origin);
+      const site = await getSiteForOrigin(state, msg.origin, msg.pageUrl);
       if (!site) return { matched: false };
       const sessionKey = `approval:${site.origin}`;
       const approval = (await chrome.storage.session.get(sessionKey))[sessionKey];
@@ -367,7 +388,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!state.accessToken) {
         throw new Error('Sign in via the Safe Passage extension popup first.');
       }
-      const site = await getSiteForOrigin(state, msg.origin);
+      const site = await getSiteForOrigin(state, msg.origin, msg.pageUrl);
       if (!site) throw new Error('Site is not registered in Safe Passage.');
       if (!site.isVerified) throw new Error('This site is awaiting Safe Passage verification before credentials or 2FA can be used.');
       if (site.lockedByPlan) throw new Error('This saved website is over the Free plan limit. Upgrade to Pro or remove another saved website.');
@@ -422,7 +443,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === 'GET_CURRENT_TOTP') {
-      const site = await getSiteForOrigin(state, msg.origin);
+      const site = await getSiteForOrigin(state, msg.origin, msg.pageUrl);
       if (!site?.isVerified || !site.vaultSiteId) throw new Error('No verified 2FA account is saved for this site.');
       const sessionKey = `approval:${site.origin}`;
       const approval = (await chrome.storage.session.get(sessionKey))[sessionKey];
@@ -434,7 +455,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === 'GET_APPROVED_CREDENTIALS') {
-      const site = await getSiteForOrigin(state, msg.origin);
+      const site = await getSiteForOrigin(state, msg.origin, msg.pageUrl);
       if (!site?.isVerified) throw new Error('This site is not verified.');
       const sessionKey = `approval:${site.origin}`;
       const approval = (await chrome.storage.session.get(sessionKey))[sessionKey];

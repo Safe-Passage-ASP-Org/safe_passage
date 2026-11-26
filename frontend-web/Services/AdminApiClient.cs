@@ -777,7 +777,15 @@ public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, st
     bool HasSigningKey = false, bool HasPendingSigningKey = false, DevicePostureInfo? Posture = null);
 public sealed record AdminApplication(Guid Id, string Name, string Description, int UserAccessCount, int GroupAccessCount,
     string LaunchUrl = "", string? ClientId = null, string ClientType = "confidential", string RedirectUris = "", string PostLogoutRedirectUris = "", string AllowedScopes = "openid profile email", bool IsPublished = false, bool AllowAccessRequests = false, string Category = "Other", string AutoFillUsername = "", bool HasAutoFillPassword = false, string? ClientSecret = null);
-public sealed record AccessibleApplication(Guid Id, string Name, string Description, string LaunchUrl, string Category = "Other", string AutoFillUsername = "", bool HasAutoFillPassword = false);
+public sealed record AccessibleApplication(
+    Guid Id,
+    string Name,
+    string Description,
+    string LaunchUrl,
+    string Category = "Other",
+    string AutoFillUsername = "",
+    bool HasAutoFillPassword = false,
+    bool UsesSafePassageNativeAuthentication = false);
 public sealed record VaultSiteSummary(Guid Id, string Name, string LoginUrl, string Origin, string Category, string Description,
     string AutoFillUsername, bool HasPassword, bool HasTotpSecret, string VerificationStatus, DateTimeOffset CreatedAt,
     bool LockedByPlan = false, bool CanGenerateTotpCode = false);

@@ -168,7 +168,7 @@ document.getElementById('autofillTabBtn').addEventListener('click', async () => 
   }
   const origin = new URL(tab.url).origin;
   statusMsg.textContent = 'Verifying Safe Passage access...';
-  const creds = await send({ type: 'AUTHENTICATE_AND_GET_CREDENTIALS', origin });
+  const creds = await send({ type: 'AUTHENTICATE_AND_GET_CREDENTIALS', origin, pageUrl: tab.url });
   if (!creds?.ok) {
     statusMsg.textContent = creds?.error || 'Access denied';
     return;
