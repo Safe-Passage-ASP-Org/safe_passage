@@ -36,22 +36,21 @@ In short, Vercel and the web/mobile clients provide user interfaces; Render runs
 ### Administrator account
 
 1. Open [Safe Passage Admin Login](https://safe-passage-web.onrender.com/admin-login).
-2. Enter the verified email address for the administrator account and request a verification link. If needed, choose **Other verification method** to use the email OTP option.
-3. Open the email and follow the one-time link, or enter the OTP on the admin verification page.
-4. Approve the sign-in on a different trusted mobile device when prompted.
-5. After approval, the administrator portal opens. Admin accounts must use **Admin Login**; the regular user login is for user accounts.
+2. Enter the administrator's verified email address and select **Send 6-digit OTP**.
+3. Enter the code from the email. The single-use code remains valid for 7 days.
+4. After verification, the administrator portal opens. Admin accounts use **Admin Login**; mobile approval is for regular users.
 
 ## 5. Sign In to the Mobile App
 
 1. Open Safe Passage Mobile from its installed Android/iOS app, or open the [mobile web app](https://safepassage-mobile.vercel.app/).
-2. Enter the account's email address or username and password, then select **Sign in**. New accounts must first be activated through the email link.
+2. Enter a regular user's email address or username and password, then select **Sign in**. New accounts must first be activated through the email link. Administrators sign in through the web Admin Login OTP page.
 3. For a first-time phone setup, use **Set up this phone** if shown and enter the same account credentials. Keep the phone's device key in its secure storage.
 4. If sign-in is waiting for approval, open Safe Passage on a different trusted mobile device and approve or deny the request. The phone starting the sign-in cannot approve its own request.
 5. Once sign-in completes, use the dashboard and tabs to view approvals, devices, activity, and settings.
 
 ## 6. Add an Application with an Administrator Account
 
-1. Sign in through **Admin Login** and complete email verification and mobile approval.
+1. Sign in through **Admin Login** using the 6-digit OTP sent to the administrator's verified email.
 2. Open **Applications** in the administrator portal and select **Add application**.
 3. Enter the **Application Name**, **Login/Web URL**, and **Category**. Add a description or autofill username/password if needed, then select **Save application**.
 4. In the application's card, select **Manage access**.

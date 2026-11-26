@@ -56,41 +56,6 @@ public sealed class AdminApiClient(HttpClient http)
         }
     }
 
-    public async Task RequestAdminEmailLinkAsync(string email, CancellationToken cancellationToken = default)
-    {
-        HttpResponseMessage response;
-        try
-        {
-            response = await http.PostAsJsonAsync("api/auth/admin-login/request-link", new { email }, cancellationToken);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            throw new InvalidOperationException("Connecting to the server failed or timed out while waking up. Please wait a few seconds and try again.", ex);
-        }
-
-        using (response)
-        {
-            if (response.IsSuccessStatusCode) return;
-            var problem = await ReadProblemSafeAsync(response, cancellationToken);
-            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Could not request an admin sign-in link.");
-        }
-    }
-
-    public async Task<LoginResult> CompleteAdminEmailLinkAsync(string token, CancellationToken cancellationToken = default)
-    {
-        using var response = await http.PostAsJsonAsync(
-            "api/auth/admin-login/complete-link", new { token }, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            var problem = await ReadProblemSafeAsync(response, cancellationToken);
-            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "This admin sign-in link is invalid or has expired. Request a new link.");
-        }
-        var body = await ReadJsonSafeAsync<LoginResponse>(response, cancellationToken);
-        if (body is null || !body.MfaRequired || string.IsNullOrWhiteSpace(body.SessionToken))
-            throw new InvalidOperationException("Admin sign-in requires mobile approval. Request a new email link and try again.");
-        return new(body.MfaRequired, body.SessionToken, body.Message ?? "Email verified. Approve this sign-in on your trusted mobile device.");
-    }
-
     public async Task<bool> IsFacebookSignInEnabledAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -276,9 +241,10 @@ public sealed class AdminApiClient(HttpClient http)
             throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Invalid or expired verification code.");
         }
         var body = await ReadJsonSafeAsync<LoginResponse>(response, cancellationToken);
-        if (body is null || !body.MfaRequired || string.IsNullOrWhiteSpace(body.SessionToken))
-            throw new InvalidOperationException("Admin sign-in requires mobile approval.");
-        return new(body.MfaRequired, body.SessionToken, body.Message ?? "Code verified. Approve this sign-in on your trusted mobile device.");
+        if (body is null || body.MfaRequired || string.IsNullOrWhiteSpace(body.AccessToken))
+            throw new InvalidOperationException("The API did not return a completed administrator sign-in.");
+        SetToken(body.AccessToken);
+        return new(false, null, body.Message ?? "Administrator sign-in successful.");
     }
 
     public async Task SendMfaOtpAsync(string sessionToken, CancellationToken cancellationToken = default)
