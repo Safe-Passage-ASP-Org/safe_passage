@@ -63,12 +63,15 @@ jobs:
           path: safepassage-mobile.apk
 
       - name: Publish APK to mobile-latest GitHub Release
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/development'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if gh release view mobile-latest >/dev/null 2>&1; then
             gh release upload mobile-latest safepassage-mobile.apk --clobber
+            gh release edit mobile-latest \
+              --title "Safe Passage Mobile (Latest Android APK)" \
+              --notes "Automated Android APK build from ${{ github.ref_name }} (${{ github.sha }})."
           else
             gh release create mobile-latest safepassage-mobile.apk \
               --target "${{ github.sha }}" \
