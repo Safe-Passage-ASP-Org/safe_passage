@@ -45,7 +45,7 @@
             <form @onsubmit="SendOtpAsync" @onsubmit:preventDefault="true">
                 <label for="admin-otp-email">Administrator email address</label>
                 <input id="admin-otp-email" type="email" autocomplete="email" @bind="EmailAddress" required disabled="@Sending" />
-                <button class="signup-button" type="submit" disabled="@Sending">@(Sending ? "Sending OTP…” : "Send 6-digit OTP")</button>
+                <button class="signup-button" type="submit" disabled="@Sending">@(Sending ? "Sending OTP..." : "Send 6-digit OTP")</button>
             </form>
         }
         else
