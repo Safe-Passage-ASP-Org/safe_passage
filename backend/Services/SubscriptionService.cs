@@ -31,6 +31,8 @@ public interface ISubscriptionService
 {
     IReadOnlyList<SubscriptionPlanResponse> GetPlans();
     Task<UserSubscriptionResponse> GetUserSubscriptionAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<SubscriptionEntitlementsResponse> GetUserEntitlementsAsync(Guid userId, CancellationToken cancellationToken = default);
+    Task<IReadOnlySet<string>> GetEligibleDeviceIdsAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<IReadOnlyDictionary<Guid, UserSubscriptionResponse>> GetUserSubscriptionsAsync(IReadOnlyCollection<Guid> userIds, CancellationToken cancellationToken = default);
     Task<bool> HasActiveEntitlementAsync(Guid userId, CancellationToken cancellationToken = default);
     Task<SubscriptionResult<CreateCheckoutResponse>> CreateCheckoutAsync(Guid userId, string planCode, CancellationToken cancellationToken = default);
@@ -122,6 +124,50 @@ public sealed class SubscriptionService(
     {
         var current = await GetUserSubscriptionAsync(userId, cancellationToken);
         return current.HasActiveEntitlement;
+    }
+
+    public async Task<SubscriptionEntitlementsResponse> GetUserEntitlementsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var role = await dbContext.Users.AsNoTracking()
+            .Where(user => user.Id == userId)
+            .Select(user => user.Role)
+            .SingleOrDefaultAsync(cancellationToken);
+        if (string.Equals(role, "Admin", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(role, "Administrator", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(role, "Super Admin", StringComparison.OrdinalIgnoreCase))
+            return new SubscriptionEntitlementsResponse("admin", false, null, null, 90, true);
+
+        var subscription = await GetUserSubscriptionAsync(userId, cancellationToken);
+        var isPro = subscription.HasActiveEntitlement
+            && subscription.PlanCode is "pro-monthly" or "pro-annual";
+
+        return new SubscriptionEntitlementsResponse(
+            isPro ? subscription.PlanCode! : "free",
+            isPro,
+            isPro ? null : 2,
+            isPro ? null : 5,
+            isPro ? 90 : 7,
+            isPro);
+    }
+
+    public async Task<IReadOnlySet<string>> GetEligibleDeviceIdsAsync(
+        Guid userId,
+        CancellationToken cancellationToken = default)
+    {
+        var entitlements = await GetUserEntitlementsAsync(userId, cancellationToken);
+        var devices = await dbContext.Devices.AsNoTracking()
+            .Where(device => device.UserId == userId && device.Status != DeviceStatus.Disabled)
+            .ToListAsync(cancellationToken);
+        IEnumerable<string> ordered = devices
+            .OrderByDescending(device => device.Status == DeviceStatus.Active && device.TrustStatus == DeviceTrustStatus.Trusted)
+            .ThenByDescending(device => device.LastActiveDate ?? device.RegistrationDate)
+            .ThenBy(device => device.RegistrationDate)
+            .Select(device => device.DeviceId);
+        if (entitlements.MaxTrustedDevices is { } limit)
+            ordered = ordered.Take(limit);
+        return ordered.ToHashSet(StringComparer.Ordinal);
     }
 
     public async Task<SubscriptionResult<CreateCheckoutResponse>> CreateCheckoutAsync(
@@ -587,6 +633,7 @@ public sealed class SubscriptionService(
             .ToListAsync(cancellationToken);
 
         var plans = optionsAccessor.Value.Plans;
+        var now = DateTimeOffset.UtcNow;
         return subscriptions
             .OrderByDescending(sub => sub.CreatedAt)
             .Take(25)
@@ -594,11 +641,16 @@ public sealed class SubscriptionService(
             {
                 plans.TryGetValue(sub.PlanCode, out var planOption);
                 var paymentMode = "PayMongo";
+                var status = (sub.Status == SubscriptionStatus.Active || sub.Status == SubscriptionStatus.Cancelled)
+                    && sub.CurrentPeriodEnd.HasValue
+                    && sub.CurrentPeriodEnd.Value <= now
+                        ? SubscriptionStatus.Expired
+                        : sub.Status;
                 return new SubscriptionHistoryItemResponse(
                     sub.PayPalSubscriptionId,
                     sub.PlanCode,
                     planOption?.Name ?? sub.PlanCode,
-                    sub.Status.ToString(),
+                    status.ToString(),
                     planOption?.PriceDisplay ?? "-",
                     paymentMode,
                     sub.CreatedAt,
@@ -787,15 +839,13 @@ public sealed class SubscriptionService(
         if (pending is not null)
             return pending;
 
-        return subscriptions
-            .OrderByDescending(sub => sub.UpdatedAt)
-            .FirstOrDefault();
+        return null;
     }
 
     private static bool HasEntitlement(UserSubscription subscription, DateTimeOffset now)
     {
         if (subscription.Status == SubscriptionStatus.Active)
-            return true;
+            return !subscription.CurrentPeriodEnd.HasValue || subscription.CurrentPeriodEnd.Value > now;
 
         if (subscription.Status == SubscriptionStatus.Cancelled
             && subscription.CurrentPeriodEnd.HasValue

@@ -168,80 +168,41 @@ else
     </div>
 
     <section class="sp-card sub-card" style="margin-top:16px;">
-        <div class="sub-section-title">Plan Tiers &amp; Security Capabilities</div>
+        <div class="sub-section-title">Plan Features</div>
         <div class="sub-tiers-grid">
             <div class="sub-tier-card @(Current?.HasActiveEntitlement != true ? "sub-tier-current" : "")">
-                <div class="sub-tier-head">
-                    <span class="sub-tier-name">Free</span>
-                    <span class="sub-tier-badge">Starter</span>
-                </div>
+                <div class="sub-tier-head"><span class="sub-tier-name">Free</span><span class="sub-tier-badge">Starter</span></div>
                 <div class="sub-tier-price">PHP 0 <span>/ month</span></div>
-                <p class="sub-tier-desc">Core device-bound MFA for individuals getting started with zero-trust access.</p>
+                <p class="sub-tier-desc">Core account protection and a personal credential vault.</p>
                 <ul class="sub-tier-list">
-                    <li>Up to 2 enrolled mobile devices</li>
-                    <li>Push &amp; biometric MFA approvals</li>
-                    <li>7-day personal activity timeline</li>
-                    <li>Basic posture checks (screen lock &amp; root/jailbreak)</li>
+                    <li>Mobile MFA sign-in approvals</li>
+                    <li>Up to 2 trusted devices</li>
+                    <li>Up to 5 saved websites with username and password autofill</li>
+                    <li>7-day sign-in activity history</li>
                 </ul>
-                <div class="sub-tier-foot">
-                    <span class="sub-tier-note">@(Current?.HasActiveEntitlement != true ? "Active on your account" : "Included base tier")</span>
-                </div>
+                <div class="sub-tier-foot"><span class="sub-tier-note">@(Current?.HasActiveEntitlement != true ? "Active on your account" : "Included base tier")</span></div>
             </div>
-
             <div class="sub-tier-card sub-tier-featured @(Current?.HasActiveEntitlement == true ? "sub-tier-current" : "")">
-                <div class="sub-tier-head">
-                    <span class="sub-tier-name">Pro</span>
-                    <span class="sub-tier-badge sub-tier-badge-pro">Most Popular</span>
-                </div>
+                <div class="sub-tier-head"><span class="sub-tier-name">Pro</span><span class="sub-tier-badge sub-tier-badge-pro">Monthly or annual</span></div>
                 <div class="sub-tier-price">PHP 299 <span>/ month</span></div>
-                <p class="sub-tier-desc">Full continuous posture enforcement, cryptographic key login, and extended audit retention.</p>
+                <p class="sub-tier-desc">More room for trusted devices and saved logins, plus authenticator support.</p>
                 <ul class="sub-tier-list">
-                    <li>Unlimited trusted devices per account</li>
-                    <li>Key-bound passwordless device login</li>
-                    <li>90-day dual-perspective audit logs &amp; printable receipts</li>
-                    <li>OIDC SSO &amp; Browser Extension Vault sync</li>
-                    <li>Auto-revocation on posture drift or suspension</li>
+                    <li>Unlimited trusted devices and saved websites</li>
+                    <li>Authenticator secret storage and generated codes in the extension</li>
+                    <li>90-day sign-in activity history</li>
+                    <li>All Free features</li>
                 </ul>
-                <div class="sub-tier-foot">
-                    @if (Current?.HasActiveEntitlement == true)
-                    {
-                        <span class="sub-tier-note">Active on your account</span>
-                    }
-                    else
-                    {
-                        <button class="sub-btn sub-btn-primary" style="width:100%;" type="button"
-                                disabled="@(Busy || Plans.All(p => !p.IsConfigured))"
-                                @onclick='() => StartCheckoutAsync("pro-monthly")'>
-                            @(string.Equals(BusyPlanCode, "pro-monthly", StringComparison.OrdinalIgnoreCase) ? "Starting..." : "Upgrade to Pro")
-                        </button>
-                    }
-                </div>
+                <div class="sub-tier-foot"><span class="sub-tier-note">Choose Pro Monthly or Pro Annual in Available Plans above.</span></div>
             </div>
-
             <div class="sub-tier-card sub-tier-enterprise">
-                <div class="sub-tier-head">
-                    <span class="sub-tier-name">Enterprise</span>
-                    <span class="sub-tier-badge sub-tier-badge-ent">Zero-Trust Suite</span>
-                </div>
-                <div class="sub-tier-price">PHP 1,490+ <span>/ month</span></div>
-                <p class="sub-tier-desc">Organization-wide hardware attestation, SIEM telemetry streaming, and compliance automation.</p>
-                <ul class="sub-tier-list">
-                    <li>FIDO2 / WebAuthn &amp; HSM hardware key attestation</li>
-                    <li>Real-time SIEM webhook streaming (Splunk, Datadog, Sentinel)</li>
-                    <li>Geo-velocity &amp; impossible-travel anomaly blocking</li>
-                    <li>SCIM 2.0 directory sync (Entra ID, Okta, Google Workspace)</li>
-                    <li>Dedicated tenant isolation, 99.99% SLA &amp; SOC 2 pack</li>
-                </ul>
-                <div class="sub-tier-foot">
-                    <button class="sub-btn sub-btn-secondary" style="width:100%;" type="button"
-                            @onclick="RequestEnterpriseSales">
-                        Contact Enterprise Sales
-                    </button>
-                </div>
+                <div class="sub-tier-head"><span class="sub-tier-name">Enterprise</span><span class="sub-tier-badge sub-tier-badge-ent">Organization plan</span></div>
+                <div class="sub-tier-price">Features to be defined</div>
+                <p class="sub-tier-desc">Enterprise is reserved for future organization features. Its capabilities and pricing have not been defined.</p>
+                <ul class="sub-tier-list"><li>Feature set to be announced</li><li>No Enterprise checkout is available yet</li></ul>
+                <div class="sub-tier-foot"><span class="sub-tier-note">Coming soon</span></div>
             </div>
         </div>
     </section>
-
     <section class="sp-card sub-card mt-4">
         <div class="sub-section-title">Billing &amp; Receipt History</div>
         @if (History.Count == 0)
@@ -613,12 +574,6 @@ else
         null or "" => "Free",
         _ => status
     };
-
-    private void RequestEnterpriseSales()
-    {
-        ErrorMessage = null;
-        SuccessMessage = "Enterprise inquiry logged. Our security team will reach out to your account email with FIDO2/HSM, SIEM, and SCIM 2.0 onboarding details.";
-    }
 
     private async Task PrintReceiptAsync()
     {

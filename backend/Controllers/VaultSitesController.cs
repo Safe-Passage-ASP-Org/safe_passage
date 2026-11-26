@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SafePassage.Api.Data;
+using SafePassage.Api.Contracts.Subscriptions;
 using SafePassage.Api.Models;
 using SafePassage.Api.Services;
 
@@ -12,19 +13,26 @@ namespace SafePassage.Api.Controllers;
 [Authorize]
 [ApiController]
 [Route("api/vault/sites")]
-public sealed class VaultSitesController(ApplicationDbContext dbContext, ApplicationCredentialProtector protector) : ControllerBase
+public sealed class VaultSitesController(
+    ApplicationDbContext dbContext,
+    ApplicationCredentialProtector protector,
+    ISubscriptionService? subscriptionService = null) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<VaultSiteSummary>>> GetMine(CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId) || !await IsActiveUserAsync(userId, cancellationToken)) return Unauthorized();
-        var sites = await dbContext.VaultSites.AsNoTracking()
+        var entitlements = subscriptionService is null
+            ? new SubscriptionEntitlementsResponse("free", false, 2, 5, 7, false)
+            : await subscriptionService.GetUserEntitlementsAsync(userId, cancellationToken);
+        var savedSites = await dbContext.VaultSites.AsNoTracking()
             .Where(site => site.UserId == userId)
             .OrderBy(site => site.Name)
-            .Select(site => new VaultSiteSummary(site.Id, site.Name, site.LoginUrl, site.Origin, site.Category,
-                site.Description, site.AutoFillUsername, site.EncryptedPassword != "", site.EncryptedTotpSecret != "",
-                site.VerificationStatus, site.CreatedAt))
             .ToListAsync(cancellationToken);
+        var sites = savedSites.Select((site, index) => ToSummary(
+            site,
+            !entitlements.IsPro && entitlements.MaxSavedSites is { } limit && index >= limit,
+            entitlements.CanGenerateTotpCodes)).ToList();
         return Ok(sites);
     }
 
@@ -32,6 +40,14 @@ public sealed class VaultSitesController(ApplicationDbContext dbContext, Applica
     public async Task<ActionResult<VaultSiteSummary>> Create([FromBody] VaultSiteRequest request, CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId) || !await IsActiveUserAsync(userId, cancellationToken)) return Unauthorized();
+        var entitlements = await GetEntitlementsAsync(userId, cancellationToken);
+        var existingSiteCount = await dbContext.VaultSites.CountAsync(site => site.UserId == userId, cancellationToken);
+        if (entitlements.MaxSavedSites is { } siteLimit && existingSiteCount >= siteLimit)
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Pro plan required",
+                detail: $"The Free plan allows up to {siteLimit} saved websites. Remove one or upgrade to Pro to add more.");
+        if (!entitlements.CanGenerateTotpCodes && !string.IsNullOrWhiteSpace(request.TotpSecret))
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Pro plan required",
+                detail: "Saving and generating authenticator codes is a Pro feature. You can still save the site's username and password on Free.");
         if (!TryValidate(request, out var origin, out var error)) return BadRequest(new { message = error });
         if (!TotpCodeGenerator.IsValidSecret(request.TotpSecret)) return BadRequest(new { message = "Enter a valid Base32 2FA secret." });
         if (await dbContext.VaultSites.AnyAsync(site => site.UserId == userId && site.Origin == origin, cancellationToken))
@@ -57,6 +73,10 @@ public sealed class VaultSitesController(ApplicationDbContext dbContext, Applica
     public async Task<ActionResult<VaultSiteSummary>> Update(Guid id, [FromBody] VaultSiteRequest request, CancellationToken cancellationToken)
     {
         if (!TryGetUserId(out var userId) || !await IsActiveUserAsync(userId, cancellationToken)) return Unauthorized();
+        var entitlements = await GetEntitlementsAsync(userId, cancellationToken);
+        if (!entitlements.CanGenerateTotpCodes && !request.ClearTotpSecret && !string.IsNullOrWhiteSpace(request.TotpSecret))
+            return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Pro plan required",
+                detail: "Saving authenticator secrets is a Pro feature. Upgrade to Pro to add or change this secret.");
         if (!TryValidate(request, out var origin, out var error)) return BadRequest(new { message = error });
         if (!TotpCodeGenerator.IsValidSecret(request.TotpSecret)) return BadRequest(new { message = "Enter a valid Base32 2FA secret." });
         var site = await dbContext.VaultSites.SingleOrDefaultAsync(candidate => candidate.Id == id && candidate.UserId == userId, cancellationToken);
@@ -113,9 +133,24 @@ public sealed class VaultSitesController(ApplicationDbContext dbContext, Applica
         var site = await dbContext.VaultSites.AsNoTracking().SingleOrDefaultAsync(
             candidate => candidate.Id == id && candidate.UserId == userId && candidate.VerificationStatus == "Verified", cancellationToken);
         if (site is null) return NotFound(new { message = "This saved site is not verified or is unavailable." });
+        var entitlements = await GetEntitlementsAsync(userId, cancellationToken);
+        if (!entitlements.IsPro && entitlements.MaxSavedSites is { } siteLimit)
+        {
+            var savedSiteIds = await dbContext.VaultSites.AsNoTracking()
+                .Where(candidate => candidate.UserId == userId)
+                .OrderBy(candidate => candidate.Name)
+                .Select(candidate => candidate.Id)
+                .ToListAsync(cancellationToken);
+            if (savedSiteIds.IndexOf(id) >= siteLimit)
+                return Problem(statusCode: StatusCodes.Status403Forbidden, title: "Saved website is over the Free plan limit",
+                    detail: $"The Free plan includes the first {siteLimit} saved websites. Upgrade to Pro to use this website in the extension.");
+        }
         var secret = protector.Unprotect(site.EncryptedTotpSecret);
-        var code = string.IsNullOrEmpty(secret) ? null : TotpCodeGenerator.Generate(secret, DateTimeOffset.UtcNow);
-        return Ok(new VaultSiteCredentials(site.AutoFillUsername, protector.Unprotect(site.EncryptedPassword), code));
+        var code = string.IsNullOrEmpty(secret) || !entitlements.CanGenerateTotpCodes
+            ? null
+            : TotpCodeGenerator.Generate(secret, DateTimeOffset.UtcNow);
+        return Ok(new VaultSiteCredentials(site.AutoFillUsername, protector.Unprotect(site.EncryptedPassword), code,
+            !string.IsNullOrEmpty(secret) && !entitlements.CanGenerateTotpCodes));
     }
 
     private static string NormalizeTotpSecret(string? secret) => string.Concat((secret ?? "").Where(character => !char.IsWhiteSpace(character))).TrimEnd('=').ToUpperInvariant();
@@ -145,9 +180,14 @@ public sealed class VaultSitesController(ApplicationDbContext dbContext, Applica
     private Task<bool> IsActiveUserAsync(Guid userId, CancellationToken cancellationToken) =>
         dbContext.Users.AnyAsync(user => user.Id == userId && user.IsActive, cancellationToken);
 
-    private static VaultSiteSummary ToSummary(VaultSite site) => new(site.Id, site.Name, site.LoginUrl, site.Origin,
+    private Task<SubscriptionEntitlementsResponse> GetEntitlementsAsync(Guid userId, CancellationToken cancellationToken) =>
+        subscriptionService is null
+            ? Task.FromResult(new SubscriptionEntitlementsResponse("free", false, 2, 5, 7, false))
+            : subscriptionService.GetUserEntitlementsAsync(userId, cancellationToken);
+
+    private static VaultSiteSummary ToSummary(VaultSite site, bool lockedByPlan = false, bool canGenerateTotpCodes = false) => new(site.Id, site.Name, site.LoginUrl, site.Origin,
         site.Category, site.Description, site.AutoFillUsername, site.EncryptedPassword != "", site.EncryptedTotpSecret != "",
-        site.VerificationStatus, site.CreatedAt);
+        site.VerificationStatus, site.CreatedAt, lockedByPlan, canGenerateTotpCodes && site.EncryptedTotpSecret != "");
 
     public sealed record VaultSiteRequest(
         [Required, StringLength(200)] string Name,
@@ -160,6 +200,7 @@ public sealed class VaultSitesController(ApplicationDbContext dbContext, Applica
         bool ClearTotpSecret = false);
 
     public sealed record VaultSiteSummary(Guid Id, string Name, string LoginUrl, string Origin, string Category,
-        string Description, string AutoFillUsername, bool HasPassword, bool HasTotpSecret, string VerificationStatus, DateTimeOffset CreatedAt);
-    public sealed record VaultSiteCredentials(string Username, string Password, string? TotpCode);
+        string Description, string AutoFillUsername, bool HasPassword, bool HasTotpSecret, string VerificationStatus, DateTimeOffset CreatedAt,
+        bool LockedByPlan = false, bool CanGenerateTotpCode = false);
+    public sealed record VaultSiteCredentials(string Username, string Password, string? TotpCode, bool RequiresProForTotp = false);
 }

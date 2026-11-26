@@ -215,6 +215,13 @@ builder.Services.AddAuthentication(options =>
                         context.Fail("Device has been disabled.");
                         return;
                     }
+                    var subscriptionService = context.HttpContext.RequestServices.GetRequiredService<ISubscriptionService>();
+                    var eligibleDeviceIds = await subscriptionService.GetEligibleDeviceIdsAsync(userId, context.HttpContext.RequestAborted);
+                    if (!eligibleDeviceIds.Contains(deviceId))
+                    {
+                        context.Fail("This device is outside the active subscription plan's trusted-device limit.");
+                        return;
+                    }
                 }
             }
         };

@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using SafePassage.Api.Data;
 using SafePassage.Api.Middleware;
 using SafePassage.Api.Models;
+using SafePassage.Api.Services;
+using SafePassage.Api.Contracts.Subscriptions;
 
 namespace SafePassage.Api.Controllers;
 
@@ -12,7 +14,7 @@ namespace SafePassage.Api.Controllers;
 [SensitiveApplication]
 [ApiController]
 [Route("api/activity")]
-public sealed class ActivityController(ApplicationDbContext dbContext) : ControllerBase
+public sealed class ActivityController(ApplicationDbContext dbContext, ISubscriptionService? subscriptionService = null) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetActivities(CancellationToken cancellationToken)
@@ -21,14 +23,17 @@ public sealed class ActivityController(ApplicationDbContext dbContext) : Control
         if (!Guid.TryParse(claim, out var userId))
             return Unauthorized();
 
+        var entitlements = subscriptionService is null
+            ? new SubscriptionEntitlementsResponse("free", false, 2, 5, 7, false)
+            : await subscriptionService.GetUserEntitlementsAsync(userId, cancellationToken);
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-entitlements.ActivityHistoryDays);
         var logs = await dbContext.ActivityLogs.AsNoTracking()
             .Where(activity => activity.TargetUserId == userId
                 || (activity.TargetUserId == null && activity.UserId == userId))
+            .Where(activity => activity.Timestamp >= cutoff)
+            .OrderByDescending(activity => activity.Timestamp)
+            .Take(entitlements.IsPro ? 250 : 25)
             .ToListAsync(cancellationToken);
-        logs = logs
-            .OrderByDescending(log => log.Timestamp)
-            .Take(25)
-            .ToList();
 
         var result = logs
             .Select(log =>

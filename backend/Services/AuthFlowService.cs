@@ -20,7 +20,8 @@ public sealed class AuthFlowService(
     ILogger<AuthFlowService> logger,
     IHttpContextAccessor? httpContextAccessor = null,
     IMemoryCache? cache = null,
-    IActivationEmailSender? emailSender = null) : IAuthFlowService
+    IActivationEmailSender? emailSender = null,
+    ISubscriptionService? subscriptionService = null) : IAuthFlowService
 {
     private static readonly TimeSpan MfaLifetime = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan LongPollDuration = TimeSpan.FromSeconds(25);
@@ -62,6 +63,9 @@ public sealed class AuthFlowService(
             user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
 
         var policy = await securityPolicyEvaluator.EvaluateAsync(cancellationToken);
+        IReadOnlySet<string>? eligibleDeviceIds = subscriptionService is null
+            ? null
+            : await subscriptionService.GetEligibleDeviceIdsAsync(user.Id, cancellationToken);
         var loginTimestampNow = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         if (request.DeviceSignature is not null
             && request.DeviceSignatureTimestamp is long signatureTimestamp
@@ -74,7 +78,8 @@ public sealed class AuthFlowService(
                 candidate.UserId == user.Id
                 && candidate.DeviceId == request.DeviceId
                 && candidate.Status == DeviceStatus.Active
-                && candidate.TrustStatus == DeviceTrustStatus.Trusted,
+                && candidate.TrustStatus == DeviceTrustStatus.Trusted
+                && (eligibleDeviceIds == null || eligibleDeviceIds.Contains(candidate.DeviceId)),
                 cancellationToken);
 
             if (signingDevice is not null
@@ -129,7 +134,8 @@ public sealed class AuthFlowService(
                 candidate.UserId == user.Id
                 && candidate.DeviceId == request.DeviceId
                 && candidate.Status == DeviceStatus.Active
-                && candidate.TrustStatus == DeviceTrustStatus.Trusted,
+                && candidate.TrustStatus == DeviceTrustStatus.Trusted
+                && (eligibleDeviceIds == null || eligibleDeviceIds.Contains(candidate.DeviceId)),
                 cancellationToken);
 
             if (trustedDevice is not null && DevicePostureEvaluator.Evaluate(trustedDevice, policy).IsCompliant)
@@ -158,6 +164,8 @@ public sealed class AuthFlowService(
                     || candidate.OS.ToLower().StartsWith("android")
                     || candidate.OS.ToLower().StartsWith("ios")))
             .ToListAsync(cancellationToken);
+        if (eligibleDeviceIds is not null)
+            mfaDevices = mfaDevices.Where(candidate => eligibleDeviceIds.Contains(candidate.DeviceId)).ToList();
         var device = mfaDevices
             .OrderByDescending(candidate => candidate.LastActiveDate ?? candidate.RegistrationDate)
             .FirstOrDefault(candidate =>
@@ -257,6 +265,11 @@ public sealed class AuthFlowService(
                 && (device.DeviceType.ToLower() == "mobile" || device.DeviceType.ToLower() == "phone"
                     || device.OS.ToLower().StartsWith("android") || device.OS.ToLower().StartsWith("ios")))
             .ToListAsync(cancellationToken);
+        if (subscriptionService is not null)
+        {
+            var eligibleDeviceIds = await subscriptionService.GetEligibleDeviceIdsAsync(user.Id, cancellationToken);
+            devices = devices.Where(device => eligibleDeviceIds.Contains(device.DeviceId)).ToList();
+        }
         var device = devices.FirstOrDefault();
         if (device is null)
         {
@@ -324,6 +337,9 @@ public sealed class AuthFlowService(
         var device = await dbContext.Devices.SingleOrDefaultAsync(candidate => candidate.Id == session.DeviceId, cancellationToken);
         if (device is null || device.Status != DeviceStatus.Active || device.TrustStatus != DeviceTrustStatus.Trusted)
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
+        if (subscriptionService is not null
+            && !(await subscriptionService.GetEligibleDeviceIdsAsync(session.UserId, cancellationToken)).Contains(device.DeviceId))
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
 
         if (string.IsNullOrWhiteSpace(device.SigningPublicKey))
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceSigningKeyNotRegistered);
@@ -379,6 +395,9 @@ public sealed class AuthFlowService(
         var device = await dbContext.Devices.SingleOrDefaultAsync(candidate => candidate.Id == session.DeviceId, cancellationToken);
         if (device is null || device.Status != DeviceStatus.Active || device.TrustStatus != DeviceTrustStatus.Trusted)
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
+        if (subscriptionService is not null
+            && !(await subscriptionService.GetEligibleDeviceIdsAsync(session.UserId, cancellationToken)).Contains(device.DeviceId))
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
 
         if (string.IsNullOrWhiteSpace(device.SigningPublicKey))
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceSigningKeyNotRegistered);
@@ -423,6 +442,9 @@ public sealed class AuthFlowService(
                 && candidate.TrustStatus == DeviceTrustStatus.Trusted,
             cancellationToken);
         if (device is null)
+            return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
+        if (subscriptionService is not null
+            && !(await subscriptionService.GetEligibleDeviceIdsAsync(user.Id, cancellationToken)).Contains(device.DeviceId))
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
         if (string.IsNullOrWhiteSpace(device.SigningPublicKey))
             return AuthFlowResult<MfaActionResponse>.Failed(AuthFlowFailure.DeviceSigningKeyNotRegistered);
@@ -473,6 +495,9 @@ public sealed class AuthFlowService(
             && candidate.TrustStatus == DeviceTrustStatus.Trusted,
             cancellationToken);
         if (device is null)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
+        if (subscriptionService is not null
+            && !(await subscriptionService.GetEligibleDeviceIdsAsync(userId, cancellationToken)).Contains(device.DeviceId))
             return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.DeviceUnavailable);
 
         if (string.IsNullOrWhiteSpace(device.SigningPublicKey))

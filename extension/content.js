@@ -104,7 +104,9 @@
     title.textContent = 'Sign-in is locked';
     title.style.cssText = 'margin:9px 0 4px;font-size:23px;line-height:1.2;color:#172033;';
     const detail = document.createElement('p');
-    detail.textContent = site.isVerified === false
+    detail.textContent = site.lockedByPlan
+      ? `${site.name} exceeds the Free plan's saved-website limit. Upgrade to Pro or remove another saved website to continue.`
+      : site.isVerified === false
       ? `${site.name} is awaiting Safe Passage verification. Credentials and 2FA cannot be used yet.`
       : `Complete Safe Passage approval and sign in to ${site.name} to unlock this page.`;
     detail.style.cssText = 'margin:8px 0;color:#526078;';
@@ -114,8 +116,8 @@
     gateButton = document.createElement('button');
     gateButton.type = 'button';
     gateButton.style.cssText = 'width:100%;border:0;border-radius:8px;padding:12px;background:#3457d5;color:#fff;font-size:14px;font-weight:700;cursor:pointer;';
-    gateButton.textContent = site.isVerified === false ? 'Waiting for site verification' : (signedIn ? 'Request mobile approval' : 'Sign in to Safe Passage first');
-    gateButton.disabled = site.isVerified === false || !signedIn;
+    gateButton.textContent = site.lockedByPlan ? 'Pro plan required' : site.isVerified === false ? 'Waiting for site verification' : (signedIn ? 'Request mobile approval' : 'Sign in to Safe Passage first');
+    gateButton.disabled = site.lockedByPlan === true || site.isVerified === false || !signedIn;
     manualCode = document.createElement('input');
     manualCode.type = 'text';
     manualCode.inputMode = 'numeric';
@@ -188,6 +190,10 @@
 
   async function requestApproval() {
     if (busy || !site) return;
+    if (site.lockedByPlan) {
+      reportStatus('This saved website exceeds the Free plan limit. Upgrade to Pro or remove another saved website.');
+      return;
+    }
     if (!signedIn) {
       reportStatus('Sign in to Safe Passage in the side panel first.');
       return;
@@ -200,7 +206,9 @@
       const result = await sendMessage({ type: 'AUTHENTICATE_AND_GET_CREDENTIALS', origin });
       mobileApproved = true;
       fillCredentials(result);
-      reportStatus('Approved. Submitting the saved sign-in…');
+      reportStatus(result.requiresProForTotp
+        ? 'Password filled. Authenticator code generation requires Pro.'
+        : 'Approved. Submitting the saved sign-in…');
       if (!result.username && !result.password && !pageState().authInput) {
         reportStatus('Approval succeeded, but no saved credentials are available. Add credentials in the Safe Passage side panel.');
         gateButton.textContent = 'Retry after saving credentials';
@@ -263,6 +271,7 @@
       ensureGate();
       setPageBlocked(true);
       if (!signedIn) reportStatus('Sign in to Safe Passage in the side panel to begin.');
+      else if (site.lockedByPlan) reportStatus('This saved website exceeds the Free plan limit. Upgrade to Pro or remove another saved website.');
       else if (site.isVerified === false) reportStatus('This site has not been verified by an administrator.');
       else if (!mobileApproved) reportStatus('Request approval and approve this sign-in on your trusted device.');
       else {

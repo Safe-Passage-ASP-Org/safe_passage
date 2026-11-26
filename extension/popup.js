@@ -75,7 +75,7 @@ async function refresh() {
       name.textContent = s.name;
       const details = document.createElement('span');
       details.style.cssText = 'display:block;color:#939aa3;font-size:11px;';
-      details.textContent = [s.url || s.origin, s.category, s.verificationStatus, s.hasTotpSecret ? '2FA saved' : ''].filter(Boolean).join(' · ');
+      details.textContent = [s.url || s.origin, s.category, s.verificationStatus, s.lockedByPlan ? 'Pro required' : '', s.hasTotpSecret ? '2FA saved' : ''].filter(Boolean).join(' · ');
       info.append(name, details);
       const del = document.createElement('button');
       del.className = 'danger';
