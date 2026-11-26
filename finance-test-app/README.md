@@ -9,6 +9,15 @@ Company Finance is a fictional finance dashboard used to demonstrate Safe Passag
 3. Select **Launch**. The app asks you to sign in again and approve the request on your trusted mobile device.
 4. After approval, the backend checks the account, app assignment, and device policy. The demo dashboard opens only when the check passes.
 
+Use the seeded demo account:
+
+```text
+Username: demoApp
+Password: demo12345
+```
+
+The account is verified, active, and assigned to Company Finance. On its first run, open Safe Passage Mobile, choose **First time on this phone? Set up device**, and enroll the phone with these same credentials. Then return to Company Finance and sign in; future attempts will ask for approval on that trusted phone.
+
 The app is seeded with its fixed ID `66666666-6666-6666-6666-666666666666`, published in Browse applications, and configured to allow access requests. The API updates its launch URL at startup. Local development uses `http://localhost:5092/finance-demo`; Render uses the Safe Passage web portal URL.
 
 ## Run the companion Expo app locally

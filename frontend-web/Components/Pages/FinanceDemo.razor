@@ -3,6 +3,7 @@
 @implements IDisposable
 @using SafePassage.Web.Services
 @inject AdminApiClient Api
+@inject IConfiguration Configuration
 
 <PageTitle>Company Finance Demo</PageTitle>
 
@@ -44,7 +45,15 @@
             <div class="finance-lock" aria-hidden="true">⌑</div>
             <h1 id="finance-mfa-title">Approve this sign-in</h1>
             <p>Open Safe Passage on your trusted mobile device and approve the Company Finance request. This demo will continue automatically after approval.</p>
-            @if (!string.IsNullOrWhiteSpace(Error)) { <div class="finance-error" role="alert">@Error</div> }
+            @if (!string.IsNullOrWhiteSpace(Error))
+            {
+                <div class="finance-error" role="alert">@Error
+                    @if (Error.Contains("No active mobile device", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <div class="finance-device-setup"><a href="@MobileUrl" target="_blank" rel="noopener noreferrer">Open Safe Passage Mobile</a> and choose <strong>First time on this phone? Set up device</strong>. Then return here and sign in again.</div>
+                    }
+                </div>
+            }
             @if (!string.IsNullOrWhiteSpace(Notice)) { <p class="finance-notice" role="status">@Notice</p> }
             <div class="finance-pending"><span class="finance-spinner" aria-hidden="true"></span><span><strong>Waiting for mobile approval</strong><small>Keep this page open while you approve the request.</small></span></div>
             <button class="finance-link-button" type="button" @onclick="ResendApprovalAsync" disabled="@Busy">@(Busy ? "Sending…" : "Resend approval request")</button>
@@ -58,7 +67,15 @@
             <div class="finance-lock" aria-hidden="true">$</div>
             <h1 id="finance-title">Confidential<br />finance data.</h1>
             <p>This demo dashboard uses fictional data. Sign in with a Safe Passage user account, then approve the sign-in on your trusted mobile device.</p>
-            @if (!string.IsNullOrWhiteSpace(Error)) { <div class="finance-error" role="alert">@Error</div> }
+            @if (!string.IsNullOrWhiteSpace(Error))
+            {
+                <div class="finance-error" role="alert">@Error
+                    @if (Error.Contains("No active mobile device", StringComparison.OrdinalIgnoreCase))
+                    {
+                        <div class="finance-device-setup"><a href="@MobileUrl" target="_blank" rel="noopener noreferrer">Open Safe Passage Mobile</a> and choose <strong>First time on this phone? Set up device</strong>. Then return here and sign in again.</div>
+                    }
+                </div>
+            }
             @if (!string.IsNullOrWhiteSpace(Notice)) { <div class="finance-notice" role="status">@Notice</div> }
             <form class="finance-login" @onsubmit="SignInAsync" @onsubmit:preventDefault="true">
                 <label for="finance-username">Username or email</label>
@@ -75,6 +92,7 @@
 
 <style>
     .finance-demo{--fd-ink:#172b24;--fd-muted:#708077;--fd-line:#e0e8e2;--fd-green:#155c47;min-height:100vh;padding:0 24px 28px;background:#f2f6f2;color:var(--fd-ink);font-family:Inter,system-ui,-apple-system,"Segoe UI",sans-serif}.finance-header{max-width:1080px;height:76px;margin:auto;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--fd-line)}.finance-brand{display:flex;align-items:center;gap:10px;color:inherit;text-decoration:none}.finance-brand>span:last-child{display:grid;gap:2px}.finance-brand strong{font-size:14px}.finance-brand small{color:var(--fd-muted);font-size:8px;letter-spacing:1.4px}.finance-mark{width:35px;height:35px;display:grid;place-items:center;border-radius:8px;background:#155c47;color:white;font-weight:750;font-size:12px}.finance-protected{display:flex;align-items:center;gap:7px;color:#52655a;font-size:10px;font-weight:650}.finance-protected i,.finance-activity article>i{width:8px;height:8px;border-radius:50%;background:#20815e}.finance-auth-card{width:min(100%,440px);margin:60px auto 0;padding:35px 38px;border:1px solid var(--fd-line);border-radius:12px;background:#fff;box-shadow:0 12px 35px rgba(22,54,37,.07)}.finance-kicker{color:#268268;font-size:9px;font-weight:750;letter-spacing:1.5px}.finance-lock{width:48px;height:48px;margin:24px 0 19px;display:grid;place-items:center;border-radius:12px;background:#e7f2eb;color:#155c47;font-size:22px;font-weight:700}.finance-auth-card h1,.finance-workspace h1{margin:0;color:#172b24;font-size:28px;line-height:1.15;letter-spacing:-.6px}.finance-auth-card>p{margin:13px 0 22px;color:#66746b;font-size:12px;line-height:1.7}.finance-login{display:grid;gap:8px}.finance-login label{margin-top:8px;color:#33443a;font-size:10px;font-weight:700}.finance-login input{width:100%;height:42px;padding:0 12px;border:1px solid #d6dfd8;border-radius:6px;background:#fff;color:#172b24;font:inherit;font-size:12px}.finance-login input:focus{outline:2px solid #a9d8c2;border-color:#268268}.finance-primary,.finance-secondary{min-height:42px;padding:0 14px;border-radius:6px;font:inherit;font-size:11px;font-weight:700;cursor:pointer}.finance-primary{display:flex;justify-content:center;align-items:center;gap:9px;margin-top:11px;border:0;background:#155c47;color:#fff}.finance-primary:hover:not(:disabled){background:#104a39}.finance-primary:disabled{opacity:.65;cursor:wait}.finance-secondary{border:1px solid #d3ddd5;background:#fff;color:#33443a}.finance-secondary:hover{background:#f5f8f5}.finance-full{width:100%;margin-top:10px}.finance-login-foot{margin:16px 0 0!important;font-size:10px!important}.finance-error,.finance-notice{padding:11px 12px;border-radius:6px;font-size:11px;line-height:1.5}.finance-error{border:1px solid #f0c8c2;background:#fff1ef;color:#9d332b}.finance-notice{border:1px solid #cfe3d5;background:#eff8f1;color:#236344}.finance-pending{display:flex;align-items:center;gap:11px;margin:22px 0 16px;padding:14px;border:1px solid #cfe3d5;border-radius:7px;background:#f2f8f3}.finance-pending>span:last-child{display:grid;gap:4px}.finance-pending strong{color:#254536;font-size:11px}.finance-pending small{color:#718077;font-size:10px}.finance-spinner{width:18px;height:18px;border:2px solid #c6ddd0;border-top-color:#268268;border-radius:50%;animation:finance-spin .8s linear infinite}@@keyframes finance-spin{to{transform:rotate(360deg)}}.finance-link-button{width:100%;padding:9px;border:0;background:none;color:#1f755c;font:inherit;font-size:10px;font-weight:700;cursor:pointer}.finance-link-button:disabled{opacity:.6;cursor:wait}.finance-workspace{max-width:1000px;margin:44px auto 0}.finance-workspace-head{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-bottom:22px}.finance-workspace-head h1{margin-top:7px}.finance-workspace-head p{margin:5px 0 0;color:var(--fd-muted);font-size:11px}.finance-approved{display:flex;align-items:center;gap:11px;padding:14px 16px;border:1px solid #cce2d2;border-radius:8px;background:#edf7ef}.finance-approved-check{width:29px;height:29px;display:grid;place-items:center;border-radius:50%;background:#d8eddd;color:#167255;font-size:15px;font-weight:800}.finance-approved>span:nth-child(2){display:grid;gap:3px;flex:1}.finance-approved strong{font-size:11px;color:#254536}.finance-approved small{font-size:10px;color:#6e8174}.finance-approved>b{color:#237452;font-size:8px;letter-spacing:1px}.finance-demo-notice{margin:16px 0 9px;color:#77867c;font-size:9px}.finance-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.finance-metrics article{min-height:112px;display:flex;flex-direction:column;align-items:flex-start;gap:8px;padding:15px;border:1px solid var(--fd-line);border-radius:8px;background:#fff}.finance-metrics article>span{color:#77867c;font-size:10px}.finance-metrics article>strong{color:#20372b;font-size:22px;letter-spacing:-.4px}.finance-metrics article>small{font-size:9px;font-weight:650}.finance-metrics .positive{color:#1d805a}.finance-metrics .neutral{color:#9a7136}.finance-activity{margin-top:16px;border:1px solid var(--fd-line);border-radius:8px;background:#fff}.finance-activity-heading{display:flex;align-items:center;justify-content:space-between;padding:15px 17px;border-bottom:1px solid #edf1ed}.finance-activity-heading h2{margin:0;color:#20372b;font-size:13px}.finance-activity-heading span{color:#89968d;font-size:8px;letter-spacing:1px}.finance-activity article{display:flex;align-items:center;gap:11px;padding:13px 17px;border-bottom:1px solid #f0f3f0}.finance-activity article:last-child{border-bottom:0}.finance-activity article>i{flex:none}.finance-activity article>i.muted{background:#b4c1b8}.finance-activity article>div{display:grid;gap:4px;flex:1}.finance-activity article strong{color:#34473a;font-size:10px}.finance-activity article small{color:#89958c;font-size:9px}.finance-activity article>b{color:#3a5544;font-size:10px}.finance-footer{max-width:1000px;margin:24px auto 0;color:#91a097;font-size:9px;text-align:center}
+    .finance-device-setup{margin-top:7px;line-height:1.6}.finance-device-setup a{color:#155c47;font-weight:700}
     @@media(max-width:700px){.finance-demo{padding:0 15px 22px}.finance-header{height:64px}.finance-auth-card{margin-top:28px;padding:27px 22px}.finance-workspace{margin-top:26px}.finance-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.finance-approved{align-items:flex-start}.finance-approved>b{padding-top:4px}}
 </style>
 
@@ -90,6 +108,7 @@
     private bool MfaPending;
     private bool Unlocked;
     private CancellationTokenSource? PollCancellation;
+    private string MobileUrl => Configuration["Mobile:PublicUrl"] ?? "https://safepassage-mobile.vercel.app/";
 
     private async Task SignInAsync()
     {

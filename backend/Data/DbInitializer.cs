@@ -14,6 +14,7 @@ public static class DbInitializer
     public static readonly Guid MobileApplicationId = Guid.Parse("44444444-4444-4444-4444-444444444444");
     public static readonly Guid AdminApplicationId = Guid.Parse("55555555-5555-5555-5555-555555555555");
     public static readonly Guid FinanceTestApplicationId = Guid.Parse("66666666-6666-6666-6666-666666666666");
+    public static readonly Guid FinanceDemoUserId = Guid.Parse("77777777-7777-7777-7777-777777777777");
 
     public static void InitializeProductionBaseline(
         ApplicationDbContext dbContext,
@@ -25,6 +26,7 @@ public static class DbInitializer
         EnsureApplication(dbContext, MobileApplicationId, "Safe Passage Mobile", "Safe Passage mobile client.");
         EnsureApplication(dbContext, AdminApplicationId, "Safe Passage Admin", "Safe Passage administration portal.");
         EnsureFinanceDemoApplication(dbContext, financeDemoLaunchUrl);
+        EnsureFinanceDemoUser(dbContext, passwordHasher);
         EnsurePolicy(
             dbContext,
             "Require MFA and trusted devices",
@@ -66,6 +68,7 @@ public static class DbInitializer
         EnsureApplication(dbContext, MobileApplicationId, "Safe Passage Mobile", "Safe Passage mobile client.");
         EnsureApplication(dbContext, AdminApplicationId, "Safe Passage Admin", "Safe Passage administration portal.");
         EnsureFinanceDemoApplication(dbContext, financeDemoLaunchUrl);
+        EnsureFinanceDemoUser(dbContext, passwordHasher);
         EnsurePolicy(
             dbContext,
             "Require MFA and trusted devices",
@@ -397,6 +400,58 @@ public static class DbInitializer
         application.Category = "Finance";
         application.IsPublished = true;
         application.AllowAccessRequests = true;
+        dbContext.SaveChanges();
+    }
+
+    private static void EnsureFinanceDemoUser(ApplicationDbContext dbContext, IPasswordHasher<User> passwordHasher)
+    {
+        const string username = "demoApp";
+        const string email = "demoapp@example.invalid";
+        var user = dbContext.Users.SingleOrDefault(candidate => candidate.Id == FinanceDemoUserId)
+            ?? dbContext.Users.SingleOrDefault(candidate => candidate.Username.ToUpper() == username.ToUpper());
+
+        if (user is null)
+        {
+            if (dbContext.Users.Any(candidate => candidate.Email.ToUpper() == email.ToUpper()))
+                return;
+
+            user = new User
+            {
+                Id = FinanceDemoUserId,
+                Username = username,
+                Email = email,
+                FullName = "Company Finance Demo",
+                Role = "User",
+                IsActive = true,
+                IsEmailVerified = true
+            };
+            dbContext.Users.Add(user);
+        }
+        else if (user.Id != FinanceDemoUserId)
+        {
+            // Never take over a separately registered account with the demo username.
+            return;
+        }
+
+        user.Username = username;
+        user.Email = email;
+        user.FullName = "Company Finance Demo";
+        user.Role = "User";
+        user.IsActive = true;
+        user.IsEmailVerified = true;
+        user.PasswordHash = passwordHasher.HashPassword(user, "demo12345");
+
+        if (dbContext.Applications.Any(application => application.Id == FinanceTestApplicationId)
+            && !dbContext.ApplicationUserAccesses.Any(access =>
+                access.ApplicationId == FinanceTestApplicationId && access.UserId == user.Id))
+        {
+            dbContext.ApplicationUserAccesses.Add(new ApplicationUserAccess
+            {
+                ApplicationId = FinanceTestApplicationId,
+                UserId = user.Id
+            });
+        }
+
         dbContext.SaveChanges();
     }
 
