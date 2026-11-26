@@ -281,6 +281,11 @@ namespace SafePassage.Api.Data.Migrations
                     b.Property<DateTimeOffset?>("UsedAt")
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("FailedAttempts")
+                        .ValueGeneratedOnAdd()
+                        .HasDefaultValue(0)
+                        .HasColumnType("INTEGER");
+
                     b.Property<Guid>("UserId")
                         .HasColumnType("TEXT");
 

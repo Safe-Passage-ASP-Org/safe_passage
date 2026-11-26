@@ -615,8 +615,10 @@ using (var scope = app.Services.CreateScope())
                     "TokenHash" character varying(64) NOT NULL,
                     "CreatedAt" timestamp with time zone NOT NULL,
                     "ExpiresAt" timestamp with time zone NOT NULL,
-                    "UsedAt" timestamp with time zone NULL
+                    "UsedAt" timestamp with time zone NULL,
+                    "FailedAttempts" integer NOT NULL DEFAULT 0
                 );
+                ALTER TABLE "AdminLoginTokens" ADD COLUMN IF NOT EXISTS "FailedAttempts" integer NOT NULL DEFAULT 0;
                 CREATE UNIQUE INDEX IF NOT EXISTS "IX_AdminLoginTokens_TokenHash"
                     ON "AdminLoginTokens" ("TokenHash");
                 CREATE INDEX IF NOT EXISTS "IX_AdminLoginTokens_UserId_ExpiresAt"

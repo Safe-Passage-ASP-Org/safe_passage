@@ -1,5 +1,4 @@
 @page "/login"
-@page "/admin-login"
 @layout AuthLayout
 @using System.ComponentModel.DataAnnotations
 @using Microsoft.AspNetCore.WebUtilities
@@ -11,7 +10,7 @@
 @inject IJSRuntime JS
 @implements IDisposable
 
-<PageTitle>@(IsAdminLogin ? "Admin Login - Safe Passage" : "Sign in - Safe Passage")</PageTitle>
+<PageTitle>Sign in - Safe Passage</PageTitle>
 
 <main class="signup-page">
     <a class="signup-brand" href="/" aria-label="Safe Passage home">
@@ -19,7 +18,7 @@
         <span>Safe Passage</span>
     </a>
 
-    @if (!IsAdminLogin && !MfaPending && !ExternalCompleting)
+    @if (!MfaPending && !ExternalCompleting)
     {
         <a class="admin-login-link" href="/admin-login"><span aria-hidden="true">→</span> Admin Login</a>
     }
@@ -55,23 +54,20 @@
                 <p class="signup-subtitle" role="status">@ResendNotice</p>
             }
             <button class="signup-button" @onclick="ResendApprovalAsync" disabled="@Resending">@(Resending ? "Resending…" : "Resend approval request")</button>
-            @if (!IsAdminLogin)
+            <button class="login-link" type="button" @onclick="SendMfaOtpAsync" disabled="@SendingOtp">
+                @(SendingOtp ? "Sending OTP…" : "Send 6-digit OTP to email instead")
+            </button>
+            @if (MfaOtpSent)
             {
-                <button class="login-link" type="button" @onclick="SendMfaOtpAsync" disabled="@SendingOtp">
-                    @(SendingOtp ? "Sending OTP…" : "Send 6-digit OTP to email instead")
-                </button>
-                @if (MfaOtpSent)
-                {
-                    <div style="margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0;">
-                        <label for="mfa-otp-code">Enter 6-digit Email OTP</label>
-                        <div style="display:flex;gap:8px;margin-top:6px;">
-                            <InputText id="mfa-otp-code" @bind-Value="MfaOtpCode" maxlength="6" placeholder="123456" disabled="@VerifyingOtp" />
-                            <button type="button" class="signup-button" style="width:auto;margin:0;padding:0 16px;" @onclick="VerifyMfaOtpAsync" disabled="@VerifyingOtp">
-                                @(VerifyingOtp ? "Verifying…" : "Verify")
-                            </button>
-                        </div>
+                <div style="margin-top:14px;padding-top:14px;border-top:1px solid #e2e8f0;">
+                    <label for="mfa-otp-code">Enter 6-digit Email OTP</label>
+                    <div style="display:flex;gap:8px;margin-top:6px;">
+                        <InputText id="mfa-otp-code" @bind-Value="MfaOtpCode" maxlength="6" placeholder="123456" disabled="@VerifyingOtp" />
+                        <button type="button" class="signup-button" style="width:auto;margin:0;padding:0 16px;" @onclick="VerifyMfaOtpAsync" disabled="@VerifyingOtp">
+                            @(VerifyingOtp ? "Verifying…" : "Verify")
+                        </button>
                     </div>
-                }
+                </div>
             }
             <button class="login-link" @onclick="CancelMfa">Cancel sign-in</button>
         }
@@ -85,41 +81,11 @@
                 <strong>Connecting to Safe Passage</strong>
             </div>
         }
-        else if (IsAdminLogin)
-        {
-            <p class="signup-eyebrow">ADMINISTRATOR ACCESS</p>
-            <h1 id="login-title">Verify your email.</h1>
-            <p class="signup-subtitle">Enter the verified email address for your administrator account. We’ll send a one-time sign-in link. You’ll still need to approve the sign-in on your trusted mobile device.</p>
-            @if (AdminLinkVerifying)
-            {
-                <div class="login-pending" role="status" aria-live="polite" style="margin-bottom:14px;">
-                    <span class="pending-indicator"></span>
-                    <strong>Verifying your email link and starting mobile approval…</strong>
-                </div>
-            }
-            @if (!string.IsNullOrWhiteSpace(Error))
-            {
-                <div class="signup-error" role="alert">@Error</div>
-            }
-            @if (AdminEmailSent)
-            {
-                <div class="signup-notice" role="status">If this address belongs to an active administrator, a sign-in link will be sent. Check your inbox and spam folder.</div>
-            }
-            <EditForm Model="AdminEmailForm" OnValidSubmit="RequestAdminEmailLinkAsync">
-                <DataAnnotationsValidator />
-                <label for="admin-email">Administrator email address</label>
-                <InputText id="admin-email" type="email" @bind-Value="AdminEmailForm.Email" autocomplete="email" disabled="@AdminEmailRequestBusy" placeholder="you@gmail.com" />
-                <ValidationMessage For="() => AdminEmailForm.Email" />
-                <InteractiveSubmitButton Busy="@AdminEmailRequestBusy" BusyText="Sending link…">Send verification link <span aria-hidden="true">→</span></InteractiveSubmitButton>
-            </EditForm>
-            <a class="login-link" href="@AdminOtpPageUrl" target="_top">Other verification method</a>
-            <p class="signup-switch"><a href="/login">← User Login</a></p>
-        }
         else
         {
-            <p class="signup-eyebrow">@(IsAdminLogin ? "ADMINISTRATOR ACCESS" : "WELCOME BACK")</p>
-            <h1 id="login-title">@(IsAdminLogin ? "Admin sign in." : "Sign in to your account.")</h1>
-            <p class="signup-subtitle">@(IsAdminLogin ? "Sign in with an administrator account to manage Safe Passage." : "Use your email or username and password to continue securely.")</p>
+            <p class="signup-eyebrow">WELCOME BACK</p>
+            <h1 id="login-title">Sign in to your account.</h1>
+            <p class="signup-subtitle">Use your email or username and password to continue securely.</p>
             @if (!string.IsNullOrWhiteSpace(Error))
             {
                 <div class="signup-error" role="alert">
@@ -155,7 +121,7 @@
                 <ValidationMessage For="() => Credentials.Password" />
                 <InteractiveSubmitButton Busy="@Busy" BusyText="Connecting to server, please wait…">Sign in <span aria-hidden="true">→</span></InteractiveSubmitButton>
             </EditForm>
-            @if (!IsAdminLogin && (FacebookEnabled || GitHubEnabled || GitLabEnabled))
+            @if (FacebookEnabled || GitHubEnabled || GitLabEnabled)
             {
                 <div class="social-divider"><span>or</span></div>
                 @if (FacebookEnabled)
@@ -204,29 +170,21 @@
     private string GitHubSignInUrl = "";
     private bool GitLabEnabled;
     private string GitLabSignInUrl = "";
-    private readonly AdminEmailLoginForm AdminEmailForm = new();
-    private bool AdminEmailSent;
-    private bool AdminEmailRequestBusy;
     private bool SendingOtp;
     private bool MfaOtpSent;
     private bool VerifyingOtp;
     private string MfaOtpCode = "";
-    private bool AdminLinkVerifying;
-    private bool AdminEmailLinkExchangeStarted;
-    private bool IsAdminLogin => Navigation.ToBaseRelativePath(Navigation.Uri).StartsWith("admin-login", StringComparison.OrdinalIgnoreCase);
-    private string AdminOtpPageUrl => "/admin-otp?email=" + Uri.EscapeDataString(AdminEmailForm.Email.Trim());
 
     protected override void OnInitialized()
     {
         Navigation.LocationChanged += HandleLocationChanged;
         var query = QueryHelpers.ParseQuery(new Uri(Navigation.Uri).Query);
         if (query.TryGetValue("returnUrl", out var value)) OidcReturnUrl = value.ToString();
-        if (IsAdminLogin && query.TryGetValue("email", out var adminEmail)) AdminEmailForm.Email = adminEmail.ToString();
 
         if (query.TryGetValue("facebookError", out var error))
             Error = error.ToString() switch
             {
-                "admin_email_required" => "Administrator accounts must use Admin Login, verify their email, then approve on a trusted mobile device.",
+                "admin_email_required" => "Administrator accounts must use Admin Login and enter the emailed OTP.",
                 "email_required" => "Facebook did not provide an email address. Allow email access and try again.",
                 "account_unavailable" => "No active Safe Passage account matched this Facebook account. Sign in with your account first or contact an administrator.",
                 "mfa_device_required" => "Enroll a trusted mobile device before using Facebook sign-in.",
@@ -238,7 +196,7 @@
         else if (query.TryGetValue("githubError", out var githubError))
             Error = githubError.ToString() switch
             {
-                "admin_email_required" => "Administrator accounts must use Admin Login, verify their email, then approve on a trusted mobile device.",
+                "admin_email_required" => "Administrator accounts must use Admin Login and enter the emailed OTP.",
                 "email_required" => "GitHub did not return a verified primary email. Verify an email address in GitHub settings, then try again.",
                 "account_unavailable" => "No active Safe Passage account matched this GitHub email. Sign in with your account first or contact an administrator.",
                 "mfa_device_required" => "Enroll a trusted mobile device before using GitHub sign-in.",
@@ -251,7 +209,7 @@
         else if (query.TryGetValue("gitlabError", out var gitlabError))
             Error = gitlabError.ToString() switch
             {
-                "admin_email_required" => "Administrator accounts must use Admin Login, verify their email, then approve on a trusted mobile device.",
+                "admin_email_required" => "Administrator accounts must use Admin Login and enter the emailed OTP.",
                 "email_required" => "GitLab did not provide an email address. Check your GitLab profile email visibility and try again.",
                 "account_unavailable" => "No active Safe Passage account matched this GitLab account. Sign in with your account first or contact an administrator.",
                 "mfa_device_required" => "Enroll a trusted mobile device before using GitLab sign-in.",
@@ -303,39 +261,6 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (IsAdminLogin && !AdminEmailLinkExchangeStarted)
-        {
-            AdminEmailLinkExchangeStarted = true;
-            string? emailToken = null;
-            try { emailToken = await JS.InvokeAsync<string?>("safePassageAuthSession.getAdminEmailToken"); }
-            catch (JSException) { }
-            if (!string.IsNullOrWhiteSpace(emailToken))
-            {
-                try { await JS.InvokeVoidAsync("safePassageAuthSession.replaceUrl", "/admin-login"); }
-                catch (JSException) { }
-                await ClearPendingMfaAsync();
-                Busy = true;
-                AdminLinkVerifying = true;
-                Error = "";
-                await InvokeAsync(StateHasChanged);
-                try
-                {
-                    var result = await Api.CompleteAdminEmailLinkAsync(emailToken);
-                    await SavePendingMfaAsync(result.SessionToken!);
-                    Error = "";
-                    await ContinueLoginAsync(result);
-                }
-                catch (Exception exception) { Error = exception.Message; }
-                finally
-                {
-                    Busy = false;
-                    AdminLinkVerifying = false;
-                    await InvokeAsync(StateHasChanged);
-                }
-                return;
-            }
-        }
-
         if (ExternalTicketExchangeStarted)
             return;
 
@@ -402,20 +327,6 @@
         }
         catch (Exception exception) { Error = exception.Message; }
         finally { Busy = false; }
-    }
-
-    private async Task RequestAdminEmailLinkAsync()
-    {
-        AdminEmailRequestBusy = true;
-        Error = "";
-        AdminEmailSent = false;
-        try
-        {
-            await Api.RequestAdminEmailLinkAsync(AdminEmailForm.Email.Trim());
-            AdminEmailSent = true;
-        }
-        catch (Exception exception) { Error = exception.Message; }
-        finally { AdminEmailRequestBusy = false; }
     }
 
     private async Task SendMfaOtpAsync()
@@ -539,17 +450,11 @@
 
     private async Task ContinueAfterAuthenticationAsync()
     {
-        if (!IsAdminLogin && Api.IsAdministrator)
+        if (Api.IsAdministrator)
         {
             await JS.InvokeVoidAsync("safePassageAppearance.reset");
             Api.SignOut();
-            throw new InvalidOperationException("Administrator accounts must use Admin Login, verify their email, then approve the request on a trusted mobile device.");
-        }
-        if (IsAdminLogin && !Api.IsAdministrator)
-        {
-            await JS.InvokeVoidAsync("safePassageAppearance.reset");
-            Api.SignOut();
-            throw new InvalidOperationException("This account does not have administrator access. Use User Login instead.");
+            throw new InvalidOperationException("Administrators must use Admin Login and verify the emailed OTP.");
         }
         if (!string.IsNullOrWhiteSpace(OidcReturnUrl))
         {
@@ -597,7 +502,7 @@
         }
     }
 
-    private string MfaStorageMode => IsAdminLogin ? "admin" : "user";
+    private const string MfaStorageMode = "user";
 
     private async Task<string?> GetPendingMfaAsync()
     {
@@ -633,9 +538,4 @@
         [Required, StringLength(1024, MinimumLength = 1)] public string Password { get; set; } = "";
     }
 
-    private sealed class AdminEmailLoginForm
-    {
-        [Required, EmailAddress, StringLength(320)]
-        public string Email { get; set; } = "";
-    }
 }
