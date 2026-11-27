@@ -44,11 +44,18 @@ public sealed class AuthFlowService(
             user?.PasswordHash ?? _dummyPasswordHash,
             request.Password);
 
-        if (user is null || !user.IsActive || verification == PasswordVerificationResult.Failed)
+        if (user is null || verification == PasswordVerificationResult.Failed)
         {
             AddActivity(user?.Id, "Login", "Authentication", ActivityLogStatus.Denied);
             await dbContext.SaveChangesAsync(cancellationToken);
             return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
+        }
+
+        if (!user.IsActive)
+        {
+            AddActivity(user.Id, "Login", "Account suspended or banned", ActivityLogStatus.Denied);
+            await dbContext.SaveChangesAsync(cancellationToken);
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.AccountSuspended);
         }
 
         if (request.WebUserPortal && IsAdministrator(user.Role))
@@ -227,7 +234,10 @@ public sealed class AuthFlowService(
         string provider,
         CancellationToken cancellationToken)
     {
-        if (!user.IsActive || !user.IsEmailVerified)
+        if (!user.IsActive)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.AccountSuspended);
+
+        if (!user.IsEmailVerified)
             return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.UserUnavailable);
 
         if (IsAdministrator(user.Role))
@@ -302,7 +312,10 @@ public sealed class AuthFlowService(
         User user,
         CancellationToken cancellationToken)
     {
-        if (!user.IsActive || !user.IsEmailVerified || !IsAdministrator(user.Role))
+        if (!user.IsActive)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.AccountSuspended);
+
+        if (!user.IsEmailVerified || !IsAdministrator(user.Role))
             return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.UserUnavailable);
 
         var devices = await dbContext.Devices
