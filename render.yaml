@@ -36,8 +36,46 @@ services:
         sync: false
       - key: Cors__AllowedOrigins__0
         sync: false
+      - key: SubscriptionExpirationReminder__Enabled
+        value: "false"
       - key: FinanceDemo__LaunchUrl
         value: https://safe-passage-web.onrender.com/finance-demo
+
+  - type: cron
+    name: safepassage-subscription-reminders
+    runtime: docker
+    branch: development
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: .
+    dockerCommand: dotnet SafePassage.Api.dll --run-subscription-expiration-reminders
+    schedule: "0 2 * * *"
+    plan: free
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: Database__Provider
+        value: Postgres
+      - key: ConnectionStrings__DefaultConnection
+        fromService:
+          name: safepassage-api
+          type: web
+          envVarKey: ConnectionStrings__DefaultConnection
+      - key: Brevo__ApiKey
+        fromService:
+          name: safepassage-api
+          type: web
+          envVarKey: Brevo__ApiKey
+      - key: Brevo__FromAddress
+        fromService:
+          name: safepassage-api
+          type: web
+          envVarKey: Brevo__FromAddress
+      - key: Frontend__BaseUrl
+        value: https://safe-passage-web.onrender.com
+      - key: SubscriptionExpirationReminder__Enabled
+        value: "true"
+      - key: SubscriptionExpirationReminder__LeadTimeDays
+        value: "7"
 
   - type: web
     name: safepassage-web-admin
