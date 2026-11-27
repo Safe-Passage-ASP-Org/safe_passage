@@ -34,7 +34,8 @@ public sealed class UserApplicationsController(ApplicationDbContext dbContext) :
                 application.LaunchUrl,
                 application.Category,
                 application.AutoFillUsername,
-                !string.IsNullOrEmpty(application.EncryptedAutoFillPassword)))
+                !string.IsNullOrEmpty(application.EncryptedAutoFillPassword),
+                application.Id == DbInitializer.FinanceTestApplicationId))
             .ToListAsync(cancellationToken);
 
         return Ok(applications);
@@ -162,7 +163,15 @@ public sealed class UserApplicationsController(ApplicationDbContext dbContext) :
         });
     }
 
-public sealed record AccessibleApplication(Guid Id, string Name, string Description, string LaunchUrl, string Category, string AutoFillUsername, bool HasAutoFillPassword);
+public sealed record AccessibleApplication(
+    Guid Id,
+    string Name,
+    string Description,
+    string LaunchUrl,
+    string Category,
+    string AutoFillUsername,
+    bool HasAutoFillPassword,
+    bool UsesSafePassageNativeAuthentication = false);
     public sealed record CatalogApplication(Guid Id, string Name, string Description, string LaunchUrl, bool IsAssigned, bool AllowAccessRequests, string? RequestStatus);
     public sealed record MyAccessRequest(Guid Id, Guid ApplicationId, string ApplicationName, string Status, string Reason, DateTimeOffset RequestedAt, DateTimeOffset? ReviewedAt, string? DecisionNote);
     public sealed record AccessRequestSubmission(string? Reason);

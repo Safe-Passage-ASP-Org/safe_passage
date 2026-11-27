@@ -203,7 +203,7 @@
     gateButton.textContent = 'Waiting for mobile approval…';
     reportStatus('Approve this sign-in on your trusted Safe Passage device.');
     try {
-      const result = await sendMessage({ type: 'AUTHENTICATE_AND_GET_CREDENTIALS', origin });
+      const result = await sendMessage({ type: 'AUTHENTICATE_AND_GET_CREDENTIALS', origin, pageUrl: location.href });
       mobileApproved = true;
       fillCredentials(result);
       reportStatus(result.requiresProForTotp
@@ -234,7 +234,7 @@
     loadingCredentials = true;
     lastCredentialAttempt = Date.now();
     try {
-      const result = await sendMessage({ type: 'GET_APPROVED_CREDENTIALS', origin });
+      const result = await sendMessage({ type: 'GET_APPROVED_CREDENTIALS', origin, pageUrl: location.href });
       fillCredentials(result);
       if (submitCurrentAuthStep()) reportStatus('Submitting saved credentials…');
     } catch (error) { reportStatus(error.message); }
@@ -248,7 +248,7 @@
     loadingTotp = true;
     lastTotpAttempt = Date.now();
     try {
-      const result = await sendMessage({ type: 'GET_CURRENT_TOTP', origin });
+      const result = await sendMessage({ type: 'GET_CURRENT_TOTP', origin, pageUrl: location.href });
       if (result.totpCode) {
         fillCredentials({ totpCode: result.totpCode });
         submitCurrentAuthStep();
@@ -291,7 +291,7 @@
   }
 
   function checkSite() {
-    chrome.runtime.sendMessage({ type: 'CHECK_ORIGIN', origin }, (response) => {
+    chrome.runtime.sendMessage({ type: 'CHECK_ORIGIN', origin, pageUrl: location.href }, (response) => {
       if (chrome.runtime.lastError || !response?.matched) {
         site = undefined;
         mobileApproved = false;
