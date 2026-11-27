@@ -419,9 +419,29 @@ public sealed class AdminApiClient(HttpClient http)
         await EnsureSuccessAsync(response, cancellationToken);
     }
 
-    public async Task<int> SendPromotionAsync(string title, string message, string? href, CancellationToken cancellationToken = default)
+    public async Task<List<NotificationGroup>> GetNotificationGroupsAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<NotificationGroup>>("api/notifications/groups", cancellationToken) ?? [];
+
+    public async Task<List<NotificationRecipient>> SearchNotificationRecipientsAsync(
+        string search,
+        CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<NotificationRecipient>>(
+            $"api/notifications/recipients?search={Uri.EscapeDataString(search)}",
+            cancellationToken) ?? [];
+
+    public async Task<int> SendPromotionAsync(
+        string title,
+        string message,
+        string? href,
+        string audience,
+        Guid? groupId,
+        Guid? userId,
+        CancellationToken cancellationToken = default)
     {
-        using var response = await http.PostAsJsonAsync("api/notifications/promotions", new { title, message, href }, cancellationToken);
+        using var response = await http.PostAsJsonAsync(
+            "api/notifications/promotions",
+            new { title, message, href, audience, groupId, userId },
+            cancellationToken);
         if (!response.IsSuccessStatusCode)
             await EnsureSuccessAsync(response, cancellationToken);
         var result = await response.Content.ReadFromJsonAsync<PromotionResult>(cancellationToken: cancellationToken)
@@ -826,6 +846,8 @@ public sealed record AdminUserDetails(AdminUser User, string? BackupEmail, List<
 public sealed record AdminUserSavedSite(Guid Id, string Name, string LoginUrl, string Category, string Description,
     string VerificationStatus, DateTimeOffset CreatedAt, DateTimeOffset? VerifiedAt, bool HasPassword, bool HasTotpSecret);
 public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount, List<Guid> MemberUserIds);
+public sealed record NotificationGroup(Guid Id, string Name, int MemberCount);
+public sealed record NotificationRecipient(Guid Id, string Username, string Email, string? FullName);
 public sealed class AdminGroupForm
 {
     public string Name { get; set; } = "";

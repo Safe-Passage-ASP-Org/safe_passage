@@ -16,8 +16,53 @@
 {
     <section class="sp-card promotion-card" aria-labelledby="promotion-title">
         <h2 id="promotion-title">Send a promotion or announcement</h2>
-        <p>Send a message to all active non-admin users. It appears in their inbox and on registered mobile devices.</p>
+        <p>Choose everyone, a group, or search for an active member. Messages appear in the recipient’s inbox and on their registered mobile devices.</p>
         <form @onsubmit="SendPromotionAsync" @onsubmit:preventDefault>
+            <label for="promotion-audience">Recipients</label>
+            <select id="promotion-audience" @bind="PromotionAudience">
+                <option value="All">All active users</option>
+                <option value="Group">A group</option>
+                <option value="User">A specific member</option>
+            </select>
+            @if (PromotionAudience == "Group")
+            {
+                <label for="promotion-group-search">Search groups</label>
+                <input id="promotion-group-search" type="search" @bind="GroupSearch" @bind:event="oninput" placeholder="Search group names" />
+                <label for="promotion-group">Group</label>
+                <select id="promotion-group" @bind="SelectedGroupId">
+                    <option value="">Choose a group</option>
+                    @foreach (var group in FilteredGroups)
+                    {
+                        <option value="@group.Id">@group.Name (@group.MemberCount members)</option>
+                    }
+                </select>
+                @if (FilteredGroups.Count == 0)
+                {
+                    <span class="promotion-feedback">No groups match this search.</span>
+                }
+            }
+            else if (PromotionAudience == "User")
+            {
+                <label for="promotion-recipient-search">Search active members</label>
+                <input id="promotion-recipient-search" type="search" @bind="RecipientSearch" @bind:event="oninput" @bind:after="ClearRecipientSelection" placeholder="Search name, username, or email" />
+                <button type="button" class="promotion-search" @onclick="SearchRecipientsAsync" disabled="@SearchingRecipients">@(SearchingRecipients ? "Searching…" : "Search members")</button>
+                <label for="promotion-recipient">Member</label>
+                <select id="promotion-recipient" @bind="SelectedUserId">
+                    <option value="">Choose a member</option>
+                    @foreach (var user in FilteredRecipients)
+                    {
+                        <option value="@user.Id">@(user.FullName ?? user.Username) · @user.Email</option>
+                    }
+                </select>
+                @if (FilteredRecipients.Count == 0 && !string.IsNullOrWhiteSpace(RecipientSearch) && !SearchingRecipients)
+                {
+                    <span class="promotion-feedback">No active members match this search.</span>
+                }
+            }
+            @if (!string.IsNullOrWhiteSpace(AudienceLoadError))
+            {
+                <p class="promotion-feedback error" role="alert">@AudienceLoadError</p>
+            }
             <label for="promotion-heading">Title</label>
             <input id="promotion-heading" @bind="PromotionTitle" maxlength="120" required />
             <label for="promotion-message">Message</label>
@@ -99,7 +144,7 @@ else
 }
 
 <style>
-    .promotion-card{display:grid;gap:10px;padding:18px;margin-bottom:24px}.promotion-card h2,.notifications-section-title{margin:0;color:var(--sp-text-primary);font-size:15px}.promotion-card p{color:var(--sp-text-secondary);font-size:12px}.promotion-card form{display:grid;grid-template-columns:1fr;gap:8px}.promotion-card label{font-size:11px;font-weight:650;color:var(--sp-text-secondary)}.promotion-card input,.promotion-card textarea{width:100%;padding:9px 10px;border:1px solid var(--sp-topbar-border);border-radius:5px;background:var(--sp-bg-card);color:var(--sp-text-primary);font:inherit;font-size:12px}.promotion-card button,.notifications-toolbar button,.notifications-error button{border:1px solid #cbd5dc;border-radius:5px;padding:8px 11px;background:var(--sp-bg-card);color:var(--sp-text-primary);font:inherit;font-size:12px;cursor:pointer}.promotion-card button{justify-self:start;background:#087f75;border-color:#087f75;color:#fff;font-weight:650}.promotion-card button:disabled{opacity:.6;cursor:wait}.promotion-feedback.success{color:#087f75}.promotion-feedback.error{color:#b42318}.notifications-section-title{margin:0 0 12px}.notifications-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;color:#64748b;font-size:12px}.notifications-toolbar>div{display:flex;gap:8px}.notifications-toolbar button:disabled{opacity:.6;cursor:wait}.notifications-error{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:6px;background:#fcecea;color:#9d332b;font-size:13px}.notifications-state{padding:24px;color:#64748b;font-size:13px}.notifications-list{display:grid;gap:10px}.notification-item{display:flex;align-items:center;gap:14px;padding:16px 18px;color:inherit;text-decoration:none;border:1px solid #e2e8f0;border-radius:8px;transition:border-color .15s,transform .15s}.notification-item:hover{border-color:#7fc6bc;transform:translateY(-1px)}.notification-item.unread{border-left:3px solid #087f75;background:color-mix(in srgb,var(--sp-bg-card) 94%,#087f75)}.notification-symbol{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border-radius:50%;background:#e5f5ed;color:#087f75;font-size:26px;line-height:1}.notification-copy{display:grid;gap:3px;min-width:0;flex:1}.notification-copy small{color:#087f75;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.45px}.notification-copy strong{font-size:13px}.notification-copy>span{color:#52616b;font-size:12px;overflow-wrap:anywhere}.notification-copy time{margin-top:3px;color:#64748b;font-size:10px}.notification-open{color:#087f75;font-size:11px;font-weight:650;white-space:nowrap}@@media(max-width:560px){.notification-item{align-items:flex-start;padding:14px}.notification-open{display:none}}
+    .promotion-card{display:grid;gap:10px;padding:18px;margin-bottom:24px}.promotion-card h2,.notifications-section-title{margin:0;color:var(--sp-text-primary);font-size:15px}.promotion-card p{color:var(--sp-text-secondary);font-size:12px}.promotion-card form{display:grid;grid-template-columns:1fr;gap:8px}.promotion-card label{font-size:11px;font-weight:650;color:var(--sp-text-secondary)}.promotion-card input,.promotion-card select,.promotion-card textarea{width:100%;padding:9px 10px;border:1px solid var(--sp-topbar-border);border-radius:5px;background:var(--sp-bg-card);color:var(--sp-text-primary);font:inherit;font-size:12px}.promotion-card button,.notifications-toolbar button,.notifications-error button{border:1px solid #cbd5dc;border-radius:5px;padding:8px 11px;background:var(--sp-bg-card);color:var(--sp-text-primary);font:inherit;font-size:12px;cursor:pointer}.promotion-card button{justify-self:start;background:#087f75;border-color:#087f75;color:#fff;font-weight:650}.promotion-card button:disabled{opacity:.6;cursor:wait}.promotion-card .promotion-search{background:var(--sp-bg-card);border-color:var(--sp-topbar-border);color:var(--sp-text-primary)}.promotion-feedback.success{color:#087f75}.promotion-feedback.error{color:#b42318}.notifications-section-title{margin:0 0 12px}.notifications-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;color:#64748b;font-size:12px}.notifications-toolbar>div{display:flex;gap:8px}.notifications-toolbar button:disabled{opacity:.6;cursor:wait}.notifications-error{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:6px;background:#fcecea;color:#9d332b;font-size:13px}.notifications-state{padding:24px;color:#64748b;font-size:13px}.notifications-list{display:grid;gap:10px}.notification-item{display:flex;align-items:center;gap:14px;padding:16px 18px;color:inherit;text-decoration:none;border:1px solid #e2e8f0;border-radius:8px;transition:border-color .15s,transform .15s}.notification-item:hover{border-color:#7fc6bc;transform:translateY(-1px)}.notification-item.unread{border-left:3px solid #087f75;background:color-mix(in srgb,var(--sp-bg-card) 94%,#087f75)}.notification-symbol{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border-radius:50%;background:#e5f5ed;color:#087f75;font-size:26px;line-height:1}.notification-copy{display:grid;gap:3px;min-width:0;flex:1}.notification-copy small{color:#087f75;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.45px}.notification-copy strong{font-size:13px}.notification-copy>span{color:#52616b;font-size:12px;overflow-wrap:anywhere}.notification-copy time{margin-top:3px;color:#64748b;font-size:10px}.notification-open{color:#087f75;font-size:11px;font-weight:650;white-space:nowrap}@@media(max-width:560px){.notification-item{align-items:flex-start;padding:14px}.notification-open{display:none}}
 </style>
 
 @code {
@@ -109,13 +154,43 @@ else
     private string PromotionTitle = "";
     private string PromotionMessage = "";
     private string PromotionHref = "";
+    private string PromotionAudience = "All";
+    private Guid? SelectedGroupId;
+    private Guid? SelectedUserId;
+    private string RecipientSearch = "";
+    private string GroupSearch = "";
+    private bool SearchingRecipients;
     private string PromotionFeedback = "";
+    private string AudienceLoadError = "";
+    private List<NotificationRecipient> AudienceUsers = [];
+    private List<NotificationGroup> Groups = [];
+    private List<NotificationGroup> FilteredGroups => Groups
+        .Where(group => string.IsNullOrWhiteSpace(GroupSearch)
+            || group.Name.Contains(GroupSearch.Trim(), StringComparison.OrdinalIgnoreCase))
+        .ToList();
+    private List<NotificationRecipient> FilteredRecipients => AudienceUsers;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
         AdminNotifications.Changed += HandleChanged;
         UserNotifications.Changed += HandleChanged;
-        _ = Api.IsAdministrator ? RefreshAdminAsync() : RefreshUserAsync();
+        if (Api.IsAdministrator)
+        {
+            try
+            {
+                Groups = await Api.GetNotificationGroupsAsync();
+            }
+            catch (Exception exception)
+            {
+                AudienceLoadError = exception.Message;
+            }
+
+            await RefreshAdminAsync();
+        }
+        else
+        {
+            await RefreshUserAsync();
+        }
     }
 
     private async Task RefreshAdminAsync()
@@ -141,8 +216,14 @@ else
         PromotionFeedback = "";
         try
         {
-            var recipients = await Api.SendPromotionAsync(PromotionTitle, PromotionMessage, PromotionHref);
-            PromotionFeedback = $"Sent to {recipients} active user{(recipients == 1 ? "" : "s")}.";
+            var recipients = await Api.SendPromotionAsync(
+                PromotionTitle,
+                PromotionMessage,
+                PromotionHref,
+                PromotionAudience,
+                SelectedGroupId,
+                SelectedUserId);
+            PromotionFeedback = $"Sent to {recipients} active member{(recipients == 1 ? "" : "s")}.";
             PromotionTitle = "";
             PromotionMessage = "";
             PromotionHref = "";
@@ -154,6 +235,36 @@ else
             PromotionError = true;
         }
         finally { SendingPromotion = false; }
+    }
+
+    private async Task SearchRecipientsAsync()
+    {
+        if (SearchingRecipients) return;
+        if (string.IsNullOrWhiteSpace(RecipientSearch) || RecipientSearch.Trim().Length < 2)
+        {
+            AudienceLoadError = "Enter at least two characters to search for members.";
+            AudienceUsers = [];
+            SelectedUserId = null;
+            return;
+        }
+
+        SearchingRecipients = true;
+        AudienceLoadError = "";
+        SelectedUserId = null;
+        try { AudienceUsers = await Api.SearchNotificationRecipientsAsync(RecipientSearch.Trim()); }
+        catch (Exception exception)
+        {
+            AudienceUsers = [];
+            AudienceLoadError = exception.Message;
+        }
+        finally { SearchingRecipients = false; }
+    }
+
+    private void ClearRecipientSelection()
+    {
+        SelectedUserId = null;
+        AudienceUsers = [];
+        AudienceLoadError = "";
     }
 
     private async Task OpenNotificationAsync(UserNotification item)
