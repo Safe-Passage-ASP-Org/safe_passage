@@ -27,15 +27,30 @@ public sealed class ActivityController(ApplicationDbContext dbContext, ISubscrip
             ? new SubscriptionEntitlementsResponse("free", false, 2, 5, 7, false)
             : await subscriptionService.GetUserEntitlementsAsync(userId, cancellationToken);
         var cutoff = DateTimeOffset.UtcNow.AddDays(-entitlements.ActivityHistoryDays);
-        var logs = await dbContext.ActivityLogs.AsNoTracking()
+        var resultLimit = entitlements.IsPro ? 250 : 25;
+        var activityQuery = dbContext.ActivityLogs.AsNoTracking()
             .Where(activity => activity.TargetUserId == userId
-                || (activity.TargetUserId == null && activity.UserId == userId))
-            .Where(activity => activity.Timestamp >= cutoff)
-            .OrderByDescending(activity => activity.Timestamp)
-            .Take(entitlements.IsPro ? 250 : 25)
-            .ToListAsync(cancellationToken);
+                || (activity.TargetUserId == null && activity.UserId == userId));
+        List<ActivityLog> userLogs;
+        if (dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+        {
+            // SQLite cannot translate DateTimeOffset comparisons or ordering.
+            userLogs = (await activityQuery.ToListAsync(cancellationToken))
+                .Where(log => log.Timestamp >= cutoff)
+                .OrderByDescending(log => log.Timestamp)
+                .Take(resultLimit)
+                .ToList();
+        }
+        else
+        {
+            userLogs = await activityQuery
+                .Where(activity => activity.Timestamp >= cutoff)
+                .OrderByDescending(activity => activity.Timestamp)
+                .Take(resultLimit)
+                .ToListAsync(cancellationToken);
+        }
 
-        var result = logs
+        var result = userLogs
             .Select(log =>
         {
             var isSuccess = log.Status == ActivityLogStatus.Success;

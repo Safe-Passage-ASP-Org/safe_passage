@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SafePassage.Api.Controllers;
 using SafePassage.Api.Data;
 using SafePassage.Api.Models;
@@ -54,7 +55,12 @@ public sealed class UsersControllerInvitationTests
         ApplicationDbContext dbContext,
         IAccountActivationService activationService)
     {
-        var controller = new UsersController(dbContext, new PasswordHasher<User>(), activationService, null!)
+        var controller = new UsersController(
+            dbContext,
+            new PasswordHasher<User>(),
+            activationService,
+            null!,
+            Options.Create(new SubscriptionExpirationReminderOptions()))
         {
             ControllerContext = new ControllerContext
             {
