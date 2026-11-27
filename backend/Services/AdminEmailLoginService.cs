@@ -35,7 +35,6 @@ public sealed class AdminEmailLoginService(
         var user = await dbContext.Users.SingleOrDefaultAsync(candidate =>
             candidate.Email.ToUpper() == normalizedEmail
             && candidate.IsActive
-            && candidate.IsEmailVerified
             && (candidate.Role.ToUpper() == "ADMIN"
                 || candidate.Role.ToUpper() == "ADMINISTRATOR"
                 || candidate.Role.ToUpper() == "SUPER ADMIN"), cancellationToken);
@@ -94,32 +93,40 @@ public sealed class AdminEmailLoginService(
         var user = await dbContext.Users.SingleOrDefaultAsync(candidate =>
             candidate.Email.ToUpper() == normalizedEmail
             && candidate.IsActive
-            && candidate.IsEmailVerified
             && (candidate.Role.ToUpper() == "ADMIN"
                 || candidate.Role.ToUpper() == "ADMINISTRATOR"
                 || candidate.Role.ToUpper() == "SUPER ADMIN"), cancellationToken);
         if (user is null) return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
 
         var now = DateTimeOffset.UtcNow;
-        var otp = await dbContext.AdminLoginTokens
+        var supportsDateTimeOffsetComparison = !dbContext.Database.IsSqlite();
+        var otpQuery = dbContext.AdminLoginTokens
             .Where(token => token.UserId == user.Id
                 && token.UsedAt == null
-                && token.ExpiresAt > now
                 && token.FailedAttempts < MaximumFailedAttempts)
+            .AsQueryable();
+        if (supportsDateTimeOffsetComparison)
+            otpQuery = otpQuery.Where(token => token.ExpiresAt > now);
+        var otpCandidates = await otpQuery.ToListAsync(cancellationToken);
+        var otp = otpCandidates
+            .Where(token => token.ExpiresAt > now)
             .OrderByDescending(token => token.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
-        if (otp is null) return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
+            .FirstOrDefault();
+        if (otp is null || otp.ExpiresAt <= now)
+            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
 
         var suppliedHash = Convert.FromHexString(HashOtp(normalizedEmail, code.Trim()));
         var expectedHash = Convert.FromHexString(otp.TokenHash);
         if (!CryptographicOperations.FixedTimeEquals(suppliedHash, expectedHash))
         {
-            await dbContext.AdminLoginTokens
+            var failedAttemptQuery = dbContext.AdminLoginTokens
                 .Where(token => token.Id == otp.Id
                     && token.UsedAt == null
-                    && token.ExpiresAt > now
                     && token.FailedAttempts < MaximumFailedAttempts)
-                .ExecuteUpdateAsync(setters => setters
+                .AsQueryable();
+            if (supportsDateTimeOffsetComparison)
+                failedAttemptQuery = failedAttemptQuery.Where(token => token.ExpiresAt > now);
+            await failedAttemptQuery.ExecuteUpdateAsync(setters => setters
                     .SetProperty(token => token.FailedAttempts, token => token.FailedAttempts + 1)
                     .SetProperty(token => token.UsedAt,
                         token => token.FailedAttempts >= MaximumFailedAttempts - 1 ? (DateTimeOffset?)now : token.UsedAt),
@@ -130,12 +137,15 @@ public sealed class AdminEmailLoginService(
         await using var transaction = dbContext.Database.IsRelational()
             ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
             : null;
-        var consumed = await dbContext.AdminLoginTokens
+        var consumeQuery = dbContext.AdminLoginTokens
             .Where(token => token.Id == otp.Id
                 && token.UserId == user.Id
                 && token.UsedAt == null
-                && token.ExpiresAt > now
                 && token.FailedAttempts < MaximumFailedAttempts)
+            .AsQueryable();
+        if (supportsDateTimeOffsetComparison)
+            consumeQuery = consumeQuery.Where(token => token.ExpiresAt > now);
+        var consumed = await consumeQuery
             .ExecuteUpdateAsync(
                 setters => setters.SetProperty(token => token.UsedAt, (DateTimeOffset?)now),
                 cancellationToken);

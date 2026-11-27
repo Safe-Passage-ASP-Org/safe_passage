@@ -469,6 +469,13 @@ public sealed class SubscriptionService(
         CancellationToken cancellationToken = default)
     {
         var options = optionsAccessor.Value;
+        if (options.HasCredentials && string.IsNullOrWhiteSpace(options.WebhookSecret))
+        {
+            return new(
+                SubscriptionFailure.InvalidWebhookSignature,
+                ErrorDetail: "PayMongo webhook signing secret is not configured.");
+        }
+
         if (!string.IsNullOrWhiteSpace(options.WebhookSecret)
             && !payMongoClient.VerifyWebhookSignature(signatureHeader, rawBody, options.WebhookSecret))
         {
@@ -846,13 +853,6 @@ public sealed class SubscriptionService(
     {
         if (subscription.Status == SubscriptionStatus.Active)
             return !subscription.CurrentPeriodEnd.HasValue || subscription.CurrentPeriodEnd.Value > now;
-
-        if (subscription.Status == SubscriptionStatus.Cancelled
-            && subscription.CurrentPeriodEnd.HasValue
-            && subscription.CurrentPeriodEnd.Value > now)
-        {
-            return true;
-        }
 
         return false;
     }

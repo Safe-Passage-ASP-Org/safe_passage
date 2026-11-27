@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Mail;
+using System.Text;
 using Microsoft.Extensions.Options;
 
 namespace SafePassage.Api.Services;
@@ -65,7 +66,9 @@ public interface IActivationEmailSender
         CancellationToken cancellationToken);
 }
 
-public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivationEmailSender, ISubscriptionExpirationEmailSender
+public sealed class SmtpEmailSender(
+    IOptions<SmtpOptions> options,
+    IConfiguration? configuration = null) : IActivationEmailSender, ISubscriptionExpirationEmailSender
 {
     public async Task SendActivationEmailAsync(
         string email,
@@ -88,20 +91,13 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
 
         try
         {
-            using var message = new MailMessage
-            {
-                From = string.IsNullOrWhiteSpace(settings.FromName)
-                    ? new MailAddress(settings.FromAddress)
-                    : new MailAddress(settings.FromAddress, settings.FromName),
-                Subject = "Finish setting up your Safe Passage account",
-                Body = $"Hello {username},\n\n"
+            var body = $"Hello {username},\n\n"
                     + (requiresPasswordSetup
                         ? "Open the following one-time link to activate your Safe Passage account and choose your password:\n\n"
                         : "Open the following one-time link to verify your email address and activate your Safe Passage account:\n\n")
                     + $"{activationUrl}\n\n"
-                    + "This link expires soon. If you did not expect this invitation, you can ignore this message.",
-                IsBodyHtml = false
-            };
+                    + "This link expires soon. If you did not expect this invitation, you can ignore this message.";
+            using var message = CreateMessage(settings, "Finish setting up your Safe Passage account", body);
             message.To.Add(new MailAddress(email));
 
             using var client = new SmtpClient(settings.Host, settings.Port)
@@ -141,13 +137,8 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
             throw new EmailDeliveryException("SMTP is not configured to send administrator email change verification.");
         try
         {
-            using var message = new MailMessage
-            {
-                From = string.IsNullOrWhiteSpace(settings.FromName) ? new MailAddress(settings.FromAddress) : new MailAddress(settings.FromAddress, settings.FromName),
-                Subject = "Verify your new Safe Passage admin email",
-                Body = $"Hello {username},\n\nUse this one-time link to verify the new email address for your Safe Passage administrator account:\n\n{verificationUrl}\n\nOr enter this 6-digit code in Account Settings:\n\n    {otpCode}\n\nBoth expire in {lifetimeMinutes} minutes. If you did not request this change, ignore this email.",
-                IsBodyHtml = false
-            };
+            var body = $"Hello {username},\n\nUse this one-time link to verify the new email address for your Safe Passage administrator account:\n\n{verificationUrl}\n\nOr enter this 6-digit code in Account Settings:\n\n    {otpCode}\n\nBoth expire in {lifetimeMinutes} minutes. If you did not request this change, ignore this email.";
+            using var message = CreateMessage(settings, "Verify your new Safe Passage admin email", body);
             message.To.Add(new MailAddress(email));
             using var client = new SmtpClient(settings.Host, settings.Port) { EnableSsl = settings.EnableSsl, Timeout = 15000 };
             if (!string.IsNullOrWhiteSpace(settings.Username)) client.Credentials = new NetworkCredential(settings.Username, settings.Password);
@@ -168,13 +159,8 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
             throw new EmailDeliveryException("SMTP is not configured to send backup email verification.");
         try
         {
-            using var message = new MailMessage
-            {
-                From = string.IsNullOrWhiteSpace(settings.FromName) ? new MailAddress(settings.FromAddress) : new MailAddress(settings.FromAddress, settings.FromName),
-                Subject = "Verify your Safe Passage backup email",
-                Body = $"Hello {username},\n\nUse this one-time link to verify the backup email address for your Safe Passage account:\n\n{verificationUrl}\n\nOr enter this 6-digit code in Profile Settings:\n\n    {otpCode}\n\nBoth expire in {lifetimeMinutes} minutes. If you did not request this, ignore this email.",
-                IsBodyHtml = false
-            };
+            var body = $"Hello {username},\n\nUse this one-time link to verify the backup email address for your Safe Passage account:\n\n{verificationUrl}\n\nOr enter this 6-digit code in Profile Settings:\n\n    {otpCode}\n\nBoth expire in {lifetimeMinutes} minutes. If you did not request this, ignore this email.";
+            using var message = CreateMessage(settings, "Verify your Safe Passage backup email", body);
             message.To.Add(new MailAddress(email));
             using var client = new SmtpClient(settings.Host, settings.Port) { EnableSsl = settings.EnableSsl, Timeout = 15000 };
             if (!string.IsNullOrWhiteSpace(settings.Username)) client.Credentials = new NetworkCredential(settings.Username, settings.Password);
@@ -198,15 +184,10 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
 
         try
         {
-            using var message = new MailMessage
-            {
-                From = string.IsNullOrWhiteSpace(settings.FromName)
-                    ? new MailAddress(settings.FromAddress)
-                    : new MailAddress(settings.FromAddress, settings.FromName),
-                Subject = $"Safe Passage Subscription Receipt ({receipt.ReferenceId})",
-                Body = FormatReceiptBody(receipt),
-                IsBodyHtml = false
-            };
+            using var message = CreateMessage(
+                settings,
+                $"Safe Passage Subscription Receipt ({receipt.ReferenceId})",
+                FormatReceiptBody(receipt));
             message.To.Add(new MailAddress(receipt.RecipientEmail));
             using var client = new SmtpClient(settings.Host, settings.Port)
             {
@@ -235,15 +216,10 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
 
         try
         {
-            using var message = new MailMessage
-            {
-                From = string.IsNullOrWhiteSpace(settings.FromName)
-                    ? new MailAddress(settings.FromAddress)
-                    : new MailAddress(settings.FromAddress, settings.FromName),
-                Subject = "Your Safe Passage subscription period is ending soon",
-                Body = FormatSubscriptionExpirationReminderBody(reminder),
-                IsBodyHtml = false
-            };
+            using var message = CreateMessage(
+                settings,
+                "Your Safe Passage subscription period is ending soon",
+                FormatSubscriptionExpirationReminderBody(reminder));
             message.To.Add(new MailAddress(reminder.RecipientEmail));
             using var client = new SmtpClient(settings.Host, settings.Port)
             {
@@ -297,15 +273,7 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
             var subject = isAdminLogin
                 ? "Your Safe Passage administrator verification code"
                 : "Your Safe Passage sign-in verification code";
-            using var message = new MailMessage
-            {
-                From = string.IsNullOrWhiteSpace(settings.FromName)
-                    ? new MailAddress(settings.FromAddress)
-                    : new MailAddress(settings.FromAddress, settings.FromName),
-                Subject = subject,
-                Body = FormatOtpBody(username, otpCode, lifetimeMinutes, isAdminLogin),
-                IsBodyHtml = false
-            };
+            using var message = CreateMessage(settings, subject, FormatOtpBody(username, otpCode, lifetimeMinutes, isAdminLogin));
             message.To.Add(new MailAddress(email));
             using var client = new SmtpClient(settings.Host, settings.Port)
             {
@@ -334,5 +302,38 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
             + $"    {otpCode}\n\n"
             + $"This code expires in {expiry} and can only be used once.\n"
             + "If you did not request this code, ignore this email and review your account activity.\n";
+    }
+
+    internal static string FormatHtmlBody(string textBody, string? frontendBaseUrl = null)
+    {
+        const string defaultLogoUrl = "https://safe-passage-web.onrender.com/favicon.png";
+        var logoUrl = Uri.TryCreate(frontendBaseUrl, UriKind.Absolute, out var frontendUri)
+            && (frontendUri.Scheme == Uri.UriSchemeHttps || frontendUri.Scheme == Uri.UriSchemeHttp)
+                ? new Uri(frontendUri, "/favicon.png").ToString()
+                : defaultLogoUrl;
+
+        return "<!doctype html><html><body style=\"margin:0;padding:24px;background:#f4f7f8;font-family:Arial,sans-serif;color:#172b3a;\">"
+            + "<div style=\"max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;\">"
+            + "<div style=\"padding:20px 24px;border-bottom:1px solid #e2e8f0;\">"
+            + "<img src=\"" + WebUtility.HtmlEncode(logoUrl) + "\" alt=\"Safe Passage\" width=\"40\" height=\"40\" style=\"display:inline-block;vertical-align:middle;border-radius:8px;\">"
+            + "<span style=\"display:inline-block;vertical-align:middle;margin-left:10px;font-size:18px;font-weight:700;\">Safe Passage</span>"
+            + "</div><div style=\"padding:24px;line-height:1.6;font-size:14px;white-space:pre-wrap;\">"
+            + WebUtility.HtmlEncode(textBody)
+            + "</div></div></body></html>";
+    }
+
+    private MailMessage CreateMessage(SmtpOptions settings, string subject, string textBody)
+    {
+        var message = new MailMessage
+        {
+            From = string.IsNullOrWhiteSpace(settings.FromName)
+                ? new MailAddress(settings.FromAddress!)
+                : new MailAddress(settings.FromAddress!, settings.FromName),
+            Subject = subject,
+            Body = FormatHtmlBody(textBody, configuration?["Frontend:BaseUrl"]),
+            IsBodyHtml = true
+        };
+        message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(textBody, Encoding.UTF8, "text/plain"));
+        return message;
     }
 }

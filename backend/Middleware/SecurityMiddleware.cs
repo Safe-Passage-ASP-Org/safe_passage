@@ -63,7 +63,7 @@ public sealed class SecurityMiddleware(RequestDelegate next, ILogger<SecurityMid
             .SingleOrDefaultAsync(context.RequestAborted);
         if (isUserActive != true)
         {
-            await WriteProblemAsync(context, StatusCodes.Status401Unauthorized, "Account unavailable", "This account is inactive or suspended.");
+            await WriteProblemAsync(context, StatusCodes.Status401Unauthorized, "Account unavailable", "This account has been suspended or blocked. Contact your administrator for assistance.");
             return;
         }
 

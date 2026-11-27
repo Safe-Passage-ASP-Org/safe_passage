@@ -549,7 +549,7 @@ public sealed class AuthController(
         || string.Equals(role, "Administrator", StringComparison.OrdinalIgnoreCase)
         || string.Equals(role, "Super Admin", StringComparison.OrdinalIgnoreCase);
 
-    /// <summary>Sends a 6-digit one-time verification code to an active, verified administrator.</summary>
+    /// <summary>Sends a 6-digit one-time sign-in code to an active administrator.</summary>
     [HttpPost("admin-login/send-otp")]
     [AllowAnonymous]
     [ProducesResponseType(StatusCodes.Status202Accepted)]
@@ -583,7 +583,7 @@ public sealed class AuthController(
             }
         }
 
-        return Accepted(new { message = "If this address belongs to an active administrator, a 6-digit verification code will be sent." });
+        return Accepted(new { message = "If this address belongs to an active administrator, a 6-digit sign-in code will be sent." });
     }
 
     /// <summary>Verifies an administrator's single-use 6-digit email OTP and signs them in.</summary>

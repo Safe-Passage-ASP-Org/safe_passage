@@ -82,7 +82,7 @@ public sealed class SubscriptionServiceTests
     }
 
     [Fact]
-    public async Task CancelSubscriptionAsync_RetainsEntitlementUntilPeriodEnd()
+    public async Task CancelSubscriptionAsync_ImmediatelyReturnsUserToFreeTier()
     {
         await using var db = CreateDbContext();
         var user = SeedUser(db);
@@ -105,8 +105,17 @@ public sealed class SubscriptionServiceTests
         var cancelled = await service.CancelSubscriptionAsync(user.Id, "Testing");
         Assert.Equal(SubscriptionFailure.None, cancelled.Failure);
         Assert.Equal("Cancelled", cancelled.Data!.Status);
-        Assert.True(cancelled.Data.HasActiveEntitlement);
-        Assert.True(cancelled.Data.CancelAtPeriodEnd);
+        Assert.False(cancelled.Data.HasActiveEntitlement);
+        Assert.False(cancelled.Data.CancelAtPeriodEnd);
+
+        var current = await service.GetUserSubscriptionAsync(user.Id);
+        Assert.Equal("Free", current.Status);
+        Assert.Equal("Free", current.PlanName);
+        Assert.False(current.HasActiveEntitlement);
+
+        var entitlements = await service.GetUserEntitlementsAsync(user.Id);
+        Assert.Equal("free", entitlements.PlanCode);
+        Assert.False(entitlements.IsPro);
     }
 
     [Fact]
@@ -147,8 +156,25 @@ public sealed class SubscriptionServiceTests
         Assert.Equal(SubscriptionFailure.None, result.Failure);
 
         var updated = await service.GetUserSubscriptionAsync(user.Id);
-        Assert.True(updated.HasActiveEntitlement);
         Assert.Equal("Active", updated.Status);
+        Assert.True(updated.HasActiveEntitlement);
+    }
+
+    [Fact]
+    public async Task ProcessWebhookAsync_RejectsLiveConfigurationWithoutSigningSecret()
+    {
+        await using var db = CreateDbContext();
+        var options = Options.Create(new PayMongoOptions
+        {
+            SecretKey = "sk_live_configured",
+            Plans = new Dictionary<string, PayMongoPlanOption>()
+        });
+        var service = new SubscriptionService(db, new FakePayMongoClient(), options);
+
+        var result = await service.ProcessWebhookAsync("", "{}");
+
+        Assert.Equal(SubscriptionFailure.InvalidWebhookSignature, result.Failure);
+        Assert.Equal("PayMongo webhook signing secret is not configured.", result.ErrorDetail);
     }
 
     [Fact]

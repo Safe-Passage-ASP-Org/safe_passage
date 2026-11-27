@@ -61,3 +61,9 @@
 - The Cron Job references the API service's `ConnectionStrings__DefaultConnection`, `Brevo__ApiKey`, and `Brevo__FromAddress`; keep those variables configured on `safepassage-api`. The subscription page link uses `Frontend__BaseUrl`.
 - The API service's in-process reminder loop is disabled in production to prevent duplicate sends. The cron job records each period end after successful delivery, so a manual rerun does not resend an already-recorded warning.
 - To test it, temporarily set a test user's subscription period end to within seven days, clear that subscription's `ExpirationReminderPeriodEnd` marker, then use **Render Dashboard → safepassage-subscription-reminders → Runs → Trigger Run**. Review that run's logs and the mailbox. Restore the test date afterward.
+
+## 7. PayMongo Subscription Checkout
+
+- The API uses PayMongo checkout sessions. Configure `PayMongo__SecretKey` and `PayMongo__WebhookSecret` on `safepassage-api`; Render's blueprint declares both as secrets. Do not use a test secret key for production payments.
+- Keep `PayMongo__DemoMode` set to `false` and verify `Frontend__BaseUrl`, `PayMongo__SuccessUrl`, and `PayMongo__CancelUrl` point to the deployed web portal.
+- Automatic recurring renewal is not implemented. Checkout charges for a fixed period; cancelling a plan immediately removes paid entitlements in Safe Passage.

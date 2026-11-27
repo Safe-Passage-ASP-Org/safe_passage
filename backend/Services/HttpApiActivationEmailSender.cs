@@ -183,7 +183,8 @@ public sealed class HttpApiActivationEmailSender(
             sender = new { email = fromEmail.Trim(), name = fromName.Trim() },
             to = new[] { new { email = recipientEmail, name = recipientName } },
             subject,
-            textContent
+            textContent,
+            htmlContent = SmtpEmailSender.FormatHtmlBody(textContent, configuration["Frontend:BaseUrl"])
         });
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
@@ -210,7 +211,8 @@ public sealed class HttpApiActivationEmailSender(
             from = fromEmail.Trim(),
             to = new[] { recipientEmail },
             subject,
-            text
+            text,
+            html = SmtpEmailSender.FormatHtmlBody(text, configuration["Frontend:BaseUrl"])
         });
 
         using var response = await httpClient.SendAsync(request, cancellationToken);

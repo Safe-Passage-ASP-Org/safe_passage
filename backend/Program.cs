@@ -214,7 +214,7 @@ builder.Services.AddAuthentication(options =>
                     .SingleOrDefaultAsync(context.HttpContext.RequestAborted);
                 if (isActive != true)
                 {
-                    context.Fail("Account is inactive or suspended.");
+                    context.Fail("This account has been suspended or blocked. Contact your administrator for assistance.");
                     return;
                 }
 

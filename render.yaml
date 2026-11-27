@@ -16,24 +16,18 @@ services:
         sync: false
       - key: Jwt__SigningKey
         generateValue: true
-      - key: PayPal__Environment
-        value: Sandbox
-      - key: PayPal__BaseUrl
-        value: https://api-m.sandbox.paypal.com
-      - key: PayPal__ClientId
+      - key: PayMongo__SecretKey
         sync: false
-      - key: PayPal__ClientSecret
+      - key: PayMongo__WebhookSecret
         sync: false
-      - key: PayPal__WebhookId
-        sync: false
-      - key: PayPal__ReturnUrl
-        sync: false
-      - key: PayPal__CancelUrl
-        sync: false
-      - key: PayPal__Plans__pro-monthly__PayPalPlanId
-        sync: false
-      - key: PayPal__Plans__pro-annual__PayPalPlanId
-        sync: false
+      - key: PayMongo__DemoMode
+        value: "false"
+      - key: PayMongo__SuccessUrl
+        value: https://safe-passage-web.onrender.com/subscription/paymongo-callback?status=success
+      - key: PayMongo__CancelUrl
+        value: https://safe-passage-web.onrender.com/subscription/paymongo-callback?status=cancel
+      - key: Frontend__BaseUrl
+        value: https://safe-passage-web.onrender.com
       - key: Cors__AllowedOrigins__0
         sync: false
       - key: SubscriptionExpirationReminder__Enabled

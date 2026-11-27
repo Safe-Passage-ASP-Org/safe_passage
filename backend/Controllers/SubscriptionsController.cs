@@ -194,7 +194,7 @@ public sealed class SubscriptionsController(ISubscriptionService subscriptionSer
             SubscriptionFailure.NotFound => (StatusCodes.Status404NotFound, "Subscription not found"),
             SubscriptionFailure.OwnershipMismatch => (StatusCodes.Status403Forbidden, "Subscription ownership mismatch"),
             SubscriptionFailure.InvalidState => (StatusCodes.Status400BadRequest, "Invalid subscription state"),
-            SubscriptionFailure.InvalidWebhookSignature => (StatusCodes.Status401Unauthorized, "Invalid PayPal webhook signature"),
+            SubscriptionFailure.InvalidWebhookSignature => (StatusCodes.Status401Unauthorized, "Invalid PayMongo webhook signature"),
             SubscriptionFailure.ProviderError => (StatusCodes.Status502BadGateway, "PayPal API error"),
             _ => (StatusCodes.Status500InternalServerError, "Subscription operation failed")
         };

@@ -36,7 +36,7 @@ In short, Vercel and the web/mobile clients provide user interfaces; Render runs
 ### Administrator account
 
 1. Open [Safe Passage Admin Login](https://safe-passage-web.onrender.com/admin-login).
-2. Enter the administrator's verified email address and select **Send 6-digit OTP**.
+2. Enter the email address for the administrator account and select **Send 6-digit OTP**. A separate email-verification step is not required.
 3. Enter the code from the email. The single-use code remains valid for 7 days.
 4. After verification, the administrator portal opens. Admin accounts use **Admin Login**; mobile approval is for regular users.
 
@@ -50,7 +50,7 @@ In short, Vercel and the web/mobile clients provide user interfaces; Render runs
 
 ## 6. Add an Application with an Administrator Account
 
-1. Sign in through **Admin Login** using the 6-digit OTP sent to the administrator's verified email.
+1. Sign in through **Admin Login** using the 6-digit OTP sent to the administrator's email.
 2. Open **Applications** in the administrator portal and select **Add application**.
 3. Enter the **Application Name**, **Login/Web URL**, and **Category**. Add a description or autofill username/password if needed, then select **Save application**.
 4. In the application's card, select **Manage access**.

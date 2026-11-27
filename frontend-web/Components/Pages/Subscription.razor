@@ -525,15 +525,21 @@ else
 
     private async Task CancelCurrentAsync()
     {
+        if (!await JS.InvokeAsync<bool>(
+                "confirm",
+                "Cancel your subscription? You will return to the Free tier immediately and lose access to paid features."))
+            return;
+
         Busy = true;
         BusyAction = "cancel";
         ErrorMessage = null;
         SuccessMessage = null;
         try
         {
-            Current = await Api.CancelSubscriptionAsync("Cancelled by user in Web Portal");
+            await Api.CancelSubscriptionAsync("Cancelled by user in Web Portal");
+            Current = await Api.GetMySubscriptionAsync();
             History = await Api.GetSubscriptionHistoryAsync();
-            SuccessMessage = "Your subscription has been cancelled. Access remains active until the end of the current billing period.";
+            SuccessMessage = "Your subscription has been cancelled. You are now on the Free tier, and paid features are no longer available.";
         }
         catch (Exception ex)
         {
