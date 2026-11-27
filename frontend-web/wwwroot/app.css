@@ -278,6 +278,11 @@ a { color: inherit; text-decoration: none; }
     transition: background 0.15s;
 }
 .sp-icon-btn:hover { background: #f1f5f9; color: var(--sp-text-primary); }
+:root[data-sp-theme="dark"] .sp-theme-toggle:hover { background: #21262d; color: var(--sp-text-primary); }
+.sp-theme-toggle:focus-visible { outline: 2px solid var(--sp-accent); outline-offset: 2px; }
+.sp-theme-icon-light { display: none; }
+:root[data-sp-theme="dark"] .sp-theme-icon-dark { display: none; }
+:root[data-sp-theme="dark"] .sp-theme-icon-light { display: block; }
 
 .sp-badge {
     position: absolute;

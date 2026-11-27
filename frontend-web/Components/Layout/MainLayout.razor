@@ -25,6 +25,15 @@
 
             <!-- Right controls -->
             <div class="sp-topbar-right">
+                <button type="button" class="sp-icon-btn sp-theme-toggle" aria-label="Toggle light and dark mode" title="Toggle light and dark mode" @onclick="ToggleThemeAsync">
+                    <svg class="sp-theme-icon-dark" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M20.985 12.486A9 9 0 1 1 11.514 3.015a.75.75 0 0 1 .807.402 6.5 6.5 0 0 0 8.262 8.262.75.75 0 0 1 .402.807Z" />
+                    </svg>
+                    <svg class="sp-theme-icon-light" aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" />
+                    </svg>
+                </button>
 
                 @if (Api.IsAdministrator || Api.CurrentRole == "Auditor")
                 {
@@ -171,6 +180,13 @@
         : AlertCount.Count is int alertCount ? $"Security Alerts ({alertCount} pending device approval{(alertCount == 1 ? "" : "s")})" : "Security Alerts";
     private bool NotificationOpen;
     private readonly CancellationTokenSource _notificationRefreshCancellation = new();
+
+    private async Task ToggleThemeAsync()
+    {
+        var currentTheme = await JS.InvokeAsync<string>("safePassageAppearance.getTheme", Api.IsAdministrator);
+        var nextTheme = currentTheme == "dark" ? "light" : "dark";
+        await JS.InvokeVoidAsync("safePassageAppearance.setTheme", nextTheme, !string.IsNullOrWhiteSpace(Api.AccessToken), Api.IsAdministrator);
+    }
 
     private async Task ToggleNotificationPanelAsync()
     {
