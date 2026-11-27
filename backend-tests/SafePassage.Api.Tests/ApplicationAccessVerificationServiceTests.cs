@@ -50,6 +50,30 @@ public sealed class ApplicationAccessVerificationServiceTests
     }
 
     [Fact]
+    public async Task Verify_GroupMemberAccessIsRevokedWhenGroupAssignmentIsRemoved()
+    {
+        await using var dbContext = CreateDbContext();
+        var (user, application) = await SeedUserAndApplicationAsync(dbContext);
+        var group = new Group { Id = Guid.NewGuid(), Name = "Engineering" };
+        var membership = new UserGroup { UserId = user.Id, GroupId = group.Id };
+        var groupAccess = new ApplicationGroupAccess { ApplicationId = application.Id, GroupId = group.Id };
+        dbContext.Groups.Add(group);
+        dbContext.UserGroups.Add(membership);
+        dbContext.ApplicationGroupAccesses.Add(groupAccess);
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext);
+
+        var allowed = await service.VerifyAsync(user.Id, null, application.Id, CancellationToken.None);
+        dbContext.ApplicationGroupAccesses.Remove(groupAccess);
+        await dbContext.SaveChangesAsync();
+        var denied = await service.VerifyAsync(user.Id, null, application.Id, CancellationToken.None);
+
+        Assert.True(allowed.Allowed);
+        Assert.False(denied.Allowed);
+        Assert.Equal("access_not_assigned", denied.Reason);
+    }
+
+    [Fact]
     public async Task Verify_DeniesUnassignedUser_AndRecordsDenial()
     {
         await using var dbContext = CreateDbContext();

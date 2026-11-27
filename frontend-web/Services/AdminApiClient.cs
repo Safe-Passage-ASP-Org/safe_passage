@@ -342,7 +342,7 @@ public sealed class AdminApiClient(HttpClient http)
 
     public async Task SaveGroupAsync(AdminGroupForm group, Guid? id, CancellationToken cancellationToken = default)
     {
-        var payload = new { group.Name, group.Description };
+        var payload = new { group.Name, group.Description, group.MemberUserIds };
         using var response = id is null
             ? await http.PostAsJsonAsync("api/admin/groups", payload, cancellationToken)
             : await http.PutAsJsonAsync($"api/admin/groups/{id}", payload, cancellationToken);
@@ -799,8 +799,13 @@ public sealed record AdminUser(Guid Id, string Username, string Email, bool IsAc
 public sealed record AdminUserDetails(AdminUser User, string? BackupEmail, List<AdminUserSavedSite> Sites);
 public sealed record AdminUserSavedSite(Guid Id, string Name, string LoginUrl, string Category, string Description,
     string VerificationStatus, DateTimeOffset CreatedAt, DateTimeOffset? VerifiedAt, bool HasPassword, bool HasTotpSecret);
-public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount);
-public sealed class AdminGroupForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; }
+public sealed record AdminGroup(Guid Id, string Name, string Description, int MemberCount, List<Guid> MemberUserIds);
+public sealed class AdminGroupForm
+{
+    public string Name { get; set; } = "";
+    public string Description { get; set; } = "";
+    public List<Guid> MemberUserIds { get; set; } = [];
+}
 public sealed record DevicePostureInfo(bool? ScreenLockEnabled, bool? IsRootedOrJailbroken, DateTimeOffset? ReportedAt);
 public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, string DeviceType, string OS,
     DateTimeOffset RegistrationDate, DateTimeOffset? LastActiveDate, string Status, string TrustStatus, Guid UserId,
