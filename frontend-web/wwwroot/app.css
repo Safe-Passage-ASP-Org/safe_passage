@@ -331,6 +331,7 @@ a { color: inherit; text-decoration: none; }
 .sp-notification-list { overflow-y:auto;padding:0 6px 8px; }
 .sp-notification-item { display:flex;align-items:flex-start;gap:11px;padding:11px 10px;color:inherit;text-decoration:none;border-radius:8px; }
 .sp-notification-item:hover { background:#f1f5f9; }
+.sp-notification-item.unread { background:#f0fdfa; }
 .sp-notification-mark { display:grid;place-items:center;width:38px;height:38px;flex:0 0 38px;border-radius:50%;font-size:13px;font-weight:750; }
 .sp-notification-mark.device { background:#eaf2ff;color:#2563eb; }
 .sp-notification-mark.application { background:#e5f5ed;color:#087f5b; }
@@ -348,6 +349,7 @@ a { color: inherit; text-decoration: none; }
 :root[data-sp-theme="dark"] .sp-notification-refresh { color:#aab6c2; }
 :root[data-sp-theme="dark"] .sp-notification-refresh:hover,
 :root[data-sp-theme="dark"] .sp-notification-item:hover { background:#21262d;color:#f0f6fc; }
+:root[data-sp-theme="dark"] .sp-notification-item.unread { background:#102a2a; }
 :root[data-sp-theme="dark"] .sp-notification-copy>span,
 :root[data-sp-theme="dark"] .sp-notification-copy small,
 :root[data-sp-theme="dark"] .sp-notification-copy time,

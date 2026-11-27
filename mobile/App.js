@@ -5,6 +5,7 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { StatusBar } from 'expo-status-bar';
+import * as Notifications from 'expo-notifications';
 
 // Screens
 import LoginScreen from './screens/LoginScreen';
@@ -14,6 +15,7 @@ import DashboardScreen from './screens/DashboardScreen';
 import DevicesScreen from './screens/DevicesScreen';
 import ActivityScreen from './screens/ActivityScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import NotificationsScreen from './screens/NotificationsScreen';
 
 // Services
 import { getToken } from './services/AuthService';
@@ -32,6 +34,7 @@ const MainTabs = () => (
           Devices:   focused ? 'hardware-chip'    : 'hardware-chip-outline',
           Activity:  focused ? 'list'             : 'list-outline',
           Settings:  focused ? 'settings'         : 'settings-outline',
+          Notifications: focused ? 'notifications' : 'notifications-outline',
         };
         return <Ionicons name={icons[route.name]} size={size} color={color} />;
       },
@@ -45,6 +48,7 @@ const MainTabs = () => (
     <Tab.Screen name="Dashboard" component={DashboardScreen} />
     <Tab.Screen name="Devices"   component={DevicesScreen} />
     <Tab.Screen name="Activity"  component={ActivityScreen} />
+    <Tab.Screen name="Notifications" component={NotificationsScreen} />
     <Tab.Screen name="Settings"  component={SettingsScreen} />
   </Tab.Navigator>
 );
@@ -67,6 +71,17 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
+    });
+    const notificationSubscription = Notifications.addNotificationResponseReceivedListener((response) => {
+      if (!navigationRef.isReady()) return;
+      navigationRef.navigate('Main', { screen: 'Notifications' });
+    });
     setMfaRequestHandler((details) => {
       if (!navigationRef.isReady()) return;
       const currentRoute = navigationRef.getCurrentRoute();
@@ -83,6 +98,7 @@ export default function App() {
     })();
     return () => {
       active = false;
+      notificationSubscription.remove();
       stopMfaRealtime();
     };
   }, []);

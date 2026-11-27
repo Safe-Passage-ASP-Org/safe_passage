@@ -404,6 +404,31 @@ public sealed class AdminApiClient(HttpClient http)
     public async Task<List<MyApplicationAccessRequest>> GetMyApplicationRequestsAsync(CancellationToken cancellationToken = default) =>
         await http.GetFromJsonAsync<List<MyApplicationAccessRequest>>("api/applications/requests/mine", cancellationToken) ?? [];
 
+    public async Task<List<UserNotification>> GetMyNotificationsAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<List<UserNotification>>("api/notifications", cancellationToken) ?? [];
+
+    public async Task MarkNotificationReadAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsync($"api/notifications/{id}/read", content: null, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task MarkAllNotificationsReadAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsync("api/notifications/read-all", content: null, cancellationToken);
+        await EnsureSuccessAsync(response, cancellationToken);
+    }
+
+    public async Task<int> SendPromotionAsync(string title, string message, string? href, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/notifications/promotions", new { title, message, href }, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            await EnsureSuccessAsync(response, cancellationToken);
+        var result = await response.Content.ReadFromJsonAsync<PromotionResult>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty promotion response.");
+        return result.Recipients;
+    }
+
     public async Task RequestApplicationAccessAsync(Guid applicationId, string reason, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync($"api/applications/{applicationId}/requests", new { reason }, cancellationToken);
@@ -788,6 +813,7 @@ public sealed class AdminApiClient(HttpClient http)
     private sealed record ApiProblem(string? Detail, string? Message, string? Title);
     private sealed record OidcSessionResult(string CompletionUrl);
     private sealed record FacebookSignInSettings(bool Enabled);
+    private sealed record PromotionResult(int Recipients);
 }
 
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);

@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using SafePassage.Api.Contracts.Devices;
 using SafePassage.Api.Controllers;
 using SafePassage.Api.Data;
@@ -171,7 +172,8 @@ public sealed class ZeroTrustAuditAndSessionTests
         dbContext.UserSessions.Add(session);
         await dbContext.SaveChangesAsync();
 
-        var controller = new UsersController(dbContext, new PasswordHasher<User>(), null!, null!)
+        var controller = new UsersController(dbContext, new PasswordHasher<User>(), null!, null!,
+            Options.Create(new SubscriptionExpirationReminderOptions()))
         {
             ControllerContext = new ControllerContext
             {

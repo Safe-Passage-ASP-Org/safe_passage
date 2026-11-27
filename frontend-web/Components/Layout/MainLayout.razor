@@ -2,6 +2,7 @@
 @inject SafePassage.Web.Services.AdminApiClient Api
 @inject SafePassage.Web.Services.SecurityAlertCountService AlertCount
 @inject SafePassage.Web.Services.AdminNotificationService AdminNotifications
+@inject SafePassage.Web.Services.UserNotificationService UserNotifications
 @inject NavigationManager Navigation
 @inject IJSRuntime JS
 @implements IDisposable
@@ -35,67 +36,109 @@
                     </svg>
                 </button>
 
-                @if (Api.IsAdministrator || Api.CurrentRole == "Auditor")
-                {
-                    <div class="sp-bell-wrapper">
-                        @if (Api.IsAdministrator)
-                        {
-                            <button type="button" class="sp-icon-btn" aria-label="@BellTitle" aria-expanded="@NotificationOpen" aria-controls="admin-notification-panel" title="@BellTitle" @onclick="ToggleNotificationPanelAsync">
-                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
-                                    <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 0 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z"/>
-                                </svg>
-                                @if (BellCount is > 0) { <span class="sp-badge">@BellBadge</span> }
-                            </button>
-                            @if (NotificationOpen)
-                            {
-                                <button type="button" class="sp-notification-backdrop" aria-label="Close notifications" @onclick="CloseNotificationPanel"></button>
-                                <section id="admin-notification-panel" class="sp-notification-panel" role="dialog" aria-label="Notifications">
-                                    <header class="sp-notification-header">
-                                        <h2>Notifications</h2>
-                                        <div>
-                                            <button type="button" class="sp-notification-refresh" aria-label="Refresh notifications" title="Refresh" @onclick="RefreshNotificationsAsync">↻</button>
-                                            <a href="/notifications" @onclick="CloseNotificationPanel">See all</a>
-                                        </div>
-                                    </header>
-                                    @if (AdminNotifications.Error is not null)
-                                    {
-                                        <div class="sp-notification-message error" role="alert">Couldn’t load notifications. <button type="button" @onclick="RefreshNotificationsAsync">Try again</button></div>
-                                    }
-                                    else if (AdminNotifications.Count is null)
-                                    {
-                                        <div class="sp-notification-message" role="status">Loading notifications…</div>
-                                    }
-                                    else if (AdminNotifications.Items.Count == 0)
-                                    {
-                                        <div class="sp-notification-message">You’re all caught up. There are no pending notifications.</div>
-                                    }
-                                    else
-                                    {
-                                        <div class="sp-notification-section-title">Needs review</div>
-                                        <div class="sp-notification-list">
-                                            @foreach (var item in AdminNotifications.Items)
-                                            {
-                                                <a class="sp-notification-item" href="@item.Href" @onclick="CloseNotificationPanel">
-                                                    <span class="sp-notification-mark @NotificationMarkClass(item.Category)" aria-hidden="true">@NotificationMark(item.Category)</span>
-                                                    <span class="sp-notification-copy"><small>@item.Category</small><strong>@item.Title</strong><span>@item.Message</span><time datetime="@item.CreatedAt.ToString("O")">@item.CreatedAt.ToLocalTime().ToString("MMM d · h:mm tt")</time></span>
-                                                </a>
-                                            }
-                                        </div>
-                                    }
-                                </section>
-                            }
-                        }
-                        else
-                        {
-                            <a class="sp-icon-btn" aria-label="@BellTitle" href="/alerts" title="@BellTitle">
+                <div class="sp-bell-wrapper">
+                    @if (Api.IsAdministrator)
+                    {
+                        <button type="button" class="sp-icon-btn" aria-label="@BellTitle" aria-expanded="@NotificationOpen" aria-controls="admin-notification-panel" title="@BellTitle" @onclick="ToggleNotificationPanelAsync">
                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
                                 <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 0 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z"/>
                             </svg>
                             @if (BellCount is > 0) { <span class="sp-badge">@BellBadge</span> }
-                            </a>
+                        </button>
+                        @if (NotificationOpen)
+                        {
+                            <button type="button" class="sp-notification-backdrop" aria-label="Close notifications" @onclick="CloseNotificationPanel"></button>
+                            <section id="admin-notification-panel" class="sp-notification-panel" role="dialog" aria-label="Notifications">
+                                <header class="sp-notification-header">
+                                    <h2>Notifications</h2>
+                                    <div>
+                                        <button type="button" class="sp-notification-refresh" aria-label="Refresh notifications" title="Refresh" @onclick="RefreshNotificationsAsync">↻</button>
+                                        <a href="/notifications" @onclick="CloseNotificationPanel">See all</a>
+                                    </div>
+                                </header>
+                                @if (AdminNotifications.Error is not null)
+                                {
+                                    <div class="sp-notification-message error" role="alert">Couldn’t load notifications. <button type="button" @onclick="RefreshNotificationsAsync">Try again</button></div>
+                                }
+                                else if (AdminNotifications.Count is null)
+                                {
+                                    <div class="sp-notification-message" role="status">Loading notifications…</div>
+                                }
+                                else if (AdminNotifications.Items.Count == 0)
+                                {
+                                    <div class="sp-notification-message">You’re all caught up. There are no pending notifications.</div>
+                                }
+                                else
+                                {
+                                    <div class="sp-notification-section-title">Needs review</div>
+                                    <div class="sp-notification-list">
+                                        @foreach (var item in AdminNotifications.Items)
+                                        {
+                                            <a class="sp-notification-item" href="@item.Href" @onclick="CloseNotificationPanel">
+                                                <span class="sp-notification-mark @NotificationMarkClass(item.Category)" aria-hidden="true">@NotificationMark(item.Category)</span>
+                                                <span class="sp-notification-copy"><small>@item.Category</small><strong>@item.Title</strong><span>@item.Message</span><time datetime="@item.CreatedAt.ToString("O")">@item.CreatedAt.ToLocalTime().ToString("MMM d · h:mm tt")</time></span>
+                                            </a>
+                                        }
+                                    </div>
+                                }
+                            </section>
                         }
-                    </div>
-                }
+                    }
+                    else if (Api.CurrentRole == "Auditor")
+                    {
+                        <a class="sp-icon-btn" aria-label="@BellTitle" href="/alerts" title="@BellTitle">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 0 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z"/>
+                            </svg>
+                            @if (BellCount is > 0) { <span class="sp-badge">@BellBadge</span> }
+                        </a>
+                    }
+                    else
+                    {
+                        <button type="button" class="sp-icon-btn" aria-label="@BellTitle" aria-expanded="@NotificationOpen" aria-controls="user-notification-panel" title="@BellTitle" @onclick="ToggleNotificationPanelAsync">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" fill="currentColor" viewBox="0 0 16 16">
+                                <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zm.995-14.901a1 1 0 0 0-1.99 0A5.002 5.002 0 0 0 3 6c0 1.098-.5 6-2 7h14c-1.5-1-2-5.902-2-7 0-2.42-1.72-4.44-4.005-4.901z"/>
+                            </svg>
+                            @if (BellCount is > 0) { <span class="sp-badge">@BellBadge</span> }
+                        </button>
+                        @if (NotificationOpen)
+                        {
+                            <button type="button" class="sp-notification-backdrop" aria-label="Close notifications" @onclick="CloseNotificationPanel"></button>
+                            <section id="user-notification-panel" class="sp-notification-panel" role="dialog" aria-label="Your notifications">
+                                <header class="sp-notification-header">
+                                    <h2>Your notifications</h2>
+                                    <div>
+                                        @if (UserNotifications.UnreadCount > 0)
+                                        {
+                                            <button type="button" class="sp-notification-refresh" @onclick="MarkAllUserNotificationsReadAsync">Mark all read</button>
+                                        }
+                                        <a href="/notifications" @onclick="CloseNotificationPanel">See all</a>
+                                    </div>
+                                </header>
+                                @if (UserNotifications.Error is not null)
+                                {
+                                    <div class="sp-notification-message error" role="alert">Couldn’t load notifications. <button type="button" @onclick="RefreshNotificationsAsync">Try again</button></div>
+                                }
+                                else if (UserNotifications.Items.Count == 0)
+                                {
+                                    <div class="sp-notification-message">You’re all caught up. There are no notifications.</div>
+                                }
+                                else
+                                {
+                                    <div class="sp-notification-list">
+                                        @foreach (var item in UserNotifications.Items.Take(6))
+                                        {
+                                            <a class="sp-notification-item @UnreadClass(item)" href="@(item.Href ?? "/notifications")" @onclick="() => OpenUserNotificationAsync(item)">
+                                                <span class="sp-notification-mark default" aria-hidden="true">•</span>
+                                                <span class="sp-notification-copy"><small>@item.Category</small><strong>@item.Title</strong><span>@item.Message</span><time datetime="@item.CreatedAt.ToString("O")">@item.CreatedAt.ToLocalTime().ToString("MMM d · h:mm tt")</time></span>
+                                            </a>
+                                        }
+                                    </div>
+                                }
+                            </section>
+                        }
+                    }
+                </div>
 
                 <!-- Signed-in account identity -->
                 <div class="sp-profile-wrapper">
@@ -148,6 +191,7 @@
         Navigation.LocationChanged += HandleLocationChanged;
         AlertCount.Changed += HandleAlertCountChanged;
         AdminNotifications.Changed += HandleAdminNotificationsChanged;
+        UserNotifications.Changed += HandleUserNotificationsChanged;
         Api.ProfileChanged += HandleProfileChanged;
         if (!string.IsNullOrWhiteSpace(Api.AccessToken))
         {
@@ -156,7 +200,7 @@
         }
         await RefreshAlertCountAsync();
         await RefreshNotificationsAsync();
-        if (Api.IsAdministrator)
+        if (Api.IsAdministrator || (Api.CurrentRole != "Auditor" && !string.IsNullOrWhiteSpace(Api.AccessToken)))
             _ = RefreshNotificationsPeriodicallyAsync(_notificationRefreshCancellation.Token);
     }
 
@@ -173,11 +217,15 @@
             Navigation.NavigateTo("/login");
     }
 
-    private int? BellCount => Api.IsAdministrator ? AdminNotifications.Count : AlertCount.Count;
+    private int? BellCount => Api.IsAdministrator
+        ? AdminNotifications.Count
+        : Api.CurrentRole == "Auditor" ? AlertCount.Count : UserNotifications.UnreadCount;
     private string BellBadge => BellCount is int count && count > 99 ? "99+" : BellCount?.ToString() ?? "";
     private string BellTitle => Api.IsAdministrator
         ? AdminNotifications.Count is int count ? $"Notifications ({count} pending item{(count == 1 ? "" : "s")})" : "Notifications"
-        : AlertCount.Count is int alertCount ? $"Security Alerts ({alertCount} pending device approval{(alertCount == 1 ? "" : "s")})" : "Security Alerts";
+        : Api.CurrentRole == "Auditor"
+            ? AlertCount.Count is int alertCount ? $"Security Alerts ({alertCount} pending device approval{(alertCount == 1 ? "" : "s")})" : "Security Alerts"
+            : UserNotifications.UnreadCount > 0 ? $"Notifications ({UserNotifications.UnreadCount} unread)" : "Notifications";
     private bool NotificationOpen;
     private readonly CancellationTokenSource _notificationRefreshCancellation = new();
 
@@ -191,11 +239,21 @@
     private async Task ToggleNotificationPanelAsync()
     {
         NotificationOpen = !NotificationOpen;
-        if (NotificationOpen && Api.IsAdministrator)
-            await AdminNotifications.RefreshAsync(_notificationRefreshCancellation.Token);
+        if (NotificationOpen)
+            await RefreshNotificationsAsync();
     }
 
     private void CloseNotificationPanel() => NotificationOpen = false;
+    private string UnreadClass(SafePassage.Web.Services.UserNotification item) =>
+        item.ReadAt is null ? "unread" : "";
+    private async Task OpenUserNotificationAsync(SafePassage.Web.Services.UserNotification item)
+    {
+        if (item.ReadAt is null)
+            await UserNotifications.MarkReadAsync(item.Id, _notificationRefreshCancellation.Token);
+        CloseNotificationPanel();
+    }
+    private Task MarkAllUserNotificationsReadAsync() =>
+        UserNotifications.MarkAllReadAsync(_notificationRefreshCancellation.Token);
     private static string NotificationMark(string category) => category switch
     {
         "Device approval" => "D",
@@ -216,8 +274,10 @@
         : Task.CompletedTask;
 
     private Task RefreshNotificationsAsync() => Api.IsAdministrator
-        ? AdminNotifications.RefreshAsync()
-        : Task.CompletedTask;
+        ? AdminNotifications.RefreshAsync(_notificationRefreshCancellation.Token)
+        : Api.CurrentRole == "Auditor"
+            ? Task.CompletedTask
+            : UserNotifications.RefreshAsync(_notificationRefreshCancellation.Token);
 
     private async Task RefreshNotificationsPeriodicallyAsync(CancellationToken cancellationToken)
     {
@@ -225,7 +285,7 @@
         try
         {
             while (await timer.WaitForNextTickAsync(cancellationToken))
-                await AdminNotifications.RefreshAsync(cancellationToken);
+                await RefreshNotificationsAsync();
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
     }
@@ -242,6 +302,7 @@
 
     private void HandleAlertCountChanged() => _ = InvokeAsync(StateHasChanged);
     private void HandleAdminNotificationsChanged() => _ = InvokeAsync(StateHasChanged);
+    private void HandleUserNotificationsChanged() => _ = InvokeAsync(StateHasChanged);
     private void HandleProfileChanged() => _ = InvokeAsync(StateHasChanged);
 
     public void Dispose()
@@ -251,6 +312,7 @@
         Navigation.LocationChanged -= HandleLocationChanged;
         AlertCount.Changed -= HandleAlertCountChanged;
         AdminNotifications.Changed -= HandleAdminNotificationsChanged;
+        UserNotifications.Changed -= HandleUserNotificationsChanged;
         Api.ProfileChanged -= HandleProfileChanged;
     }
 }

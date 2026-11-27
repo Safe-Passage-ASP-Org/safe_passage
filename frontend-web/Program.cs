@@ -13,6 +13,7 @@ builder.Services.AddScoped(_ => new HttpClient { BaseAddress = new Uri(apiBaseUr
 builder.Services.AddScoped<AdminApiClient>();
 builder.Services.AddScoped<SecurityAlertCountService>();
 builder.Services.AddScoped<AdminNotificationService>();
+builder.Services.AddScoped<UserNotificationService>();
 
 var app = builder.Build();
 

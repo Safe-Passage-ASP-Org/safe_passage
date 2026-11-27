@@ -1,9 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using SafePassage.Api.Models;
+using SafePassage.Api.Services;
 
 namespace SafePassage.Api.Data;
 
-public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : DbContext(options)
+public sealed class ApplicationDbContext(
+    DbContextOptions<ApplicationDbContext> options,
+    IUserNotificationPushSender? notificationPushSender = null) : DbContext(options)
 {
     public DbSet<User> Users => Set<User>();
     public DbSet<AccountActivationToken> AccountActivationTokens => Set<AccountActivationToken>();
@@ -15,6 +18,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Application> Applications => Set<Application>();
     public DbSet<SecurityPolicy> SecurityPolicies => Set<SecurityPolicy>();
     public DbSet<ActivityLog> ActivityLogs => Set<ActivityLog>();
+    public DbSet<UserNotification> UserNotifications => Set<UserNotification>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
     public DbSet<MfaSession> MfaSessions => Set<MfaSession>();
     public DbSet<UserGroup> UserGroups => Set<UserGroup>();
@@ -24,6 +28,184 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<UserSubscription> UserSubscriptions => Set<UserSubscription>();
     public DbSet<SubscriptionWebhookEvent> SubscriptionWebhookEvents => Set<SubscriptionWebhookEvent>();
     public DbSet<VaultSite> VaultSites => Set<VaultSite>();
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        PrepareActivityNotifications();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
+        SaveChangesAsync(true, cancellationToken);
+
+    public override async Task<int> SaveChangesAsync(
+        bool acceptAllChangesOnSuccess,
+        CancellationToken cancellationToken = default)
+    {
+        var notifications = PrepareActivityNotifications();
+        var saved = await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        await DeliverNotificationsAsync(notifications, cancellationToken);
+        return saved;
+    }
+
+    private List<UserNotification> PrepareActivityNotifications()
+    {
+        var notifications = new List<UserNotification>();
+        var newActivities = ChangeTracker.Entries<ActivityLog>()
+            .Where(entry => entry.State == EntityState.Added)
+            .ToList();
+        foreach (var entry in newActivities)
+        {
+            var activity = entry.Entity;
+            if (!TryGetNotification(activity, out var category, out var title, out var message, out var href))
+                continue;
+
+            var userId = activity.TargetUserId ?? activity.UserId;
+            if (userId is null)
+                continue;
+
+            var notification = new UserNotification
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId.Value,
+                Category = category,
+                Title = title,
+                Message = message,
+                Href = href,
+                CreatedAt = activity.Timestamp
+            };
+            UserNotifications.Add(notification);
+            notifications.Add(notification);
+        }
+
+        return notifications;
+    }
+
+    private async Task DeliverNotificationsAsync(
+        IReadOnlyCollection<UserNotification> notifications,
+        CancellationToken cancellationToken)
+    {
+        if (notificationPushSender is null || notifications.Count == 0)
+            return;
+
+        foreach (var group in notifications.GroupBy(notification => notification.UserId))
+        {
+            var tokens = await Devices.AsNoTracking()
+                .Where(device => device.UserId == group.Key
+                    && device.Status == DeviceStatus.Active
+                    && device.PushToken != null)
+                .Select(device => device.PushToken!)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+
+            foreach (var notification in group)
+            {
+                await notificationPushSender.SendAsync(
+                    tokens,
+                    notification.Title,
+                    notification.Message,
+                    notification.Id,
+                    notification.Href,
+                    cancellationToken);
+            }
+        }
+    }
+
+    private static bool TryGetNotification(
+        ActivityLog activity,
+        out string category,
+        out string title,
+        out string message,
+        out string? href)
+    {
+        category = "Security";
+        title = activity.Action;
+        message = activity.Resource;
+        href = "/activity-logs";
+
+        var action = activity.Action.Trim().ToLowerInvariant();
+        if (action.Contains("login") && activity.Status == ActivityLogStatus.Denied)
+        {
+            title = "Sign-in blocked";
+            message = string.IsNullOrWhiteSpace(activity.Reason) ? activity.Resource : activity.Reason;
+            href = "/notifications";
+            return true;
+        }
+
+        if (action.Contains("security alert") || action.Contains("device trust blocked"))
+        {
+            title = "Security alert";
+            message = string.IsNullOrWhiteSpace(activity.Reason) ? activity.Resource : activity.Reason;
+            href = "/notifications";
+            return true;
+        }
+
+        if (action.Contains("browser app access notification"))
+        {
+            title = "Sign-in approval failed";
+            message = "A browser sign-in request could not be sent to your trusted device.";
+            href = "/notifications";
+            return true;
+        }
+
+        if (action.Contains("password change"))
+        {
+            category = "Account";
+            title = "Password changed";
+            message = "Your account password was changed.";
+            href = "/settings";
+            return true;
+        }
+
+        if (action.Contains("backup email") || action.Contains("admin email changed"))
+        {
+            category = "Account";
+            title = "Account email updated";
+            message = "An email address on your account was updated.";
+            href = "/settings";
+            return true;
+        }
+
+        if (action.Contains("profile updated"))
+        {
+            category = "Account";
+            title = "Profile updated";
+            message = "Your account profile was updated.";
+            href = "/settings";
+            return true;
+        }
+
+        if (action.Contains("device trusted") || action.Contains("device revoked")
+            || action.Contains("device registered") || action.Contains("first device enrollment")
+            || action.Contains("device posture updated") || action.Contains("device signing key enrolled")
+            || action.Contains("signing key recovery approved"))
+        {
+            category = "Device";
+            title = activity.Action;
+            message = activity.Resource;
+            href = "/devices";
+            return true;
+        }
+
+        if (action.Contains("subscription activated") || action.Contains("subscription cancelled"))
+        {
+            category = "Subscription";
+            title = activity.Action;
+            message = activity.Resource;
+            href = "/subscription";
+            return true;
+        }
+
+        if (action.Contains("application access verification") && activity.Status == ActivityLogStatus.Denied)
+        {
+            title = "Application access blocked";
+            message = "A sign-in to an application was blocked by your access or security policy.";
+            href = "/activity-logs";
+            return true;
+        }
+
+        return false;
+    }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
@@ -210,6 +392,18 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(log => log.Status).HasConversion<string>().HasMaxLength(32);
             entity.HasOne(log => log.User).WithMany(user => user.ActivityLogs)
                 .HasForeignKey(log => log.UserId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<UserNotification>(entity =>
+        {
+            entity.HasKey(notification => notification.Id);
+            entity.HasIndex(notification => new { notification.UserId, notification.CreatedAt });
+            entity.Property(notification => notification.Category).HasMaxLength(64).IsRequired();
+            entity.Property(notification => notification.Title).HasMaxLength(120).IsRequired();
+            entity.Property(notification => notification.Message).HasMaxLength(2000).IsRequired();
+            entity.Property(notification => notification.Href).HasMaxLength(512);
+            entity.HasOne<User>().WithMany().HasForeignKey(notification => notification.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<UserSession>(entity =>
