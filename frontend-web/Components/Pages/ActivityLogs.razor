@@ -3,47 +3,293 @@
 @inject AdminApiClient Api
 
 <PageTitle>Activity Logs – Safe Passage</PageTitle>
-<div class="sp-page-header"><h1 class="sp-page-title">Activity Logs</h1><p class="sp-page-subtitle">Recent authentication and administrative events recorded by the system.</p></div>
-<div class="audit-toolbar"><input aria-label="Search activity" placeholder="Search user, action, or resource" @bind="Search" @bind:event="oninput" /><select aria-label="Filter by result" @bind="StatusFilter"><option value="">All results</option><option value="Success">Success</option><option value="Denied">Denied</option></select><label class="audit-sort">Sort by <select aria-label="Sort activity" @bind="SortOrder"><option value="newest">Newest first</option><option value="oldest">Oldest first</option><option value="user">User A–Z</option><option value="event">Event A–Z</option></select></label><button @onclick="LoadAsync" disabled="@Loading">Refresh</button></div>
-@if (!string.IsNullOrWhiteSpace(Error)) { <div class="audit-error" role="alert">@Error</div> }
-<section class="sp-card audit-card">
-    @if (Loading) { <p class="audit-state" role="status">Loading activity…</p> }
-    else if (FilteredRows.Count == 0) { <p class="audit-state">@(Rows.Count == 0 ? "No activity has been recorded." : "No events match these filters.")</p> }
-    else
-    {
-        <div class="audit-scroll"><table><thead><tr><th>Timestamp</th><th>User</th><th>Device</th><th>Event</th><th>Resource</th><th>Result</th></tr></thead><tbody>
-        @foreach (var row in FilteredRows)
-        {
-            <tr><td>@row.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td><td>@row.Username</td><td>@(string.IsNullOrWhiteSpace(row.DeviceId) ? "—" : row.DeviceId)</td><td>@row.Action</td><td>@row.Resource@if (!string.IsNullOrWhiteSpace(row.Reason)) { <div style="color:#64748b;font-size:11px;margin-top:2px;">@row.Reason</div> }</td><td><span class="audit-status @(row.Status.Equals("Success", StringComparison.OrdinalIgnoreCase) ? "success" : "denied")">@row.Status</span></td></tr>
-        }
-        </tbody></table></div>
-        <p class="audit-foot">Showing @FilteredRows.Count of @Rows.Count most recent events.</p>
-    }
+<div class="sp-page-header">
+    <h1 class="sp-page-title">Activity Logs</h1>
+    <p class="sp-page-subtitle">Filter account activity by date, action, user, and group, and review activity counts for the selected period.</p>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(Error))
+{
+    <div class="audit-error" role="alert">@Error</div>
+}
+
+<section class="sp-card audit-filter-card" aria-label="Activity filters">
+    <div class="audit-filters">
+        <label>From date<input type="date" @bind="FromDate" /></label>
+        <label>To date<input type="date" @bind="ToDate" /></label>
+        <label>Year
+            <select @bind="Year">
+                <option value="">All years</option>
+                @foreach (var year in FilterOptions?.Years ?? [])
+                {
+                    <option value="@year">@year</option>
+                }
+            </select>
+        </label>
+        <label>Month
+            <select @bind="Month">
+                <option value="">All months</option>
+                @for (var month = 1; month <= 12; month++)
+                {
+                    <option value="@month">@MonthNames[month - 1]</option>
+                }
+            </select>
+        </label>
+        <label>Action
+            <select @bind="Action">
+                <option value="">All actions</option>
+                @foreach (var action in FilterOptions?.Actions ?? [])
+                {
+                    <option value="@action">@action</option>
+                }
+            </select>
+        </label>
+        <label>User
+            <select @bind="UserId">
+                <option value="">All users</option>
+                @foreach (var user in FilterOptions?.Users ?? [])
+                {
+                    <option value="@user.Id">@(user.FullName ?? user.Username) (@user.Username)</option>
+                }
+            </select>
+        </label>
+        <label>Group
+            <select @bind="GroupId">
+                <option value="">All groups</option>
+                @foreach (var group in FilterOptions?.Groups ?? [])
+                {
+                    <option value="@group.Id">@group.Name</option>
+                }
+            </select>
+        </label>
+        <label>Result
+            <select @bind="Status">
+                <option value="">All results</option>
+                <option value="Success">Success</option>
+                <option value="Denied">Denied</option>
+            </select>
+        </label>
+        <label class="audit-search">Search
+            <input type="search" placeholder="User, resource, device, reason…" @bind="Search" />
+        </label>
+        <label>Sort
+            <select @bind="SortOrder">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="user">User A–Z</option>
+                <option value="event">Action A–Z</option>
+            </select>
+        </label>
+    </div>
+    <div class="audit-filter-actions">
+        <button type="button" class="audit-apply" @onclick="LoadAsync" disabled="@Loading">@(Loading ? "Loading…" : "Apply filters")</button>
+        <button type="button" class="audit-reset" @onclick="ResetFiltersAsync" disabled="@Loading">Reset filters</button>
+    </div>
 </section>
-<style>
-    .audit-toolbar{display:flex;gap:8px;margin-bottom:14px;align-items:center}.audit-toolbar input{flex:1;min-width:140px}.audit-toolbar input,.audit-toolbar select{border:1px solid #cbd5dc;border-radius:5px;padding:9px 11px;background:#fff;font:inherit;font-size:12px}.audit-sort{display:flex;align-items:center;gap:6px;color:#64748b;font-size:11px;white-space:nowrap}.audit-toolbar button{border:0;border-radius:5px;padding:9px 14px;background:#087f75;color:#fff;font-size:12px;font-weight:650}.audit-toolbar button:disabled{opacity:.6}.audit-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}.audit-card{overflow:hidden}.audit-scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:700px}th{text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px;padding:12px 15px}td{padding:12px 15px;border-top:1px solid #edf0f2;font-size:12px}td:first-child{white-space:nowrap;color:#64748b}.audit-status{display:inline-block;border-radius:12px;padding:4px 8px;font-size:10px;font-weight:700}.audit-status.success{background:#edf7f2;color:#087f5b}.audit-status.denied{background:#fcecea;color:#a53e34}.audit-state,.audit-foot{padding:20px;color:#64748b;font-size:12px}.audit-foot{border-top:1px solid #edf0f2;margin:0;text-align:right}
-    @@media(max-width:560px){.audit-toolbar{flex-wrap:wrap}.audit-toolbar input{flex-basis:100%}.audit-toolbar select{flex:1}}
-</style>
-@code {
-    private List<AdminActivity> Rows = [];
-    private string Search = "", StatusFilter = "", Error = "", SortOrder = "newest";
-    private bool Loading = true;
-    private List<AdminActivity> FilteredRows
+
+@if (Loading && Summary is null)
+{
+    <p class="audit-state" role="status">Loading activity…</p>
+}
+else if (Summary is not null)
+{
+    <section class="audit-summary" aria-label="Activity summary">
+        <article class="audit-summary-card"><span>Matching activities</span><strong>@Summary.TotalCount</strong></article>
+        <article class="audit-summary-card"><span>Successful logins</span><strong>@Summary.SuccessfulLogins</strong></article>
+        <article class="audit-summary-card"><span>Denied logins</span><strong>@Summary.DeniedLogins</strong></article>
+        <article class="audit-summary-card"><span>Denied activities</span><strong>@Summary.DeniedCount</strong></article>
+        <article class="audit-summary-card"><span>MFA activities</span><strong>@Summary.MfaEvents</strong></article>
+    </section>
+
+    @if (Summary.ActionCounts is { Count: > 0 } actionCounts)
     {
-        get
+        <section class="sp-card audit-action-breakdown" aria-label="Activity counts by action">
+            <h2>Activity by action</h2>
+            <div class="audit-action-counts">
+                @foreach (var item in actionCounts)
+                {
+                    <div><span>@item.Action</span><strong>@item.Count</strong></div>
+                }
+            </div>
+        </section>
+    }
+
+    <section class="sp-card audit-card">
+        @if (Loading)
         {
-            var filtered = Rows.Where(row =>
-        (string.IsNullOrWhiteSpace(StatusFilter) || row.Status.Equals(StatusFilter, StringComparison.OrdinalIgnoreCase))
-        && (string.IsNullOrWhiteSpace(Search) || $"{row.Username} {row.DeviceId} {row.Action} {row.Resource} {row.Reason}".Contains(Search, StringComparison.OrdinalIgnoreCase)));
-            return (SortOrder switch
+            <p class="audit-state" role="status">Updating activity…</p>
+        }
+        else if (Rows.Count == 0)
+        {
+            <p class="audit-state">No activities match these filters.</p>
+        }
+        else
+        {
+            <div class="audit-scroll">
+                <table>
+                    <thead><tr><th>Timestamp</th><th>User</th><th>Device</th><th>Action</th><th>Resource</th><th>Result</th></tr></thead>
+                    <tbody>
+                        @foreach (var row in SortedRows)
+                        {
+                            <tr>
+                                <td>@row.Timestamp.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                <td>@row.Username</td>
+                                <td>@(string.IsNullOrWhiteSpace(row.DeviceId) ? "—" : row.DeviceId)</td>
+                                <td>@row.Action</td>
+                                <td>@row.Resource@if (!string.IsNullOrWhiteSpace(row.Reason)) { <div class="audit-reason">@row.Reason</div> }</td>
+                                <td><span class="audit-status @(row.Status.Equals("Success", StringComparison.OrdinalIgnoreCase) ? "success" : "denied")">@row.Status</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+            <p class="audit-foot">Showing @Rows.Count of @Summary.TotalCount matching activities (maximum 2,000 rows shown).</p>
+        }
+    </section>
+}
+
+<style>
+    .audit-filter-card{padding:16px;margin-bottom:14px}
+    .audit-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+    .audit-filters label{display:grid;gap:5px;color:#64748b;font-size:11px;font-weight:650}
+    .audit-filters input,.audit-filters select{min-width:0;width:100%;border:1px solid #cbd5dc;border-radius:5px;padding:8px 9px;background:var(--sp-bg-card);color:var(--sp-text-primary);font:inherit;font-size:12px}
+    .audit-filters .audit-search{grid-column:span 2}
+    .audit-filter-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:12px}
+    .audit-filter-actions button{border:1px solid #cbd5dc;border-radius:5px;padding:8px 12px;font-size:12px;font-weight:650;cursor:pointer}
+    .audit-apply{background:#087f75;border-color:#087f75!important;color:#fff}
+    .audit-reset{background:var(--sp-bg-card);color:var(--sp-text-primary)}
+    .audit-filter-actions button:disabled{opacity:.6;cursor:wait}
+    .audit-error{padding:11px 14px;border-radius:6px;margin-bottom:14px;background:#fcecea;color:#9d332b;font-size:13px}
+    .audit-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+    .audit-summary-card{display:grid;gap:8px;padding:15px;border:1px solid var(--sp-topbar-border);border-radius:8px;background:var(--sp-bg-card)}
+    .audit-summary-card span{color:var(--sp-text-secondary);font-size:11px}
+    .audit-summary-card strong{color:var(--sp-text-primary);font-size:22px}
+    .audit-action-breakdown{padding:16px;margin-bottom:14px}
+    .audit-action-breakdown h2{margin:0 0 12px;font-size:14px}
+    .audit-action-counts{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px}
+    .audit-action-counts div{display:flex;justify-content:space-between;gap:12px;padding:9px 10px;border-radius:5px;background:var(--sp-bg-page);font-size:12px}
+    .audit-action-counts strong{color:var(--sp-accent-dark)}
+    .audit-card{overflow:hidden}
+    .audit-scroll{overflow:auto}
+    table{width:100%;border-collapse:collapse;min-width:700px}
+    th{text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px;padding:12px 15px}
+    td{padding:12px 15px;border-top:1px solid #edf0f2;font-size:12px}
+    td:first-child{white-space:nowrap;color:#64748b}
+    .audit-reason{color:#64748b;font-size:11px;margin-top:2px}
+    .audit-status{display:inline-block;border-radius:12px;padding:4px 8px;font-size:10px;font-weight:700}
+    .audit-status.success{background:#edf7f2;color:#087f5b}
+    .audit-status.denied{background:#fcecea;color:#a53e34}
+    .audit-state,.audit-foot{padding:20px;color:#64748b;font-size:12px}
+    .audit-foot{border-top:1px solid #edf0f2;margin:0;text-align:right}
+    :root[data-sp-theme="dark"] .audit-filter-card,
+    :root[data-sp-theme="dark"] .audit-summary-card,
+    :root[data-sp-theme="dark"] .audit-action-breakdown{background:var(--sp-bg-card);border-color:#30363d}
+    :root[data-sp-theme="dark"] .audit-action-counts div{background:#0d1117}
+    :root[data-sp-theme="dark"] .audit-action-breakdown h2,
+    :root[data-sp-theme="dark"] .audit-summary-card strong{color:#e6edf3}
+    :root[data-sp-theme="dark"] th{background:#21262d;color:#aab6c2}
+    :root[data-sp-theme="dark"] td{border-color:#30363d}
+    @@media(max-width:560px){.audit-filters .audit-search{grid-column:auto}.audit-filter-actions{justify-content:stretch}.audit-filter-actions button{flex:1}}
+</style>
+
+@code {
+    private static readonly string[] MonthNames =
+    [
+        "January", "February", "March", "April", "May", "June",
+        "July", "August", "September", "October", "November", "December"
+    ];
+
+    private AdminActivityFilterOptions? FilterOptions;
+    private AdminActivitySummary? Summary;
+    private List<AdminActivity> Rows = [];
+    private DateTime? FromDate;
+    private DateTime? ToDate;
+    private string Year = "";
+    private string Month = "";
+    private string Status = "";
+    private string Action = "";
+    private string UserId = "";
+    private string GroupId = "";
+    private string Search = "";
+    private string SortOrder = "newest";
+    private string Error = "";
+    private bool Loading = true;
+
+    private IEnumerable<AdminActivity> SortedRows => SortOrder switch
+    {
+        "oldest" => Rows.OrderBy(row => row.Timestamp),
+        "user" => Rows.OrderBy(row => row.Username, StringComparer.OrdinalIgnoreCase).ThenByDescending(row => row.Timestamp),
+        "event" => Rows.OrderBy(row => row.Action, StringComparer.OrdinalIgnoreCase).ThenByDescending(row => row.Timestamp),
+        _ => Rows.OrderByDescending(row => row.Timestamp)
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            FilterOptions = await Api.GetAdminActivityFilterOptionsAsync();
+            if (FilterOptions.Years.Contains(DateTime.UtcNow.Year))
             {
-                "oldest" => filtered.OrderBy(row => row.Timestamp),
-                "user" => filtered.OrderBy(row => row.Username, StringComparer.OrdinalIgnoreCase).ThenByDescending(row => row.Timestamp),
-                "event" => filtered.OrderBy(row => row.Action, StringComparer.OrdinalIgnoreCase).ThenByDescending(row => row.Timestamp),
-                _ => filtered.OrderByDescending(row => row.Timestamp)
-            }).ToList();
+                Year = DateTime.UtcNow.Year.ToString();
+                Month = DateTime.UtcNow.Month.ToString();
+            }
+        }
+        catch (Exception exception)
+        {
+            Error = exception.Message;
+        }
+
+        await LoadAsync();
+    }
+
+    private AdminActivityFilter BuildFilter()
+    {
+        DateOnly? from = FromDate.HasValue ? DateOnly.FromDateTime(FromDate.Value) : null;
+        DateOnly? to = ToDate.HasValue ? DateOnly.FromDateTime(ToDate.Value) : null;
+        int? year = int.TryParse(Year, out var parsedYear) ? parsedYear : null;
+        int? month = int.TryParse(Month, out var parsedMonth) ? parsedMonth : null;
+        Guid? userId = Guid.TryParse(UserId, out var parsedUserId) ? parsedUserId : null;
+        Guid? groupId = Guid.TryParse(GroupId, out var parsedGroupId) ? parsedGroupId : null;
+        return new AdminActivityFilter(from, to, year, month, Status, Action, userId, groupId, Search);
+    }
+
+    private async Task LoadAsync()
+    {
+        Loading = true;
+        Error = "";
+        var filter = BuildFilter();
+        try
+        {
+            var rowsTask = Api.GetFilteredAdminActivityAsync(filter);
+            var summaryTask = Api.GetFilteredAdminActivitySummaryAsync(filter);
+            await Task.WhenAll(rowsTask, summaryTask);
+            Rows = rowsTask.Result;
+            Summary = summaryTask.Result;
+        }
+        catch (Exception exception)
+        {
+            Rows = [];
+            Summary = null;
+            Error = exception.Message;
+        }
+        finally
+        {
+            Loading = false;
         }
     }
-    protected override async Task OnInitializedAsync() => await LoadAsync();
-    private async Task LoadAsync() { Loading = true; Error = ""; try { Rows = await Api.GetAdminActivityAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
+
+    private async Task ResetFiltersAsync()
+    {
+        FromDate = null;
+        ToDate = null;
+        Year = "";
+        Month = "";
+        Status = "";
+        Action = "";
+        UserId = "";
+        GroupId = "";
+        Search = "";
+        SortOrder = "newest";
+        await LoadAsync();
+    }
 }

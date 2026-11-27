@@ -479,6 +479,52 @@ public sealed class AdminApiClient(HttpClient http)
         await http.GetFromJsonAsync<AdminActivitySummary>("api/admin/activity/summary", cancellationToken)
         ?? new AdminActivitySummary(0, 0, 0, 0);
 
+    public async Task<AdminActivityFilterOptions> GetAdminActivityFilterOptionsAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<AdminActivityFilterOptions>("api/admin/activity/filters", cancellationToken)
+        ?? throw new InvalidOperationException("The API returned empty activity filter options.");
+
+    public async Task<List<AdminActivity>> GetFilteredAdminActivityAsync(
+        AdminActivityFilter filter,
+        int limit = 2000,
+        CancellationToken cancellationToken = default)
+    {
+        var query = BuildAdminActivityFilterQuery("api/admin/activity", filter);
+        query += $"&limit={Math.Clamp(limit, 1, 2000)}";
+        return await http.GetFromJsonAsync<List<AdminActivity>>(query, cancellationToken) ?? [];
+    }
+
+    public async Task<AdminActivitySummary> GetFilteredAdminActivitySummaryAsync(
+        AdminActivityFilter filter,
+        CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<AdminActivitySummary>(
+            BuildAdminActivityFilterQuery("api/admin/activity/summary", filter),
+            cancellationToken)
+        ?? throw new InvalidOperationException("The API returned an empty activity summary.");
+
+    private static string BuildAdminActivityFilterQuery(string path, AdminActivityFilter filter)
+    {
+        var parameters = new List<string>();
+        if (filter.FromDate.HasValue)
+            parameters.Add($"fromDate={filter.FromDate.Value:yyyy-MM-dd}");
+        if (filter.ToDate.HasValue)
+            parameters.Add($"toDate={filter.ToDate.Value:yyyy-MM-dd}");
+        if (filter.Year.HasValue)
+            parameters.Add($"year={filter.Year.Value}");
+        if (filter.Month.HasValue)
+            parameters.Add($"month={filter.Month.Value}");
+        if (!string.IsNullOrWhiteSpace(filter.Status))
+            parameters.Add($"status={Uri.EscapeDataString(filter.Status)}");
+        if (!string.IsNullOrWhiteSpace(filter.Action))
+            parameters.Add($"action={Uri.EscapeDataString(filter.Action)}");
+        if (filter.UserId.HasValue)
+            parameters.Add($"userId={filter.UserId.Value}");
+        if (filter.GroupId.HasValue)
+            parameters.Add($"groupId={filter.GroupId.Value}");
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+            parameters.Add($"search={Uri.EscapeDataString(filter.Search)}");
+        return $"{path}?{string.Join("&", parameters)}";
+    }
+
     public async Task ChangePasswordAsync(string currentPassword, string newPassword, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync("api/auth/change-password", new { currentPassword, newPassword }, cancellationToken);
@@ -871,8 +917,34 @@ public sealed record AdminAccessRequest(Guid Id, Guid ApplicationId, string Appl
 public sealed class AdminApplicationForm { public string Name { get; set; } = ""; public string Description { get; set; } = ""; public string LaunchUrl { get; set; } = ""; public string Category { get; set; } = ""; public string AutoFillUsername { get; set; } = ""; public string AutoFillPassword { get; set; } = ""; public bool HasAutoFillPassword { get; set; } public bool IsPublished { get; set; } public bool AllowAccessRequests { get; set; } }
 public sealed class VaultSiteForm { public string Name { get; set; } = ""; public string LoginUrl { get; set; } = ""; public string Category { get; set; } = "Other"; public string Description { get; set; } = ""; public string AutoFillUsername { get; set; } = ""; public string Password { get; set; } = ""; public string TotpSecret { get; set; } = ""; public bool ClearTotpSecret { get; set; } public bool HasPassword { get; set; } public bool HasTotpSecret { get; set; } }
 public sealed record AdminApplicationAccess(List<Guid> UserIds, List<Guid> GroupIds);
-public sealed record AdminActivity(Guid Id, DateTimeOffset Timestamp, string Username, string Action, string Resource, string Status, string? DeviceId = null, string? Reason = null);
-public sealed record AdminActivitySummary(int TotalCount, int MfaLast24h, int DeniedCount, int DeniedLast24h);
+public sealed record AdminActivity(Guid Id, DateTimeOffset Timestamp, string Username, string Action, string Resource, string Status, string? DeviceId = null, string? Reason = null, Guid? UserId = null);
+public sealed record AdminActivitySummary(
+    int TotalCount,
+    int MfaLast24h,
+    int DeniedCount,
+    int DeniedLast24h,
+    int SuccessfulLogins = 0,
+    int DeniedLogins = 0,
+    IReadOnlyList<AdminActivityActionCount>? ActionCounts = null,
+    int MfaEvents = 0);
+public sealed record AdminActivityActionCount(string Action, int Count);
+public sealed record ActivityUserOption(Guid Id, string Username, string? FullName);
+public sealed record ActivityGroupOption(Guid Id, string Name);
+public sealed record AdminActivityFilterOptions(
+    IReadOnlyList<ActivityUserOption> Users,
+    IReadOnlyList<ActivityGroupOption> Groups,
+    IReadOnlyList<string> Actions,
+    IReadOnlyList<int> Years);
+public sealed record AdminActivityFilter(
+    DateOnly? FromDate = null,
+    DateOnly? ToDate = null,
+    int? Year = null,
+    int? Month = null,
+    string? Status = null,
+    string? Action = null,
+    Guid? UserId = null,
+    Guid? GroupId = null,
+    string? Search = null);
 public sealed record AdminPolicy(Guid Id, string PolicyName, string PolicyType, bool IsEnforced, string RulesJson);
 public sealed class AdminPolicyForm { public string PolicyName { get; set; } = ""; public string PolicyType { get; set; } = "Authentication"; public bool IsEnforced { get; set; } = true; public string RulesJson { get; set; } = "{}"; }
 public sealed record AdminRole(string Id, string Name, string Description);
