@@ -23,6 +23,33 @@ using SafePassage.Api.Middleware;
 using SafePassage.Api.Models;
 using SafePassage.Api.Services;
 
+const string subscriptionReminderCommand = "--run-subscription-expiration-reminders";
+if (args.Contains(subscriptionReminderCommand, StringComparer.OrdinalIgnoreCase))
+{
+    var jobBuilder = Host.CreateApplicationBuilder(Array.Empty<string>());
+    var jobDatabaseProvider = jobBuilder.Configuration["Database:Provider"] ?? "SqlServer";
+    var jobConnectionString = jobBuilder.Configuration.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection must be configured for the subscription reminder job.");
+
+    jobBuilder.Services.AddDbContext<ApplicationDbContext>(options =>
+    {
+        options.ConfigureSafePassageDatabase(jobDatabaseProvider, jobConnectionString, jobBuilder.Environment.ContentRootPath);
+        options.UseOpenIddict();
+        options.ConfigureWarnings(w =>
+            w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+    });
+    jobBuilder.Services.AddHttpClient<ISubscriptionExpirationEmailSender, HttpApiActivationEmailSender>();
+    jobBuilder.Services.Configure<SmtpOptions>(jobBuilder.Configuration.GetSection(SmtpOptions.SectionName));
+    jobBuilder.Services.Configure<PayMongoOptions>(jobBuilder.Configuration.GetSection(PayMongoOptions.SectionName));
+    jobBuilder.Services.Configure<SubscriptionExpirationReminderOptions>(
+        jobBuilder.Configuration.GetSection(SubscriptionExpirationReminderOptions.SectionName));
+    jobBuilder.Services.AddSingleton<SubscriptionExpirationReminderWorker>();
+
+    using var jobHost = jobBuilder.Build();
+    await jobHost.Services.GetRequiredService<SubscriptionExpirationReminderWorker>().RunOnceAsync();
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 var databaseProvider = builder.Configuration["Database:Provider"] ?? "SqlServer";

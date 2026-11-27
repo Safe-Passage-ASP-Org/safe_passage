@@ -22,6 +22,19 @@ public sealed class SubscriptionExpirationReminderWorker(
     IConfiguration configuration,
     ILogger<SubscriptionExpirationReminderWorker> logger) : BackgroundService
 {
+    public async Task RunOnceAsync(CancellationToken cancellationToken = default)
+    {
+        if (!options.Value.Enabled)
+        {
+            logger.LogInformation("Subscription expiration reminder job is disabled.");
+            return;
+        }
+
+        var failed = await SendDueRemindersAsync(cancellationToken);
+        if (failed > 0)
+            throw new InvalidOperationException($"Failed to send {failed} subscription expiration reminder(s).");
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var settings = options.Value;
@@ -54,7 +67,7 @@ public sealed class SubscriptionExpirationReminderWorker(
         }
     }
 
-    private async Task SendDueRemindersAsync(CancellationToken cancellationToken)
+    private async Task<int> SendDueRemindersAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
@@ -76,6 +89,7 @@ public sealed class SubscriptionExpirationReminderWorker(
             .Take(500)
             .ToListAsync(cancellationToken);
 
+        var failed = 0;
         foreach (var subscription in subscriptions)
         {
             var periodEnd = subscription.CurrentPeriodEnd!.Value;
@@ -113,12 +127,15 @@ public sealed class SubscriptionExpirationReminderWorker(
             }
             catch (Exception exception)
             {
+                failed++;
                 logger.LogError(
                     exception,
                     "Could not send subscription period reminder for subscription {SubscriptionId}; it will be retried.",
                     subscription.Id);
             }
         }
+
+        return failed;
     }
 
     private string ResolveSubscriptionUrl()
