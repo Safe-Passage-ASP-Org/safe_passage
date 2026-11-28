@@ -451,7 +451,7 @@ public sealed class AuthController(
         return ToProblem(result.Failure);
     }
 
-    public sealed record AdminLoginEmailRequest(string? Email);
+    public sealed record AdminLoginEmailRequest(string? Email, bool ForceResend = false);
     public sealed record AdminLoginOtpVerificationRequest(string Email, string Code);
     public sealed record MfaOtpSendRequest(string SessionToken);
     public sealed record MfaOtpVerifyRequest(string SessionToken, string Code);
@@ -592,6 +592,22 @@ public sealed class AuthController(
         || string.Equals(role, "Administrator", StringComparison.OrdinalIgnoreCase)
         || string.Equals(role, "Super Admin", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Checks whether an administrator already has an active 7-day sign-in OTP.</summary>
+    [HttpPost("admin-login/otp-status")]
+    [AllowAnonymous]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    public async Task<IActionResult> GetAdminLoginOtpStatus(
+        [FromBody] AdminLoginEmailRequest request,
+        CancellationToken cancellationToken)
+    {
+        var email = request.Email?.Trim();
+        if (string.IsNullOrWhiteSpace(email) || email.Length > 320 || !email.Contains('@'))
+            return Ok(new { hasActiveOtp = false });
+
+        var hasActiveOtp = await adminEmailLoginService.HasActiveOtpAsync(email, cancellationToken);
+        return Ok(new { hasActiveOtp });
+    }
+
     /// <summary>Sends a 6-digit one-time verification code to an active, verified administrator.</summary>
     [HttpPost("admin-login/send-otp")]
     [AllowAnonymous]
@@ -617,7 +633,7 @@ public sealed class AuthController(
                 cache.Set(emailKey, true, TimeSpan.FromSeconds(20));
                 try
                 {
-                    await adminEmailLoginService.RequestOtpAsync(email, cancellationToken);
+                    await adminEmailLoginService.RequestOtpAsync(email, request.ForceResend, cancellationToken);
                 }
                 catch (Exception exception) when (exception is EmailDeliveryException or InvalidOperationException)
                 {

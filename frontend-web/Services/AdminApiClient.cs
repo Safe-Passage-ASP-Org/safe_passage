@@ -224,9 +224,24 @@ public sealed class AdminApiClient(HttpClient http)
             problem?.Detail ?? problem?.Title ?? "Could not resend the approval request. Please try again.");
     }
 
-    public async Task RequestAdminEmailOtpAsync(string email, CancellationToken cancellationToken = default)
+    private sealed record AdminOtpStatusResponse(bool HasActiveOtp);
+
+    public async Task<bool> HasActiveAdminEmailOtpAsync(string email, CancellationToken cancellationToken = default)
     {
-        using var response = await http.PostAsJsonAsync("api/auth/admin-login/send-otp", new { email }, cancellationToken);
+        if (string.IsNullOrWhiteSpace(email))
+            return false;
+
+        using var response = await http.PostAsJsonAsync("api/auth/admin-login/otp-status", new { email }, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+            return false;
+
+        var body = await ReadJsonSafeAsync<AdminOtpStatusResponse>(response, cancellationToken);
+        return body?.HasActiveOtp ?? false;
+    }
+
+    public async Task RequestAdminEmailOtpAsync(string email, bool forceResend = false, CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsJsonAsync("api/auth/admin-login/send-otp", new { email, forceResend }, cancellationToken);
         if (response.IsSuccessStatusCode) return;
         var problem = await ReadProblemSafeAsync(response, cancellationToken);
         throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Could not send an admin verification code.");

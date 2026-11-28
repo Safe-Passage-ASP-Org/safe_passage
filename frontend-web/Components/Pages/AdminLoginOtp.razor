@@ -44,8 +44,14 @@
         {
             <form @onsubmit="SendOtpAsync" @onsubmit:preventDefault="true">
                 <label for="admin-otp-email">Administrator email address</label>
-                <input id="admin-otp-email" type="email" autocomplete="email" @bind="EmailAddress" required disabled="@Sending" />
-                <button class="signup-button" type="submit" disabled="@Sending">@(Sending ? "Sending OTP..." : "Send 6-digit OTP")</button>
+                <input id="admin-otp-email" type="email" autocomplete="email"
+                       @bind="EmailAddress" @bind:event="oninput" @bind:after="OnEmailInputChanged"
+                       @onblur="OnEmailBlurAsync" required disabled="@Sending" />
+                <button class="signup-button" type="submit" disabled="@Sending">
+                    @(Sending
+                        ? (HasActiveOtp ? "Continuing..." : "Sending OTP...")
+                        : (HasActiveOtp ? "Continue" : "Send 6-digit OTP"))
+                </button>
             </form>
         }
         else
@@ -81,11 +87,52 @@
     private bool Resending;
     private bool Sending;
     private bool OtpRequested;
+    private bool HasActiveOtp;
     private CancellationTokenSource? CountdownCancellation;
+    private CancellationTokenSource? StatusCheckCancellation;
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
-        if (!string.IsNullOrWhiteSpace(Email)) EmailAddress = Email;
+        if (!string.IsNullOrWhiteSpace(Email))
+        {
+            EmailAddress = Email;
+            await RefreshOtpStatusAsync(EmailAddress, immediate: true);
+        }
+    }
+
+    private Task OnEmailInputChanged() => RefreshOtpStatusAsync(EmailAddress, immediate: false);
+
+    private Task OnEmailBlurAsync() => RefreshOtpStatusAsync(EmailAddress, immediate: true);
+
+    private async Task RefreshOtpStatusAsync(string email, bool immediate)
+    {
+        StatusCheckCancellation?.Cancel();
+        StatusCheckCancellation?.Dispose();
+        StatusCheckCancellation = new CancellationTokenSource();
+        var cancellationToken = StatusCheckCancellation.Token;
+
+        var trimmed = email.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed) || !trimmed.Contains('@'))
+        {
+            HasActiveOtp = false;
+            return;
+        }
+
+        try
+        {
+            if (!immediate)
+                await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+
+            var active = await Api.HasActiveAdminEmailOtpAsync(trimmed, cancellationToken);
+            if (!cancellationToken.IsCancellationRequested)
+                HasActiveOtp = active;
+        }
+        catch (OperationCanceledException) { }
+        catch
+        {
+            if (!cancellationToken.IsCancellationRequested)
+                HasActiveOtp = false;
+        }
     }
 
     private async Task SendOtpAsync()
@@ -98,11 +145,22 @@
             return;
         }
 
+        StatusCheckCancellation?.Cancel();
         Sending = true;
         try
         {
-            await Api.RequestAdminEmailOtpAsync(EmailAddress.Trim());
+            var trimmedEmail = EmailAddress.Trim();
+            HasActiveOtp = await Api.HasActiveAdminEmailOtpAsync(trimmedEmail);
+            if (HasActiveOtp)
+            {
+                OtpRequested = true;
+                Notice = "Enter your existing 6-digit verification code (valid for 7 days), or request a new code below.";
+                return;
+            }
+
+            await Api.RequestAdminEmailOtpAsync(trimmedEmail, forceResend: false);
             OtpRequested = true;
+            HasActiveOtp = true;
             Notice = "If this address belongs to an active administrator, a 6-digit verification code valid for 7 days has been sent.";
             StartCountdown();
         }
@@ -145,8 +203,9 @@
         Notice = "";
         try
         {
-            await Api.RequestAdminEmailOtpAsync(EmailAddress.Trim());
+            await Api.RequestAdminEmailOtpAsync(EmailAddress.Trim(), forceResend: true);
             Code = "";
+            HasActiveOtp = true;
             Notice = "If this address belongs to an active administrator, a new verification code valid for 7 days has been sent.";
             StartCountdown();
         }
@@ -184,5 +243,7 @@
     {
         CountdownCancellation?.Cancel();
         CountdownCancellation?.Dispose();
+        StatusCheckCancellation?.Cancel();
+        StatusCheckCancellation?.Dispose();
     }
 }

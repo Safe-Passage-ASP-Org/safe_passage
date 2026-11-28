@@ -15,7 +15,9 @@ public sealed class AdminLoginOptions
 
 public interface IAdminEmailLoginService
 {
+    Task<bool> HasActiveOtpAsync(string email, CancellationToken cancellationToken);
     Task RequestOtpAsync(string email, CancellationToken cancellationToken);
+    Task RequestOtpAsync(string email, bool forceResend, CancellationToken cancellationToken);
     Task<AuthFlowResult<LoginResponse>> CompleteOtpAsync(string email, string code, CancellationToken cancellationToken);
 }
 
@@ -28,19 +30,43 @@ public sealed class AdminEmailLoginService(
 {
     private static readonly TimeSpan OtpLifetime = TimeSpan.FromDays(7);
 
-    public async Task RequestOtpAsync(string email, CancellationToken cancellationToken)
+    public async Task<bool> HasActiveOtpAsync(string email, CancellationToken cancellationToken)
     {
-        var normalizedEmail = NormalizeEmail(email);
-        var user = await dbContext.Users.SingleOrDefaultAsync(candidate =>
-            candidate.Email.ToUpper() == normalizedEmail
-            && candidate.IsActive
-            && candidate.IsEmailVerified
-            && (candidate.Role.ToUpper() == "ADMIN"
-                || candidate.Role.ToUpper() == "ADMINISTRATOR"
-                || candidate.Role.ToUpper() == "SUPER ADMIN"), cancellationToken);
-        if (user is null) return;
+        if (string.IsNullOrWhiteSpace(email))
+            return false;
+
+        var user = await FindActiveAdministratorAsync(email, cancellationToken);
+        if (user is null)
+            return false;
 
         var now = DateTimeOffset.UtcNow;
+        return await dbContext.AdminLoginTokens.AnyAsync(
+            token => token.UserId == user.Id
+                && token.UsedAt == null
+                && token.ExpiresAt > now,
+            cancellationToken);
+    }
+
+    public Task RequestOtpAsync(string email, CancellationToken cancellationToken) =>
+        RequestOtpAsync(email, forceResend: true, cancellationToken);
+
+    public async Task RequestOtpAsync(string email, bool forceResend, CancellationToken cancellationToken)
+    {
+        var user = await FindActiveAdministratorAsync(email, cancellationToken);
+        if (user is null) return;
+
+        var normalizedEmail = NormalizeEmail(email);
+        var now = DateTimeOffset.UtcNow;
+        if (!forceResend)
+        {
+            var hasActiveOtp = await dbContext.AdminLoginTokens.AnyAsync(
+                token => token.UserId == user.Id
+                    && token.UsedAt == null
+                    && token.ExpiresAt > now,
+                cancellationToken);
+            if (hasActiveOtp) return;
+        }
+
         await dbContext.AdminLoginTokens
             .Where(token => token.UserId == user.Id && token.UsedAt == null)
             .ExecuteUpdateAsync(
@@ -90,13 +116,7 @@ public sealed class AdminEmailLoginService(
             return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
 
         var normalizedEmail = NormalizeEmail(email);
-        var user = await dbContext.Users.SingleOrDefaultAsync(candidate =>
-            candidate.Email.ToUpper() == normalizedEmail
-            && candidate.IsActive
-            && candidate.IsEmailVerified
-            && (candidate.Role.ToUpper() == "ADMIN"
-                || candidate.Role.ToUpper() == "ADMINISTRATOR"
-                || candidate.Role.ToUpper() == "SUPER ADMIN"), cancellationToken);
+        var user = await FindActiveAdministratorAsync(email, cancellationToken);
         if (user is null) return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
 
         var now = DateTimeOffset.UtcNow;
@@ -127,6 +147,18 @@ public sealed class AdminEmailLoginService(
         var accessToken = jwtTokenService.CreateAccessToken(user);
         return AuthFlowResult<LoginResponse>.Success(new(
             false, null, null, null, null, accessToken, "Bearer", "Administrator sign-in successful."));
+    }
+
+    private async Task<User?> FindActiveAdministratorAsync(string email, CancellationToken cancellationToken)
+    {
+        var normalizedEmail = NormalizeEmail(email);
+        return await dbContext.Users.SingleOrDefaultAsync(candidate =>
+            candidate.Email.ToUpper() == normalizedEmail
+            && candidate.IsActive
+            && candidate.IsEmailVerified
+            && (candidate.Role.ToUpper() == "ADMIN"
+                || candidate.Role.ToUpper() == "ADMINISTRATOR"
+                || candidate.Role.ToUpper() == "SUPER ADMIN"), cancellationToken);
     }
 
     private static string NormalizeEmail(string email) => email.Trim().ToUpperInvariant();

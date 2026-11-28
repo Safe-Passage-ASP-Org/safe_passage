@@ -113,6 +113,41 @@ public sealed class AdminEmailLoginServiceTests
     }
 
     [Fact]
+    public async Task HasActiveOtpAsync_ReflectsActiveAndExpiredState()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var admin = await fixture.SeedAdminAsync();
+
+        Assert.False(await fixture.Service.HasActiveOtpAsync(admin.Email, CancellationToken.None));
+
+        await fixture.Service.RequestOtpAsync(admin.Email, forceResend: false, CancellationToken.None);
+        Assert.True(await fixture.Service.HasActiveOtpAsync(admin.Email, CancellationToken.None));
+
+        var token = await fixture.DbContext.AdminLoginTokens.SingleAsync(item => item.UserId == admin.Id);
+        token.ExpiresAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        await fixture.DbContext.SaveChangesAsync();
+
+        Assert.False(await fixture.Service.HasActiveOtpAsync(admin.Email, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RequestOtpAsync_WithoutForceResend_KeepsExistingActiveOtp()
+    {
+        await using var fixture = await TestFixture.CreateAsync();
+        var admin = await fixture.SeedAdminAsync();
+
+        await fixture.Service.RequestOtpAsync(admin.Email, forceResend: false, CancellationToken.None);
+        var firstCode = fixture.EmailSender.LastOtpCode!;
+        var sendCountAfterFirst = fixture.EmailSender.SendCount;
+
+        await fixture.Service.RequestOtpAsync(admin.Email, forceResend: false, CancellationToken.None);
+
+        Assert.Equal(sendCountAfterFirst, fixture.EmailSender.SendCount);
+        Assert.Equal(firstCode, fixture.EmailSender.LastOtpCode);
+        Assert.Equal(1, await fixture.DbContext.AdminLoginTokens.CountAsync(item => item.UserId == admin.Id));
+    }
+
+    [Fact]
     public void FormatOtpBody_UsesReusableCopyForAdminAndSingleUseForUser()
     {
         var adminBody = SmtpEmailSender.FormatOtpBody("Admin User", "123456", 7 * 24 * 60, isAdminLogin: true);
@@ -191,6 +226,7 @@ public sealed class AdminEmailLoginServiceTests
 
     private sealed class CapturingEmailSender : IActivationEmailSender
     {
+        public int SendCount { get; private set; }
         public string? LastOtpCode { get; private set; }
         public int LastLifetimeMinutes { get; private set; }
         public bool LastIsAdminLogin { get; private set; }
@@ -202,6 +238,7 @@ public sealed class AdminEmailLoginServiceTests
         public Task SendSubscriptionReceiptAsync(SubscriptionReceiptEmail receipt, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task SendSignInOtpAsync(string email, string username, string otpCode, int lifetimeMinutes, bool isAdminLogin, CancellationToken cancellationToken)
         {
+            SendCount++;
             LastOtpCode = otpCode;
             LastLifetimeMinutes = lifetimeMinutes;
             LastIsAdminLogin = isAdminLogin;
