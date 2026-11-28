@@ -855,6 +855,7 @@ public sealed class AuthController(
             AuthFlowFailure.InvalidCredentials => (StatusCodes.Status401Unauthorized, "Sign-in failed", "The supplied credentials are invalid."),
             AuthFlowFailure.AccountSuspended => (StatusCodes.Status403Forbidden, "Account banned", "This account has been banned or suspended. Contact an administrator for assistance."),
             AuthFlowFailure.AdminEmailLoginRequired => (StatusCodes.Status403Forbidden, "Administrator email verification required", "Administrator accounts must sign in through Admin Login using a one-time email link, then approve the request on a trusted mobile device."),
+            AuthFlowFailure.AdminEmailLoginRequired => (StatusCodes.Status403Forbidden, "Administrator email OTP required", "Administrator accounts must use Admin Login and enter the 6-digit OTP sent to their verified email address."),
             AuthFlowFailure.NoActiveMobileDevice => (StatusCodes.Status409Conflict, "MFA device unavailable", "No active mobile device is registered for this account."),
             AuthFlowFailure.NotificationFailed => (StatusCodes.Status503ServiceUnavailable, "MFA notification unavailable", "The MFA request could not be delivered. Try again later."),
             AuthFlowFailure.InvalidApprovalSignature => (StatusCodes.Status401Unauthorized, "Approval rejected", "The MFA approval could not be validated."),
