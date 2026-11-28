@@ -23,6 +23,33 @@ using SafePassage.Api.Middleware;
 using SafePassage.Api.Models;
 using SafePassage.Api.Services;
 
+const string subscriptionReminderCommand = "--run-subscription-expiration-reminders";
+if (args.Contains(subscriptionReminderCommand, StringComparer.OrdinalIgnoreCase))
+{
+    var jobBuilder = Host.CreateApplicationBuilder(Array.Empty<string>());
+    var jobDatabaseProvider = jobBuilder.Configuration["Database:Provider"] ?? "SqlServer";
+    var jobConnectionString = jobBuilder.Configuration.GetConnectionString("DefaultConnection")
+        ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection must be configured for the subscription reminder job.");
+
+    jobBuilder.Services.AddDbContext<ApplicationDbContext>(options =>
+    {
+        options.ConfigureSafePassageDatabase(jobDatabaseProvider, jobConnectionString, jobBuilder.Environment.ContentRootPath);
+        options.UseOpenIddict();
+        options.ConfigureWarnings(w =>
+            w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.PendingModelChangesWarning));
+    });
+    jobBuilder.Services.AddHttpClient<ISubscriptionExpirationEmailSender, HttpApiActivationEmailSender>();
+    jobBuilder.Services.Configure<SmtpOptions>(jobBuilder.Configuration.GetSection(SmtpOptions.SectionName));
+    jobBuilder.Services.Configure<PayMongoOptions>(jobBuilder.Configuration.GetSection(PayMongoOptions.SectionName));
+    jobBuilder.Services.Configure<SubscriptionExpirationReminderOptions>(
+        jobBuilder.Configuration.GetSection(SubscriptionExpirationReminderOptions.SectionName));
+    jobBuilder.Services.AddSingleton<SubscriptionExpirationReminderWorker>();
+
+    using var jobHost = jobBuilder.Build();
+    await jobHost.Services.GetRequiredService<SubscriptionExpirationReminderWorker>().RunOnceAsync();
+    return;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 var databaseProvider = builder.Configuration["Database:Provider"] ?? "SqlServer";
@@ -214,6 +241,13 @@ builder.Services.AddAuthentication(options =>
                     if (deviceStatus is not null && deviceStatus != DeviceStatus.Active)
                     {
                         context.Fail("Device has been disabled.");
+                        return;
+                    }
+                    var subscriptionService = context.HttpContext.RequestServices.GetRequiredService<ISubscriptionService>();
+                    var eligibleDeviceIds = await subscriptionService.GetEligibleDeviceIdsAsync(userId, context.HttpContext.RequestAborted);
+                    if (!eligibleDeviceIds.Contains(deviceId))
+                    {
+                        context.Fail("This device is outside the active subscription plan's trusted-device limit.");
                         return;
                     }
                 }
@@ -633,8 +667,10 @@ using (var scope = app.Services.CreateScope())
                     "TokenHash" character varying(64) NOT NULL,
                     "CreatedAt" timestamp with time zone NOT NULL,
                     "ExpiresAt" timestamp with time zone NOT NULL,
-                    "UsedAt" timestamp with time zone NULL
+                    "UsedAt" timestamp with time zone NULL,
+                    "FailedAttempts" integer NOT NULL DEFAULT 0
                 );
+                ALTER TABLE "AdminLoginTokens" ADD COLUMN IF NOT EXISTS "FailedAttempts" integer NOT NULL DEFAULT 0;
                 CREATE UNIQUE INDEX IF NOT EXISTS "IX_AdminLoginTokens_TokenHash"
                     ON "AdminLoginTokens" ("TokenHash");
                 CREATE INDEX IF NOT EXISTS "IX_AdminLoginTokens_UserId_ExpiresAt"

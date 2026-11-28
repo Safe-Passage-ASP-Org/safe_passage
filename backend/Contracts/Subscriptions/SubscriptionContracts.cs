@@ -21,6 +21,14 @@ public sealed record UserSubscriptionResponse(
     bool CancelAtPeriodEnd,
     string? PendingApprovalUrl);
 
+public sealed record SubscriptionEntitlementsResponse(
+    string PlanCode,
+    bool IsPro,
+    int? MaxTrustedDevices,
+    int? MaxSavedSites,
+    int ActivityHistoryDays,
+    bool CanGenerateTotpCodes);
+
 public sealed record CreateCheckoutRequest(string PlanCode);
 
 public sealed record CreateCheckoutResponse(

@@ -451,74 +451,7 @@ public sealed class AuthController(
         return ToProblem(result.Failure);
     }
 
-    /// <summary>Sends a one-time email sign-in link to an active, verified administrator.</summary>
-    [HttpPost("admin-login/request-link")]
-    [AllowAnonymous]
-    [ProducesResponseType(StatusCodes.Status202Accepted)]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
-    public async Task<IActionResult> RequestAdminLoginLink(
-        [FromBody] AdminLoginLinkRequest request,
-        CancellationToken cancellationToken)
-    {
-        var ipKey = "admin-email-login-ip:" + (HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
-        cache.TryGetValue(ipKey, out int requestCount);
-        if (requestCount >= 10)
-            return Problem(statusCode: StatusCodes.Status429TooManyRequests, title: "Too many requests", detail: "Please wait before requesting another sign-in link.");
-        cache.Set(ipKey, requestCount + 1, TimeSpan.FromHours(1));
-
-        var email = request.Email?.Trim();
-        if (!string.IsNullOrWhiteSpace(email) && email.Length <= 320 && email.Contains('@'))
-        {
-            var emailKey = "admin-email-login-address:" + Convert.ToHexString(
-                SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(email.ToUpperInvariant())));
-            if (!cache.TryGetValue(emailKey, out _))
-            {
-                cache.Set(emailKey, true, TimeSpan.FromSeconds(30));
-                try
-                {
-                    await adminEmailLoginService.RequestLinkAsync(email, cancellationToken);
-                }
-                catch (EmailDeliveryException exception)
-                {
-                    logger.LogError(exception, "Could not deliver an administrator sign-in email.");
-                }
-                catch (InvalidOperationException exception)
-                {
-                    logger.LogError(exception, "Administrator sign-in email configuration is invalid.");
-                }
-                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                {
-                    throw;
-                }
-                catch (Exception exception)
-                {
-                    logger.LogError(exception, "Administrator sign-in link request failed.");
-                }
-            }
-        }
-
-        return Accepted(new { message = "If this address belongs to an active administrator, a sign-in link will be sent." });
-    }
-
-    /// <summary>Consumes an administrator email link and starts mandatory trusted-device approval.</summary>
-    [HttpPost("admin-login/complete-link")]
-    [AllowAnonymous]
-    [ProducesResponseType<LoginResponse>(StatusCodes.Status202Accepted)]
-    [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult<LoginResponse>> CompleteAdminLoginLink(
-        [FromBody] AdminLoginLinkCompletionRequest request,
-        CancellationToken cancellationToken)
-    {
-        var result = await adminEmailLoginService.CompleteLinkAsync(request.Token, cancellationToken);
-        if (result.Failure != AuthFlowFailure.None)
-            return ToProblem(result.Failure);
-        if (!result.Response!.MfaRequired || string.IsNullOrWhiteSpace(result.Response.SessionToken))
-            return Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Mobile approval required", detail: "Admin sign-in could not start mobile approval. Request a new email link and try again.");
-        return Accepted(result.Response);
-    }
-
-    public sealed record AdminLoginLinkRequest(string? Email);
-    public sealed record AdminLoginLinkCompletionRequest(string Token);
+    public sealed record AdminLoginEmailRequest(string? Email);
     public sealed record AdminLoginOtpVerificationRequest(string Email, string Code);
     public sealed record MfaOtpSendRequest(string SessionToken);
     public sealed record MfaOtpVerifyRequest(string SessionToken, string Code);
@@ -665,7 +598,7 @@ public sealed class AuthController(
     [ProducesResponseType(StatusCodes.Status202Accepted)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> SendAdminLoginOtp(
-        [FromBody] AdminLoginLinkRequest request,
+        [FromBody] AdminLoginEmailRequest request,
         CancellationToken cancellationToken)
     {
         var ipKey = "admin-email-login-ip:" + (HttpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown");
@@ -696,10 +629,10 @@ public sealed class AuthController(
         return Accepted(new { message = "If this address belongs to an active administrator, a 6-digit verification code will be sent." });
     }
 
-    /// <summary>Verifies an administrator's 6-digit email OTP and starts mandatory trusted-device approval.</summary>
+    /// <summary>Verifies an administrator's single-use 6-digit email OTP and signs them in.</summary>
     [HttpPost("admin-login/verify-otp")]
     [AllowAnonymous]
-    [ProducesResponseType<LoginResponse>(StatusCodes.Status202Accepted)]
+    [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ProblemDetails>(StatusCodes.Status401Unauthorized)]
     public async Task<ActionResult<LoginResponse>> VerifyAdminLoginOtp(
         [FromBody] AdminLoginOtpVerificationRequest request,
@@ -708,9 +641,7 @@ public sealed class AuthController(
         var result = await adminEmailLoginService.CompleteOtpAsync(request.Email, request.Code, cancellationToken);
         if (result.Failure != AuthFlowFailure.None)
             return ToProblem(result.Failure);
-        if (!result.Response!.MfaRequired || string.IsNullOrWhiteSpace(result.Response.SessionToken))
-            return Problem(statusCode: StatusCodes.Status503ServiceUnavailable, title: "Mobile approval required", detail: "Admin sign-in could not start mobile approval.");
-        return Accepted(result.Response);
+        return Ok(result.Response);
     }
 
     /// <summary>Sends a 6-digit Email OTP fallback for a pending user MFA session.</summary>

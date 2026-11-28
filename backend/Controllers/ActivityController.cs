@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using SafePassage.Api.Data;
 using SafePassage.Api.Middleware;
 using SafePassage.Api.Models;
+using SafePassage.Api.Services;
+using SafePassage.Api.Contracts.Subscriptions;
 
 namespace SafePassage.Api.Controllers;
 
@@ -12,7 +14,7 @@ namespace SafePassage.Api.Controllers;
 [SensitiveApplication]
 [ApiController]
 [Route("api/activity")]
-public sealed class ActivityController(ApplicationDbContext dbContext) : ControllerBase
+public sealed class ActivityController(ApplicationDbContext dbContext, ISubscriptionService? subscriptionService = null) : ControllerBase
 {
     [HttpGet]
     public async Task<IActionResult> GetActivities(CancellationToken cancellationToken)
@@ -21,16 +23,34 @@ public sealed class ActivityController(ApplicationDbContext dbContext) : Control
         if (!Guid.TryParse(claim, out var userId))
             return Unauthorized();
 
-        var logs = await dbContext.ActivityLogs.AsNoTracking()
+        var entitlements = subscriptionService is null
+            ? new SubscriptionEntitlementsResponse("free", false, 2, 5, 7, false)
+            : await subscriptionService.GetUserEntitlementsAsync(userId, cancellationToken);
+        var cutoff = DateTimeOffset.UtcNow.AddDays(-entitlements.ActivityHistoryDays);
+        var resultLimit = entitlements.IsPro ? 250 : 25;
+        var activityQuery = dbContext.ActivityLogs.AsNoTracking()
             .Where(activity => activity.TargetUserId == userId
-                || (activity.TargetUserId == null && activity.UserId == userId))
-            .ToListAsync(cancellationToken);
-        logs = logs
-            .OrderByDescending(log => log.Timestamp)
-            .Take(25)
-            .ToList();
+                || (activity.TargetUserId == null && activity.UserId == userId));
+        List<ActivityLog> userLogs;
+        if (dbContext.Database.ProviderName == "Microsoft.EntityFrameworkCore.Sqlite")
+        {
+            // SQLite cannot translate DateTimeOffset comparisons or ordering.
+            userLogs = (await activityQuery.ToListAsync(cancellationToken))
+                .Where(log => log.Timestamp >= cutoff)
+                .OrderByDescending(log => log.Timestamp)
+                .Take(resultLimit)
+                .ToList();
+        }
+        else
+        {
+            userLogs = await activityQuery
+                .Where(activity => activity.Timestamp >= cutoff)
+                .OrderByDescending(activity => activity.Timestamp)
+                .Take(resultLimit)
+                .ToListAsync(cancellationToken);
+        }
 
-        var result = logs
+        var result = userLogs
             .Select(log =>
         {
             var isSuccess = log.Status == ActivityLogStatus.Success;
