@@ -54,3 +54,10 @@
 1. Identify the last known-good commit SHA in `main` or `development` via GitHub Actions or `/api/status`.
 2. In Render (`safe-passage-api` / `safe-passage-web`), trigger **Manual Deploy** on the previous healthy deploy, or revert the offending PR on GitHub (`git revert -m 1 <merge-sha>`) and push to `development`/`main`.
 3. Confirm `GET /health/ready` returns `200 OK` and `GET /api/status` reports the expected commit SHA.
+
+## 6. Subscription Expiration Reminder Job
+
+- Render's `safepassage-subscription-reminders` Cron Job runs daily at 02:00 UTC (10:00 AM Philippines time). It sends one warning when an active or cancelled subscription period ends within seven days.
+- The Cron Job references the API service's `ConnectionStrings__DefaultConnection`, `Brevo__ApiKey`, and `Brevo__FromAddress`; keep those variables configured on `safepassage-api`. The subscription page link uses `Frontend__BaseUrl`.
+- The API service's in-process reminder loop is disabled in production to prevent duplicate sends. The cron job records each period end after successful delivery, so a manual rerun does not resend an already-recorded warning.
+- To test it, temporarily set a test user's subscription period end to within seven days, clear that subscription's `ExpirationReminderPeriodEnd` marker, then use **Render Dashboard → safepassage-subscription-reminders → Runs → Trigger Run**. Review that run's logs and the mailbox. Restore the test date afterward.

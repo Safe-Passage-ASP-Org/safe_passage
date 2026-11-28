@@ -271,6 +271,7 @@ public sealed class DeviceController(
             DeviceManagementFailure.SigningKeyAlreadyRegistered => (StatusCodes.Status409Conflict, "Signing key already enrolled", "A different signing key is already bound to this device."),
             DeviceManagementFailure.NotFound => (StatusCodes.Status404NotFound, "Device not found", "The requested device does not exist."),
             DeviceManagementFailure.PostureNonCompliant => (StatusCodes.Status403Forbidden, "Device posture non-compliant", detailOverride ?? "The device does not meet the enforced security posture policy."),
+            DeviceManagementFailure.PlanLimitReached => (StatusCodes.Status403Forbidden, "Pro plan required", detailOverride ?? "Upgrade to Pro to add another trusted device."),
             _ => (StatusCodes.Status500InternalServerError, "Device operation failed", "The device operation could not be completed.")
         };
 

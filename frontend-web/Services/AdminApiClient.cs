@@ -56,41 +56,6 @@ public sealed class AdminApiClient(HttpClient http)
         }
     }
 
-    public async Task RequestAdminEmailLinkAsync(string email, CancellationToken cancellationToken = default)
-    {
-        HttpResponseMessage response;
-        try
-        {
-            response = await http.PostAsJsonAsync("api/auth/admin-login/request-link", new { email }, cancellationToken);
-        }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
-        {
-            throw new InvalidOperationException("Connecting to the server failed or timed out while waking up. Please wait a few seconds and try again.", ex);
-        }
-
-        using (response)
-        {
-            if (response.IsSuccessStatusCode) return;
-            var problem = await ReadProblemSafeAsync(response, cancellationToken);
-            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Could not request an admin sign-in link.");
-        }
-    }
-
-    public async Task<LoginResult> CompleteAdminEmailLinkAsync(string token, CancellationToken cancellationToken = default)
-    {
-        using var response = await http.PostAsJsonAsync(
-            "api/auth/admin-login/complete-link", new { token }, cancellationToken);
-        if (!response.IsSuccessStatusCode)
-        {
-            var problem = await ReadProblemSafeAsync(response, cancellationToken);
-            throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "This admin sign-in link is invalid or has expired. Request a new link.");
-        }
-        var body = await ReadJsonSafeAsync<LoginResponse>(response, cancellationToken);
-        if (body is null || !body.MfaRequired || string.IsNullOrWhiteSpace(body.SessionToken))
-            throw new InvalidOperationException("Admin sign-in requires mobile approval. Request a new email link and try again.");
-        return new(body.MfaRequired, body.SessionToken, body.Message ?? "Email verified. Approve this sign-in on your trusted mobile device.");
-    }
-
     public async Task<bool> IsFacebookSignInEnabledAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -276,9 +241,10 @@ public sealed class AdminApiClient(HttpClient http)
             throw new InvalidOperationException(problem?.Detail ?? problem?.Title ?? "Invalid or expired verification code.");
         }
         var body = await ReadJsonSafeAsync<LoginResponse>(response, cancellationToken);
-        if (body is null || !body.MfaRequired || string.IsNullOrWhiteSpace(body.SessionToken))
-            throw new InvalidOperationException("Admin sign-in requires mobile approval.");
-        return new(body.MfaRequired, body.SessionToken, body.Message ?? "Code verified. Approve this sign-in on your trusted mobile device.");
+        if (body is null || body.MfaRequired || string.IsNullOrWhiteSpace(body.AccessToken))
+            throw new InvalidOperationException("The API did not return a completed administrator sign-in.");
+        SetToken(body.AccessToken);
+        return new(false, null, body.Message ?? "Administrator sign-in successful.");
     }
 
     public async Task SendMfaOtpAsync(string sessionToken, CancellationToken cancellationToken = default)
@@ -734,6 +700,10 @@ public sealed class AdminApiClient(HttpClient http)
         await http.GetFromJsonAsync<UserSubscriptionDto>("api/subscriptions/me", cancellationToken)
         ?? new UserSubscriptionDto(false, "Free", null, "Free", null, null, null, null, false, null);
 
+    public async Task<SubscriptionEntitlementsDto> GetMySubscriptionEntitlementsAsync(CancellationToken cancellationToken = default) =>
+        await http.GetFromJsonAsync<SubscriptionEntitlementsDto>("api/subscriptions/entitlements", cancellationToken)
+        ?? new SubscriptionEntitlementsDto("free", false, 2, 5, 7, false);
+
     public async Task<CreateCheckoutDto> CreateSubscriptionCheckoutAsync(string planCode, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync("api/subscriptions/checkout", new { planCode }, cancellationToken);
@@ -906,9 +876,18 @@ public sealed record AdminDevice(Guid Id, string DeviceId, string DeviceName, st
     bool HasSigningKey = false, bool HasPendingSigningKey = false, DevicePostureInfo? Posture = null);
 public sealed record AdminApplication(Guid Id, string Name, string Description, int UserAccessCount, int GroupAccessCount,
     string LaunchUrl = "", string? ClientId = null, string ClientType = "confidential", string RedirectUris = "", string PostLogoutRedirectUris = "", string AllowedScopes = "openid profile email", bool IsPublished = false, bool AllowAccessRequests = false, string Category = "Other", string AutoFillUsername = "", bool HasAutoFillPassword = false, string? ClientSecret = null);
-public sealed record AccessibleApplication(Guid Id, string Name, string Description, string LaunchUrl, string Category = "Other", string AutoFillUsername = "", bool HasAutoFillPassword = false);
+public sealed record AccessibleApplication(
+    Guid Id,
+    string Name,
+    string Description,
+    string LaunchUrl,
+    string Category = "Other",
+    string AutoFillUsername = "",
+    bool HasAutoFillPassword = false,
+    bool UsesSafePassageNativeAuthentication = false);
 public sealed record VaultSiteSummary(Guid Id, string Name, string LoginUrl, string Origin, string Category, string Description,
-    string AutoFillUsername, bool HasPassword, bool HasTotpSecret, string VerificationStatus, DateTimeOffset CreatedAt);
+    string AutoFillUsername, bool HasPassword, bool HasTotpSecret, string VerificationStatus, DateTimeOffset CreatedAt,
+    bool LockedByPlan = false, bool CanGenerateTotpCode = false);
 public sealed record PendingVaultSite(Guid Id, string Name, string LoginUrl, string Origin, string Category,
     string Description, string Username, string Email, DateTimeOffset CreatedAt);
 public sealed record CatalogApplication(Guid Id, string Name, string Description, string LaunchUrl, bool IsAssigned, bool AllowAccessRequests, string? RequestStatus);
@@ -1002,6 +981,13 @@ public sealed record UserSubscriptionDto(
     DateTimeOffset? CancelledAt,
     bool CancelAtPeriodEnd,
     string? PendingApprovalUrl);
+public sealed record SubscriptionEntitlementsDto(
+    string PlanCode,
+    bool IsPro,
+    int? MaxTrustedDevices,
+    int? MaxSavedSites,
+    int ActivityHistoryDays,
+    bool CanGenerateTotpCodes);
 
 public sealed record CreateCheckoutDto(
     string PayPalSubscriptionId,

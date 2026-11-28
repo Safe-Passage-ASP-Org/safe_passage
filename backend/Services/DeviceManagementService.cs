@@ -13,7 +13,8 @@ public enum DeviceManagementFailure
     NotFound,
     InvalidSigningKey,
     SigningKeyAlreadyRegistered,
-    PostureNonCompliant
+    PostureNonCompliant,
+    PlanLimitReached
 }
 
 public sealed record DeviceManagementResult<T>(T? Response, DeviceManagementFailure Failure, string? Detail = null)
@@ -36,7 +37,8 @@ public interface IDeviceManagementService
 
 public sealed class DeviceManagementService(
     ApplicationDbContext dbContext,
-    ISecurityPolicyEvaluator? policyEvaluator = null) : IDeviceManagementService
+    ISecurityPolicyEvaluator? policyEvaluator = null,
+    ISubscriptionService? subscriptionService = null) : IDeviceManagementService
 {
     public async Task<IReadOnlyList<DeviceResponse>> GetAllAsync(
         Guid requesterId,
@@ -74,6 +76,20 @@ public sealed class DeviceManagementService(
             cancellationToken);
         if (!userIsActive)
             return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.UserUnavailable);
+
+        if (subscriptionService is not null)
+        {
+            var entitlements = await subscriptionService.GetUserEntitlementsAsync(userId, cancellationToken);
+            if (entitlements.MaxTrustedDevices is { } limit)
+            {
+                var enrolledCount = await dbContext.Devices.CountAsync(
+                    device => device.UserId == userId && device.Status != DeviceStatus.Disabled,
+                    cancellationToken);
+                if (enrolledCount >= limit)
+                    return DeviceManagementResult<DeviceResponse>.Failed(DeviceManagementFailure.PlanLimitReached,
+                        $"The Free plan allows up to {limit} trusted devices. Upgrade to Pro to add more devices.");
+            }
+        }
 
         var deviceExists = await dbContext.Devices.AnyAsync(
             device => device.UserId == userId && device.DeviceId == request.DeviceId,

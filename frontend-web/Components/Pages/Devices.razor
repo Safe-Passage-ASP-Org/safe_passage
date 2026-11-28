@@ -8,6 +8,11 @@
 
 <div class="sp-page-header"><h1 class="sp-page-title">@(Api.IsAdministrator ? "Devices" : "My Devices")</h1><p class="sp-page-subtitle">@(Api.IsAdministrator ? "Review device enrollment and manage trust for registered devices." : "View the devices registered to your account.")</p></div>
 
+@if (!Api.IsAdministrator && Entitlements is { IsPro: false, MaxTrustedDevices: { } deviceLimit })
+{
+    <div class="device-plan-note">Free plan: @RegisteredDevices.Count(device => device.Status != "DISABLED") / @deviceLimit trusted devices in use. <a href="/subscription">Pro removes this limit</a>.</div>
+}
+
 <section class="sp-card device-apk-banner">
     <div>
         <strong>Safe Passage Mobile (Android APK)</strong>
@@ -41,7 +46,7 @@
                 @foreach (var device in SortedDevices)
                 {
                     <tr>
-                        <td><div class="device-name"><span class="device-glyph">▣</span><strong>@device.DeviceName</strong></div><small>@device.DeviceId</small></td>
+                        <td><div class="device-name"><span class="device-glyph">&#9633;</span><strong>@device.DeviceName</strong>@if (IsPlanLocked(device)) { <span class="device-plan-locked">Pro required</span> }</div><small>@device.DeviceId</small></td>
                         @if (Api.IsAdministrator) { <td>@(UserNames.GetValueOrDefault(device.UserId) ?? "Unknown user")</td> }<td class="device-os">@device.OS</td>
                         <td><span class="device-pill @PostureClass(device.Posture)">@FormatPostureSummary(device.Posture)</span></td>
                         <td><span class="device-pill @StatusClass(device.Status)">@FormatStatus(device.Status)</span></td>
@@ -74,8 +79,14 @@
     @@media(max-width:640px){.device-stats{grid-template-columns:1fr}.device-heading{padding:16px}}
 </style>
 
+<style>
+    .device-plan-note{padding:10px 12px;margin:0 0 14px;border-radius:6px;background:#eef5f4;color:#42525c;font-size:12px}.device-plan-note a{color:#087f75;font-weight:700}.device-plan-locked{display:inline-block;padding:3px 7px;border-radius:9px;background:#fcecea;color:#9d332b;font-size:9px;font-weight:700}
+</style>
+
 @code {
     private List<AdminDevice> RegisteredDevices = [];
+    private SubscriptionEntitlementsDto? Entitlements;
+    private HashSet<Guid> EligibleDeviceIds = [];
     private Dictionary<Guid, string> UserNames = [];
     private AdminDevice? SelectedDevice;
     private bool Loading = true;
@@ -104,6 +115,18 @@
             RegisteredDevices = await Api.GetDevicesAsync();
             if (Api.IsAdministrator)
                 UserNames = (await Api.GetUsersAsync()).ToDictionary(user => user.Id, user => user.Username);
+            else
+            {
+                Entitlements = await Api.GetMySubscriptionEntitlementsAsync();
+                var eligibleDevices = RegisteredDevices
+                    .Where(device => device.Status != "DISABLED")
+                    .OrderByDescending(device => device.Status == "ACTIVE" && device.TrustStatus == "TRUSTED")
+                    .ThenByDescending(device => device.LastActiveDate ?? device.RegistrationDate)
+                    .ThenBy(device => device.RegistrationDate);
+                EligibleDeviceIds = Entitlements.MaxTrustedDevices is { } limit
+                    ? eligibleDevices.Take(limit).Select(device => device.Id).ToHashSet()
+                    : eligibleDevices.Select(device => device.Id).ToHashSet();
+            }
         }
         catch (Exception exception) { Error = exception.Message; }
         finally { Loading = false; }
@@ -156,4 +179,7 @@
             return "";
         return "pending";
     }
+    private bool IsPlanLocked(AdminDevice device) => !Api.IsAdministrator
+        && Entitlements?.MaxTrustedDevices is not null
+        && !EligibleDeviceIds.Contains(device.Id);
 }

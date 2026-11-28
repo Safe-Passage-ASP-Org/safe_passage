@@ -10,12 +10,12 @@ Chrome / Edge Manifest V3 extension that offers Safe Passage approval on detecte
 
 ## Usage
 
-1. Click the Safe Passage extension icon and sign in against `https://safe-passage-api.onrender.com`. Approve this initial sign-in on a trusted Safe Passage device.
+1. Click the Safe Passage extension icon to open its side panel and sign in against `https://safe-passage-api.onrender.com`. Approve this initial sign-in on a trusted Safe Passage device. The side panel stays open as you switch browser tabs.
 2. Sign in to the extension, open a site, and save its name, URL, username, password, and optional Base32 2FA secret. The extension synchronizes these entries with the backend; secrets are encrypted in the API database.
 3. Sites you add are synced to your account immediately; administrator review is not required. Credentials and 2FA codes remain protected by mobile approval at sign-in.
-4. On a verified site's login page, the extension shows an inline Safe Passage prompt. Click **Request approval**, approve on your trusted mobile device, and the extension fills saved username/password fields. If the site requests a TOTP code later, the extension gets a fresh code from the backend and fills the detected 2FA field. Sites added through the web **Credential Vault** are synchronized to the extension, and vice versa.
-4. If the approval request is pending, use **Resend request** in the prompt.
+4. On a verified site's login page, a Safe Passage lock screen blocks the site's controls and keyboard focus. Request approval from the lock screen or side panel, approve on your trusted mobile device, and the extension fills and submits saved credentials. If the site requests a saved TOTP code, the extension retrieves and submits it. Otherwise, enter the site's one-time code into the Safe Passage lock screen.
+5. The gate unlocks when the extension detects the site has completed sign-in. If the login fails or the site's sign-in flow is not detected, the page remains locked. Save credentials in the side panel to use them for that site.
 
-The extension detects common password and email sign-in forms, sign-in controls, and signed-out messages. Some federated login flows redirect to a different domain; add that login domain as an application too if the prompt does not appear there.
+The extension detects common password, email, and one-time-code sign-in forms, sign-in controls, and signed-out messages. Some federated login flows redirect to a different domain; add that login domain as an application too if the gate does not appear there. Sign-in success detection depends on common site signals such as a sign-out control or a successful redirect; unusual flows may need site-specific detection.
 
 This is a browser-side gate. It does not prevent access through another browser or when the extension is disabled.

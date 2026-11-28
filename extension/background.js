@@ -7,6 +7,8 @@ let assignedAppsCache = [];
 let assignedAppsCacheToken = '';
 let assignedAppsCacheAt = 0;
 
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
 async function getState() {
   const data = await chrome.storage.local.get([
     'apiUrl',
@@ -137,14 +139,35 @@ async function migrateLocalSites(state) {
   await chrome.storage.local.set({ customSites: remaining });
 }
 
-function findAssignedApplication(applications, origin) {
+function isWithinLaunchPath(launchPath, pagePath) {
+  const basePath = launchPath.replace(/\/+$/, '') || '/';
+  const currentPath = pagePath.replace(/\/+$/, '') || '/';
+  return basePath === '/' || currentPath === basePath || currentPath.startsWith(`${basePath}/`);
+}
+
+function findAssignedApplication(applications, pageUrl) {
+  if (!pageUrl) return null;
+  let page;
+  try { page = new URL(pageUrl); }
+  catch { return null; }
+
   return applications.find((app) => {
-    try { return new URL(app.launchUrl).origin === origin; }
+    try {
+      const launch = new URL(app.launchUrl);
+      return app.usesSafePassageNativeAuthentication !== true
+        && launch.origin === page.origin
+        && isWithinLaunchPath(launch.pathname, page.pathname);
+    }
     catch { return false; }
   }) || null;
 }
 
-async function getSiteForOrigin(state, origin) {
+async function getSiteForOrigin(state, origin, pageUrl) {
+  let page;
+  try { page = new URL(pageUrl); }
+  catch { return null; }
+  if (page.origin !== origin) return null;
+
   if (state.accessToken) await migrateLocalSites(state);
   const cached = await chrome.storage.local.get('vaultSitesCache');
   let vaultSites = Array.isArray(cached.vaultSitesCache) ? cached.vaultSitesCache : [];
@@ -154,13 +177,15 @@ async function getSiteForOrigin(state, origin) {
     return {
       id: vaultSite.id, name: vaultSite.name, origin, vaultSiteId: vaultSite.id,
       vaultSite: true, isVerified: vaultSite.verificationStatus === 'Verified',
+      lockedByPlan: vaultSite.lockedByPlan === true,
+      canGenerateTotpCode: vaultSite.canGenerateTotpCode === true,
       verificationStatus: vaultSite.verificationStatus,
       siteUsername: vaultSite.autoFillUsername || '', hasAutoFillPassword: vaultSite.hasPassword,
     };
   }
   try {
     const apps = await getAssignedApplications(state.apiUrl, state.accessToken);
-    const app = findAssignedApplication(apps, origin);
+    const app = findAssignedApplication(apps, pageUrl);
     if (app) {
       return {
         id: app.id,
@@ -195,7 +220,7 @@ async function getVaultSiteCredentials(apiUrl, approvedToken, vaultSiteId) {
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.detail || body.title || `Could not retrieve saved credentials (${res.status})`);
-  return { username: body.username || '', password: body.password || '', totpCode: body.totpCode || '' };
+  return { username: body.username || '', password: body.password || '', totpCode: body.totpCode || '', requiresProForTotp: body.requiresProForTotp === true };
 }
 
 async function resendSiteApproval(apiUrl, origin) {
@@ -335,7 +360,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     }
 
     if (msg.type === 'CHECK_ORIGIN') {
-      const site = await getSiteForOrigin(state, msg.origin);
+      const site = await getSiteForOrigin(state, msg.origin, msg.pageUrl);
       if (!site) return { matched: false };
       const sessionKey = `approval:${site.origin}`;
       const approval = (await chrome.storage.session.get(sessionKey))[sessionKey];
@@ -345,39 +370,56 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         approved: Boolean(approval?.token && approval.expiresAt > Date.now()),
         site: { id: site.id, name: site.name, origin: site.origin, applicationId: site.applicationId || null,
           vaultSiteId: site.vaultSiteId || null, isVerified: site.isVerified !== false,
-          verificationStatus: site.verificationStatus || 'Verified' },
+          verificationStatus: site.verificationStatus || 'Verified', lockedByPlan: site.lockedByPlan === true },
       };
+    }
+
+    if (msg.type === 'SITE_GATE_STATUS') {
+      if (sender.tab?.id != null) {
+        chrome.runtime.sendMessage({
+          type: 'SITE_GATE_STATUS_UPDATE', tabId: sender.tab.id,
+          origin: msg.origin, status: msg.status, siteName: msg.siteName || '',
+        }, () => void chrome.runtime.lastError);
+      }
+      return { ok: true };
     }
 
     if (msg.type === 'AUTHENTICATE_AND_GET_CREDENTIALS') {
       if (!state.accessToken) {
         throw new Error('Sign in via the Safe Passage extension popup first.');
       }
-      const site = await getSiteForOrigin(state, msg.origin);
+      const site = await getSiteForOrigin(state, msg.origin, msg.pageUrl);
       if (!site) throw new Error('Site is not registered in Safe Passage.');
       if (!site.isVerified) throw new Error('This site is awaiting Safe Passage verification before credentials or 2FA can be used.');
+      if (site.lockedByPlan) throw new Error('This saved website is over the Free plan limit. Upgrade to Pro or remove another saved website.');
 
-      if (!approvalFlows.has(site.origin)) {
+      const approvalKey = `approval:${site.origin}`;
+      const existingApproval = (await chrome.storage.session.get(approvalKey))[approvalKey];
+      let approvedToken;
+      if (existingApproval?.token && existingApproval.expiresAt > Date.now()) {
+        approvedToken = existingApproval.token;
+      } else if (!approvalFlows.has(site.origin)) {
         const approvalFlow = requestSiteApproval(state.apiUrl, state.accessToken, site.origin, sender.tab?.id);
         approvalFlows.set(site.origin, approvalFlow);
         try {
-          var approvedToken = await approvalFlow;
+          approvedToken = await approvalFlow;
         } finally {
           approvalFlows.delete(site.origin);
         }
       } else {
-        var approvedToken = await approvalFlows.get(site.origin);
+        approvedToken = await approvalFlows.get(site.origin);
       }
 
       let username = site.siteUsername || '';
       let password = '';
       let totpCode = '';
-      await chrome.storage.session.set({ [`approval:${site.origin}`]: {
+      let requiresProForTotp = false;
+      await chrome.storage.session.set({ [approvalKey]: {
         token: approvedToken, expiresAt: Date.now() + 5 * 60 * 1000,
         vaultSiteId: site.vaultSiteId || null, applicationId: site.applicationId || null,
       } });
       if (site.vaultSite && site.vaultSiteId) {
-        ({ username, password, totpCode } = await getVaultSiteCredentials(state.apiUrl, approvedToken, site.vaultSiteId));
+        ({ username, password, totpCode, requiresProForTotp } = await getVaultSiteCredentials(state.apiUrl, approvedToken, site.vaultSiteId));
       } else if (site.remoteCredentials && site.applicationId) {
         const verification = await verifyAccess(state.apiUrl, approvedToken, site.applicationId);
         if (verification && verification.allowed === false)
@@ -396,22 +438,24 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         username,
         password,
         totpCode,
+        requiresProForTotp,
       };
     }
 
     if (msg.type === 'GET_CURRENT_TOTP') {
-      const site = await getSiteForOrigin(state, msg.origin);
+      const site = await getSiteForOrigin(state, msg.origin, msg.pageUrl);
       if (!site?.isVerified || !site.vaultSiteId) throw new Error('No verified 2FA account is saved for this site.');
       const sessionKey = `approval:${site.origin}`;
       const approval = (await chrome.storage.session.get(sessionKey))[sessionKey];
       if (!approval?.token || approval.expiresAt <= Date.now()) throw new Error('Request mobile approval before using this 2FA code.');
       const credentials = await getVaultSiteCredentials(state.apiUrl, approval.token, site.vaultSiteId);
+      if (credentials.requiresProForTotp) throw new Error('Authenticator codes require an active Pro subscription.');
       if (!credentials.totpCode) throw new Error('No 2FA secret is saved for this site.');
       return { ok: true, totpCode: credentials.totpCode };
     }
 
     if (msg.type === 'GET_APPROVED_CREDENTIALS') {
-      const site = await getSiteForOrigin(state, msg.origin);
+      const site = await getSiteForOrigin(state, msg.origin, msg.pageUrl);
       if (!site?.isVerified) throw new Error('This site is not verified.');
       const sessionKey = `approval:${site.origin}`;
       const approval = (await chrome.storage.session.get(sessionKey))[sessionKey];
