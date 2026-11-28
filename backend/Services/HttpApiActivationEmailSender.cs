@@ -7,7 +7,8 @@ namespace SafePassage.Api.Services;
 public sealed class HttpApiActivationEmailSender(
     HttpClient httpClient,
     IConfiguration configuration,
-    IOptions<SmtpOptions> smtpOptions) : IActivationEmailSender, ISubscriptionExpirationEmailSender
+    IOptions<SmtpOptions> smtpOptions)
+    : IActivationEmailSender, ISubscriptionExpirationEmailSender, IAdminOtpExpirationEmailSender
 {
     public async Task SendActivationEmailAsync(
         string email,
@@ -162,6 +163,38 @@ public sealed class HttpApiActivationEmailSender(
 
         await new SmtpEmailSender(smtpOptions).SendSignInOtpAsync(
             email, username, otpCode, lifetimeMinutes, isAdminLogin, cancellationToken);
+    }
+
+    public async Task SendAdminOtpExpirationNoticeAsync(
+        string email,
+        string username,
+        DateTimeOffset expiresAt,
+        bool isExpired,
+        string adminLoginUrl,
+        CancellationToken cancellationToken)
+    {
+        var subject = isExpired
+            ? "Your Safe Passage administrator code has expired"
+            : "Your Safe Passage administrator code expires tomorrow";
+        var textBody = SmtpEmailSender.FormatAdminOtpExpirationBody(username, expiresAt, isExpired, adminLoginUrl);
+        var htmlBody = SmtpEmailSender.FormatAdminOtpExpirationHtmlBody(username, expiresAt, isExpired, adminLoginUrl, ResolveLogoUrl());
+
+        var brevoApiKey = configuration["Brevo:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(brevoApiKey))
+        {
+            await SendViaBrevoAsync(brevoApiKey, email, username, subject, textBody, cancellationToken, htmlBody);
+            return;
+        }
+
+        var resendApiKey = configuration["Resend:ApiKey"];
+        if (!string.IsNullOrWhiteSpace(resendApiKey))
+        {
+            await SendViaResendAsync(resendApiKey, email, subject, textBody, cancellationToken, htmlBody);
+            return;
+        }
+
+        await new SmtpEmailSender(smtpOptions).SendAdminOtpExpirationNoticeAsync(
+            email, username, expiresAt, isExpired, adminLoginUrl, cancellationToken);
     }
 
     private string ResolveLogoUrl()

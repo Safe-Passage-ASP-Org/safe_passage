@@ -140,9 +140,9 @@
                     }
                 </div>
 
-                <!-- Signed-in account identity -->
+                <!-- Signed-in account identity & dropdown -->
                 <div class="sp-profile-wrapper">
-                    <div class="sp-profile-identity" aria-label="Signed-in account">
+                    <button type="button" class="sp-profile-identity sp-profile-trigger" aria-label="Account menu" aria-expanded="@ProfileMenuOpen" aria-haspopup="menu" @onclick="ToggleProfileMenu">
                         @if (!string.IsNullOrWhiteSpace(Api.CurrentProfileImageData))
                         {
                             <img class="sp-avatar sp-avatar-image" src="@Api.CurrentProfileImageData" alt="" />
@@ -155,7 +155,34 @@
                             <span class="sp-profile-name">@(Api.CurrentUsername ?? (Api.IsAdministrator ? "Administrator" : "User"))</span>
                             <span class="sp-profile-role">@(Api.CurrentRole ?? "Signed in")</span>
                         </div>
-                    </div>
+                        <svg class="sp-profile-chevron" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                            <path fill-rule="evenodd" d="M1.646 4.646a.5.5 0 0 1 .708 0L8 10.293l5.646-5.647a.5.5 0 0 1 .708.708l-6 6a.5.5 0 0 1-.708 0l-6-6a.5.5 0 0 1 0-.708z"/>
+                        </svg>
+                    </button>
+                    @if (ProfileMenuOpen)
+                    {
+                        <button type="button" class="sp-notification-backdrop" aria-label="Close account menu" @onclick="CloseProfileMenu"></button>
+                        <div class="sp-profile-menu" role="menu" aria-label="Account menu">
+                            <div class="sp-profile-menu-header">
+                                <strong>@(Api.CurrentUsername ?? (Api.IsAdministrator ? "Administrator" : "User"))</strong>
+                                <span>@(Api.CurrentEmail ?? Api.CurrentRole ?? "Signed in")</span>
+                            </div>
+                            <a class="sp-profile-menu-item" role="menuitem" href="/settings" @onclick="CloseProfileMenu">
+                                <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                    <path d="M8 4.754a3.246 3.246 0 1 0 0 6.492 3.246 3.246 0 0 0 0-6.492zM5.754 8a2.246 2.246 0 1 1 4.492 0 2.246 2.246 0 0 1-4.492 0z"/>
+                                    <path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 0 1-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 0 1-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 0 1 .52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 0 1 1.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 0 1 1.255-.52l.292.16c1.64.892 3.433-.902 2.54-2.541l-.159-.292a.873.873 0 0 1 .52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 0 1-.52-1.255l.16-.292c.892-1.64-.901-3.433-2.541-2.54l-.292.159a.873.873 0 0 1-1.255-.52l-.094-.319z"/>
+                                </svg>
+                                <span>Settings</span>
+                            </a>
+                            <div class="sp-profile-menu-divider" role="separator"></div>
+                            <button type="button" class="sp-profile-menu-item sp-profile-menu-signout" role="menuitem" @onclick="PromptSignOut">
+                                <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+                                    <path d="M6 2h8v12H6v-2h2v1h4V3H8v1H6zm1 3 3 3-3 3V9H1V7h6z"/>
+                                </svg>
+                                <span>Sign out</span>
+                            </button>
+                        </div>
+                    }
                 </div>
             </div>
         </header>
@@ -166,6 +193,15 @@
         </main>
     </div>
 </div>
+
+<ConfirmationDialog IsOpen="ShowSignOutConfirmation"
+                    Title="Sign out of Safe Passage?"
+                    Message="You will be signed out of this browser session and returned to the login page."
+                    ConfirmLabel="Sign out"
+                    CancelLabel="Stay signed in"
+                    IsDestructive="true"
+                    OnCancel="CloseSignOutConfirmation"
+                    OnConfirm="ConfirmSignOutAsync" />
 
 @code {
     private string AvatarInitials
@@ -227,6 +263,8 @@
             ? AlertCount.Count is int alertCount ? $"Security Alerts ({alertCount} pending device approval{(alertCount == 1 ? "" : "s")})" : "Security Alerts"
             : UserNotifications.UnreadCount > 0 ? $"Notifications ({UserNotifications.UnreadCount} unread)" : "Notifications";
     private bool NotificationOpen;
+    private bool ProfileMenuOpen;
+    private bool ShowSignOutConfirmation;
     private readonly CancellationTokenSource _notificationRefreshCancellation = new();
 
     private async Task ToggleThemeAsync()
@@ -238,12 +276,37 @@
 
     private async Task ToggleNotificationPanelAsync()
     {
+        ProfileMenuOpen = false;
         NotificationOpen = !NotificationOpen;
         if (NotificationOpen)
             await RefreshNotificationsAsync();
     }
 
     private void CloseNotificationPanel() => NotificationOpen = false;
+
+    private void ToggleProfileMenu()
+    {
+        NotificationOpen = false;
+        ProfileMenuOpen = !ProfileMenuOpen;
+    }
+
+    private void CloseProfileMenu() => ProfileMenuOpen = false;
+
+    private void PromptSignOut()
+    {
+        ProfileMenuOpen = false;
+        ShowSignOutConfirmation = true;
+    }
+
+    private void CloseSignOutConfirmation() => ShowSignOutConfirmation = false;
+
+    private async Task ConfirmSignOutAsync()
+    {
+        ShowSignOutConfirmation = false;
+        await JS.InvokeVoidAsync("safePassageAppearance.reset");
+        Api.SignOut();
+        Navigation.NavigateTo("/login", forceLoad: true);
+    }
     private string UnreadClass(SafePassage.Web.Services.UserNotification item) =>
         item.ReadAt is null ? "unread" : "";
     private async Task OpenUserNotificationAsync(SafePassage.Web.Services.UserNotification item)
@@ -293,6 +356,7 @@
     private void HandleLocationChanged(object? sender, LocationChangedEventArgs args)
     {
         NotificationOpen = false;
+        ProfileMenuOpen = false;
         _ = InvokeAsync(async () =>
         {
             await RefreshAlertCountAsync();

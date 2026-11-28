@@ -245,6 +245,12 @@ namespace SafePassage.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("ExpirationWarningSentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("ExpiredNoticeSentAt")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTimeOffset?>("UsedAt")
                         .HasColumnType("TEXT");
 
@@ -276,6 +282,12 @@ namespace SafePassage.Api.Data.Migrations
                     b.Property<string>("TokenHash")
                         .IsRequired()
                         .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("ExpirationWarningSentAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTimeOffset?>("ExpiredNoticeSentAt")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTimeOffset?>("UsedAt")

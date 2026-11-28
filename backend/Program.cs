@@ -82,7 +82,9 @@ builder.Services.AddScoped<IDeviceManagementService, DeviceManagementService>();
 builder.Services.AddScoped<PendingDeviceRegistrationService>();
 builder.Services.AddHttpClient<IActivationEmailSender, HttpApiActivationEmailSender>();
 builder.Services.AddHttpClient<ISubscriptionExpirationEmailSender, HttpApiActivationEmailSender>();
+builder.Services.AddHttpClient<IAdminOtpExpirationEmailSender, HttpApiActivationEmailSender>();
 builder.Services.AddHostedService<SubscriptionExpirationReminderWorker>();
+builder.Services.AddHostedService<AdminOtpExpirationWorker>();
 builder.Services.AddScoped<IAccountActivationService, AccountActivationService>();
 builder.Services.AddScoped<IAdminEmailLoginService, AdminEmailLoginService>();
 builder.Services.AddSingleton<ApplicationCredentialProtector>();
@@ -96,6 +98,8 @@ builder.Services.Configure<PayPalOptions>(builder.Configuration.GetSection(PayPa
 builder.Services.Configure<PayMongoOptions>(builder.Configuration.GetSection(PayMongoOptions.SectionName));
 builder.Services.Configure<SubscriptionExpirationReminderOptions>(
     builder.Configuration.GetSection(SubscriptionExpirationReminderOptions.SectionName));
+builder.Services.Configure<AdminOtpExpirationOptions>(
+    builder.Configuration.GetSection(AdminOtpExpirationOptions.SectionName));
 builder.Services.AddHttpClient<IPayPalClient, PayPalHttpClient>();
 builder.Services.AddHttpClient<IPayMongoClient, PayMongoHttpClient>();
 builder.Services.AddSingleton<DemoCheckoutStateStore>();
@@ -671,6 +675,8 @@ using (var scope = app.Services.CreateScope())
                     "FailedAttempts" integer NOT NULL DEFAULT 0
                 );
                 ALTER TABLE "AdminLoginTokens" ADD COLUMN IF NOT EXISTS "FailedAttempts" integer NOT NULL DEFAULT 0;
+                ALTER TABLE "AdminLoginTokens" ADD COLUMN IF NOT EXISTS "ExpirationWarningSentAt" timestamp with time zone NULL;
+                ALTER TABLE "AdminLoginTokens" ADD COLUMN IF NOT EXISTS "ExpiredNoticeSentAt" timestamp with time zone NULL;
                 CREATE UNIQUE INDEX IF NOT EXISTS "IX_AdminLoginTokens_TokenHash"
                     ON "AdminLoginTokens" ("TokenHash");
                 CREATE INDEX IF NOT EXISTS "IX_AdminLoginTokens_UserId_ExpiresAt"

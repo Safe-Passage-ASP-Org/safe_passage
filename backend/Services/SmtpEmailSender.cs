@@ -31,6 +31,17 @@ public interface ISubscriptionExpirationEmailSender
         CancellationToken cancellationToken);
 }
 
+public interface IAdminOtpExpirationEmailSender
+{
+    Task SendAdminOtpExpirationNoticeAsync(
+        string email,
+        string username,
+        DateTimeOffset expiresAt,
+        bool isExpired,
+        string adminLoginUrl,
+        CancellationToken cancellationToken);
+}
+
 public interface IActivationEmailSender
 {
     Task SendActivationEmailAsync(
@@ -65,7 +76,8 @@ public interface IActivationEmailSender
         CancellationToken cancellationToken);
 }
 
-public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivationEmailSender, ISubscriptionExpirationEmailSender
+public sealed class SmtpEmailSender(IOptions<SmtpOptions> options)
+    : IActivationEmailSender, ISubscriptionExpirationEmailSender, IAdminOtpExpirationEmailSender
 {
     public async Task SendActivationEmailAsync(
         string email,
@@ -426,6 +438,167 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
               <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">
                 If you did not request this code, ignore this email and review your account activity.
               </p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding-top:18px;font-size:12px;color:#94a3b8;">
+              Safe Passage Identity &amp; Access Security
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+""";
+    }
+
+    public async Task SendAdminOtpExpirationNoticeAsync(
+        string email,
+        string username,
+        DateTimeOffset expiresAt,
+        bool isExpired,
+        string adminLoginUrl,
+        CancellationToken cancellationToken)
+    {
+        var settings = options.Value;
+        if (string.IsNullOrWhiteSpace(settings.Host)
+            || settings.Port is < 1 or > 65535
+            || string.IsNullOrWhiteSpace(settings.FromAddress))
+            throw new EmailDeliveryException("SMTP is not configured to send administrator OTP expiration emails.");
+
+        var subject = isExpired
+            ? "Your Safe Passage administrator code has expired"
+            : "Your Safe Passage administrator code expires tomorrow";
+        var textBody = FormatAdminOtpExpirationBody(username, expiresAt, isExpired, adminLoginUrl);
+        var htmlBody = FormatAdminOtpExpirationHtmlBody(username, expiresAt, isExpired, adminLoginUrl);
+
+        try
+        {
+            using var message = new MailMessage
+            {
+                From = string.IsNullOrWhiteSpace(settings.FromName)
+                    ? new MailAddress(settings.FromAddress)
+                    : new MailAddress(settings.FromAddress, settings.FromName),
+                Subject = subject,
+                Body = textBody,
+                IsBodyHtml = false
+            };
+            message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(textBody, null, "text/plain"));
+            message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(htmlBody, null, "text/html"));
+            message.To.Add(new MailAddress(email));
+
+            using var client = new SmtpClient(settings.Host, settings.Port)
+            {
+                EnableSsl = settings.EnableSsl,
+                Timeout = 15000
+            };
+            if (!string.IsNullOrWhiteSpace(settings.Username))
+                client.Credentials = new NetworkCredential(settings.Username, settings.Password);
+            await client.SendMailAsync(message, cancellationToken);
+        }
+        catch (SmtpException exception) { throw new EmailDeliveryException("The SMTP server could not deliver the OTP expiration email.", exception); }
+        catch (FormatException exception) { throw new EmailDeliveryException("The OTP expiration email address is invalid.", exception); }
+        catch (InvalidOperationException exception) { throw new EmailDeliveryException("The SMTP client could not send the OTP expiration email.", exception); }
+        catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
+    }
+
+    public static string FormatAdminOtpExpirationBody(
+        string username,
+        DateTimeOffset expiresAt,
+        bool isExpired,
+        string adminLoginUrl)
+    {
+        var formattedDate = expiresAt.ToUniversalTime().ToString("MMM d, yyyy 'at' HH:mm 'UTC'");
+        return isExpired
+            ? $"Hello {username},\n\n"
+                + $"Your 7-day Safe Passage administrator verification code expired on {formattedDate}.\n\n"
+                + $"Request a new 6-digit verification code on the Admin Login page:\n{adminLoginUrl}\n"
+            : $"Hello {username},\n\n"
+                + $"Your 7-day Safe Passage administrator verification code will expire tomorrow ({formattedDate}).\n\n"
+                + $"You can continue using your current code until it expires, or request a new code on the Admin Login page:\n{adminLoginUrl}\n";
+    }
+
+    public static string FormatAdminOtpExpirationHtmlBody(
+        string username,
+        DateTimeOffset expiresAt,
+        bool isExpired,
+        string adminLoginUrl,
+        string? logoUrl = null)
+    {
+        var resolvedLogoUrl = string.IsNullOrWhiteSpace(logoUrl)
+            ? "https://safe-passage-web.onrender.com/favicon.png"
+            : logoUrl.Trim();
+        var heading = isExpired
+            ? "Your administrator code has expired"
+            : "Your administrator code expires tomorrow";
+        var formattedDate = expiresAt.ToUniversalTime().ToString("MMM d, yyyy 'at' HH:mm 'UTC'");
+        var summary = isExpired
+            ? $"Your 7-day Safe Passage administrator verification code expired on <strong>{WebUtility.HtmlEncode(formattedDate)}</strong>."
+            : $"Your 7-day Safe Passage administrator verification code will expire tomorrow (<strong>{WebUtility.HtmlEncode(formattedDate)}</strong>).";
+        var actionText = isExpired
+            ? "Request a new 6-digit verification code to continue signing in to the Safe Passage Admin Portal."
+            : "You can keep using your current code until it expires, or request a new 6-digit code at any time.";
+        var buttonText = isExpired ? "Request New Code" : "Open Admin Login";
+
+        var encodedName = WebUtility.HtmlEncode(username);
+        var encodedLogo = WebUtility.HtmlEncode(resolvedLogoUrl);
+        var encodedUrl = WebUtility.HtmlEncode(adminLoginUrl);
+
+        return $$"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{WebUtility.HtmlEncode(heading)}}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f8fafc;font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f8fafc;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;">
+          <tr>
+            <td align="center" style="padding-bottom:20px;">
+              <table role="presentation" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="width:38px;height:38px;border-radius:10px;background-color:#e0f2fe;text-align:center;vertical-align:middle;">
+                    <img src="{{encodedLogo}}" alt="Safe Passage" width="38" height="38" style="display:block;width:38px;height:38px;border-radius:10px;border:0;" />
+                  </td>
+                  <td style="padding-left:11px;font-size:21px;font-weight:700;letter-spacing:-0.5px;color:#0f172a;">
+                    Safe Passage
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:32px;box-shadow:0 12px 32px rgba(15,23,42,0.06);">
+              <p style="margin:0 0 8px;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#0284c7;">
+                ADMINISTRATOR ACCESS
+              </p>
+              <h1 style="margin:0 0 16px;font-size:22px;line-height:1.25;letter-spacing:-0.5px;color:#0f172a;">
+                {{WebUtility.HtmlEncode(heading)}}
+              </h1>
+              <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#334155;">
+                Hello {{encodedName}},
+              </p>
+              <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#334155;">
+                {{summary}}
+              </p>
+              <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#64748b;">
+                {{WebUtility.HtmlEncode(actionText)}}
+              </p>
+              <table role="presentation" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="border-radius:8px;background-color:#0284c7;">
+                    <a href="{{encodedUrl}}" style="display:inline-block;padding:12px 20px;font-size:14px;font-weight:600;color:#ffffff;text-decoration:none;">
+                      {{buttonText}}
+                    </a>
+                  </td>
+                </tr>
+              </table>
             </td>
           </tr>
           <tr>

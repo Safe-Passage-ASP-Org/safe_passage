@@ -8,6 +8,8 @@ public sealed class AdminLoginToken
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset ExpiresAt { get; set; }
     public DateTimeOffset? UsedAt { get; set; }
+    public DateTimeOffset? ExpirationWarningSentAt { get; set; }
+    public DateTimeOffset? ExpiredNoticeSentAt { get; set; }
     public int FailedAttempts { get; set; }
 
     public User User { get; set; } = null!;
