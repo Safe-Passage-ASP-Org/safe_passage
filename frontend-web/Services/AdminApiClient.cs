@@ -550,6 +550,24 @@ public sealed class AdminApiClient(HttpClient http)
         return profile;
     }
 
+    public async Task<AccountSecretKeyResult> GenerateAccountSecretKeyAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await http.PostAsync("api/profile/secret-key", null, cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        return await response.Content.ReadFromJsonAsync<AccountSecretKeyResult>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty secret key response.");
+    }
+
+    public async Task<UserProfile> RevokeAccountSecretKeyAsync(CancellationToken cancellationToken = default)
+    {
+        using var response = await http.DeleteAsync("api/profile/secret-key", cancellationToken);
+        if (!response.IsSuccessStatusCode) await EnsureSuccessAsync(response, cancellationToken);
+        var profile = await response.Content.ReadFromJsonAsync<UserProfile>(cancellationToken: cancellationToken)
+            ?? throw new InvalidOperationException("The API returned an empty profile response.");
+        ApplyProfile(profile);
+        return profile;
+    }
+
     public async Task RequestBackupEmailVerificationAsync(string email, CancellationToken cancellationToken = default)
     {
         using var response = await http.PostAsJsonAsync("api/profile/backup-email/request", new { email }, cancellationToken);
@@ -869,7 +887,17 @@ public sealed class AdminApiClient(HttpClient http)
 
 public sealed record LoginResult(bool MfaRequired, string? SessionToken, string Message);
 public sealed record ApplicationAccessDecision(bool Allowed, string Reason, Guid ApplicationId, bool RequiresTrustedDevice, DateTimeOffset EvaluatedAt);
-public sealed record UserProfile(string Name, string Username, string Email, string? BackupEmail, string Role, string? ProfileImageData = null);
+public sealed record AccountSecretKeyResult(string SecretKey, string Prefix, DateTimeOffset CreatedAt);
+public sealed record UserProfile(
+    string Name,
+    string Username,
+    string Email,
+    string? BackupEmail,
+    string Role,
+    string? ProfileImageData = null,
+    bool HasAccountSecretKey = false,
+    string? AccountSecretKeyPrefix = null,
+    DateTimeOffset? AccountSecretKeyCreatedAt = null);
 public sealed record AdminUser(Guid Id, string Username, string Email, bool IsActive, bool IsEmailVerified,
     string Role, List<string> Groups, string? FullName = null, string? PhoneNumber = null,
     UserSubscriptionDto? Subscription = null, string? ProfileImageData = null);

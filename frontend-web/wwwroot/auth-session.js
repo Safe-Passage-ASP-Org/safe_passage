@@ -40,6 +40,24 @@ window.safePassageAuthSession = {
             || date.getMinutes() !== Number(minute))
             throw new Error("Choose a real local date and time.");
         return -date.getTimezoneOffset();
+    },
+    downloadTextFile(filename, content) {
+        const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    },
+    async copyText(text) {
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+            return false;
+        }
+        await navigator.clipboard.writeText(text);
+        return true;
     }
 };
 

@@ -741,6 +741,10 @@ using (var scope = app.Services.CreateScope())
                     ON "UserSessions" ("TokenJti");
                 CREATE INDEX IF NOT EXISTS "IX_UserSessions_UserId_DeviceId_RevokedAt"
                     ON "UserSessions" ("UserId", "DeviceId", "RevokedAt");
+                ALTER TABLE "Users"
+                    ADD COLUMN IF NOT EXISTS "AccountSecretKeyHash" character varying(64) NULL,
+                    ADD COLUMN IF NOT EXISTS "AccountSecretKeyPrefix" character varying(24) NULL,
+                    ADD COLUMN IF NOT EXISTS "AccountSecretKeyCreatedAt" timestamp with time zone NULL;
                 """;
             adminLoginTokenCmd.ExecuteNonQuery();
         }

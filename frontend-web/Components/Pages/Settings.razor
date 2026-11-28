@@ -90,6 +90,34 @@
                     </form>
                 }
             </section>
+            <section class="settings-panel secret-key-panel">
+                <h3>Account secret key</h3>
+                <p class="settings-note">Request a personal secret key for your Safe Passage account. For security, the full key is only shown once when generated so you can copy or download it.</p>
+                @if (HasAccountSecretKey)
+                {
+                    <p class="settings-verified-email">
+                        <span class="settings-verified-dot" aria-hidden="true"></span>
+                        Active key: <code>@(AccountSecretKeyPrefix ?? "sp_sk_")••••••••</code>
+                        @if (AccountSecretKeyCreatedAt is not null)
+                        {
+                            <span>(created @AccountSecretKeyCreatedAt.Value.ToLocalTime().ToString("MMM d, yyyy"))</span>
+                        }
+                    </p>
+                }
+                @if (!string.IsNullOrWhiteSpace(SecretKeyError)) { <div class="settings-alert error" role="alert">@SecretKeyError</div> }
+                @if (!string.IsNullOrWhiteSpace(SecretKeyNotice)) { <div class="settings-alert ok" role="status">@SecretKeyNotice</div> }
+                <div class="secret-key-actions">
+                    <button type="button" class="settings-save-btn" @onclick="RequestSecretKeyAsync" disabled="@(GeneratingSecretKey || RevokingSecretKey)">
+                        @(GeneratingSecretKey ? "Generating…" : (HasAccountSecretKey ? "Regenerate secret key" : "Request secret key"))
+                    </button>
+                    @if (HasAccountSecretKey)
+                    {
+                        <button type="button" class="settings-revoke-btn" @onclick="RevokeSecretKeyAsync" disabled="@(GeneratingSecretKey || RevokingSecretKey)">
+                            @(RevokingSecretKey ? "Revoking…" : "Revoke key")
+                        </button>
+                    }
+                </div>
+            </section>
         }
         else if (ActiveSection == "account")
         {
@@ -169,6 +197,35 @@
                     OnCancel="CloseSignOutConfirmation"
                     OnConfirm="ConfirmSignOutAsync" />
 
+@if (IsSecretKeyModalOpen && GeneratedSecretKey is not null)
+{
+    <div class="sp-secret-backdrop" @onclick="CloseSecretKeyModal">
+        <section class="sp-secret-modal" role="dialog" aria-modal="true" aria-labelledby="sp-secret-title" @onclick:stopPropagation="true">
+            <div class="sp-secret-header">
+                <div class="sp-secret-badge" aria-hidden="true">
+                    <svg viewBox="0 0 16 16"><path d="M10.5 1a4.5 4.5 0 0 0-4.3 5.83L1.5 11.53V14.5h3v-2h2v-2h2l.67-.67A4.5 4.5 0 1 0 10.5 1Zm1 3.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z" /></svg>
+                </div>
+                <div>
+                    <h2 id="sp-secret-title">Your account secret key</h2>
+                    <p>Save or download this key now. For your security, it will not be shown again after you close this window.</p>
+                </div>
+            </div>
+            <div class="sp-secret-box">
+                <code>@GeneratedSecretKey.SecretKey</code>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(SecretKeyModalStatus))
+            {
+                <div class="settings-alert ok" role="status">@SecretKeyModalStatus</div>
+            }
+            <div class="sp-secret-actions">
+                <button type="button" class="sp-secret-secondary" @onclick="CopySecretKeyAsync">Copy key</button>
+                <button type="button" class="sp-secret-primary" @onclick="DownloadSecretKeyAsync">Download secret key (.txt)</button>
+                <button type="button" class="sp-secret-secondary" @onclick="CloseSecretKeyModal">Done</button>
+            </div>
+        </section>
+    </div>
+}
+
 <style>
     .settings-page-heading{margin-bottom:22px}
     .settings-layout{display:grid;grid-template-columns:230px minmax(0,1fr);gap:30px;max-width:1100px;align-items:start}
@@ -191,7 +248,26 @@
     .settings-panel h3{margin:0 0 7px;color:#1f2328;font-size:15px;font-weight:600}
     .settings-profile-row{display:flex;align-items:center;gap:13px;padding-bottom:18px;border-bottom:1px solid #e5e7eb}
     .settings-profile-form{margin:18px 0}
-    .backup-email-panel{margin-top:16px}
+    .backup-email-panel,.secret-key-panel{margin-top:16px}
+    .secret-key-actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+    .settings-revoke-btn{padding:8px 13px;border:1px solid #d8dee4;border-radius:6px;background:var(--sp-bg-card,#fff);color:#b42318;font-size:12px;font-weight:650;cursor:pointer}
+    .settings-revoke-btn:hover{background:#fff1f0;border-color:#fda29b}
+    .settings-revoke-btn:disabled{opacity:.6;cursor:wait}
+    .sp-secret-backdrop{position:fixed;inset:0;z-index:1350;display:grid;place-items:center;padding:20px;background:rgba(15,23,42,.55)}
+    .sp-secret-modal{width:min(100%,520px);display:grid;gap:16px;padding:24px;background:var(--sp-bg-card,#fff);color:var(--sp-text-primary,#1f2328);border:1px solid var(--sp-topbar-border,#d8dee4);border-radius:10px;box-shadow:var(--sp-shadow-md,0 20px 55px rgba(15,23,42,.24))}
+    .sp-secret-header{display:grid;grid-template-columns:42px minmax(0,1fr);gap:14px;align-items:start}
+    .sp-secret-badge{width:42px;height:42px;display:grid;place-items:center;border-radius:10px;background:#e0f2fe;color:#0284c7}
+    .sp-secret-badge svg{width:20px;height:20px;fill:currentColor}
+    .sp-secret-header h2{margin:0 0 4px;font-size:18px;font-weight:650}
+    .sp-secret-header p{margin:0;color:var(--sp-text-muted,#64748b);font-size:12.5px;line-height:1.5}
+    .sp-secret-box{padding:14px 16px;border:1px solid #bae6fd;border-radius:8px;background:var(--sp-bg-page,#f8fafc);overflow-x:auto}
+    .sp-secret-box code{font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:13px;font-weight:650;color:var(--sp-text-primary,#0f172a);word-break:break-all}
+    .sp-secret-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:9px;padding-top:4px}
+    .sp-secret-actions button{min-height:36px;padding:8px 13px;border-radius:6px;font:inherit;font-size:12px;font-weight:650;cursor:pointer}
+    .sp-secret-primary{border:1px solid #0284c7;background:#0284c7;color:#fff}
+    .sp-secret-primary:hover{background:#0369a1}
+    .sp-secret-secondary{border:1px solid var(--sp-topbar-border,#d8dee4);background:var(--sp-bg-card,#fff);color:var(--sp-text-primary,#1f2328)}
+    .sp-secret-secondary:hover{background:var(--sp-bg-page,#f6f8fa)}
     .settings-verified-email{display:flex;align-items:center;gap:7px;margin:0 0 15px;color:#334155;font-size:12px}
     .settings-verified-dot{width:8px;height:8px;border-radius:50%;background:#1f883d}
     .settings-avatar-wrap{display:grid;justify-items:center;gap:5px;flex:0 0 auto}
@@ -264,6 +340,11 @@
     private const long MaxProfileImageBytes = 1024 * 1024;
     private string SelectedTheme = "light";
     private bool SendingEmailCode, VerifyingEmail, EmailVerificationSent;
+    private bool HasAccountSecretKey, GeneratingSecretKey, RevokingSecretKey, IsSecretKeyModalOpen;
+    private string? AccountSecretKeyPrefix;
+    private DateTimeOffset? AccountSecretKeyCreatedAt;
+    private string SecretKeyError = "", SecretKeyNotice = "", SecretKeyModalStatus = "";
+    private AccountSecretKeyResult? GeneratedSecretKey;
 
     protected override async Task OnInitializedAsync()
     {
@@ -275,6 +356,9 @@
             ProfileEmail = profile.Email;
             ProfileBackupEmail = profile.BackupEmail;
             ProfileImageData = profile.ProfileImageData;
+            HasAccountSecretKey = profile.HasAccountSecretKey;
+            AccountSecretKeyPrefix = profile.AccountSecretKeyPrefix;
+            AccountSecretKeyCreatedAt = profile.AccountSecretKeyCreatedAt;
         }
         catch (Exception ex) { ProfileError = ex.Message; }
     }
@@ -458,5 +542,76 @@
         await JS.InvokeVoidAsync("safePassageAppearance.reset");
         Api.SignOut();
         Navigation.NavigateTo("/login", forceLoad: true);
+    }
+
+    private async Task RequestSecretKeyAsync()
+    {
+        SecretKeyError = "";
+        SecretKeyNotice = "";
+        SecretKeyModalStatus = "";
+        GeneratingSecretKey = true;
+        try
+        {
+            GeneratedSecretKey = await Api.GenerateAccountSecretKeyAsync();
+            HasAccountSecretKey = true;
+            AccountSecretKeyPrefix = GeneratedSecretKey.Prefix;
+            AccountSecretKeyCreatedAt = GeneratedSecretKey.CreatedAt;
+            IsSecretKeyModalOpen = true;
+            SecretKeyNotice = "New account secret key generated.";
+        }
+        catch (Exception ex) { SecretKeyError = ex.Message; }
+        finally { GeneratingSecretKey = false; }
+    }
+
+    private async Task RevokeSecretKeyAsync()
+    {
+        SecretKeyError = "";
+        SecretKeyNotice = "";
+        RevokingSecretKey = true;
+        try
+        {
+            var profile = await Api.RevokeAccountSecretKeyAsync();
+            HasAccountSecretKey = profile.HasAccountSecretKey;
+            AccountSecretKeyPrefix = profile.AccountSecretKeyPrefix;
+            AccountSecretKeyCreatedAt = profile.AccountSecretKeyCreatedAt;
+            GeneratedSecretKey = null;
+            IsSecretKeyModalOpen = false;
+            SecretKeyNotice = "Account secret key revoked.";
+        }
+        catch (Exception ex) { SecretKeyError = ex.Message; }
+        finally { RevokingSecretKey = false; }
+    }
+
+    private async Task CopySecretKeyAsync()
+    {
+        if (GeneratedSecretKey is null) return;
+        var copied = await JS.InvokeAsync<bool>("safePassageAuthSession.copyText", GeneratedSecretKey.SecretKey);
+        SecretKeyModalStatus = copied
+            ? "Secret key copied to clipboard."
+            : "Clipboard access was blocked; use Download secret key instead.";
+    }
+
+    private async Task DownloadSecretKeyAsync()
+    {
+        if (GeneratedSecretKey is null) return;
+        var safeUsername = string.IsNullOrWhiteSpace(ProfileUsername) ? "account" : ProfileUsername.Trim();
+        var content =
+            $"Safe Passage Account Secret Key\n"
+            + $"===============================\n"
+            + $"Username: {ProfileUsername ?? "—"}\n"
+            + $"Email: {ProfileEmail ?? Api.CurrentEmail ?? "—"}\n"
+            + $"Role: {Api.CurrentRole ?? "User"}\n"
+            + $"Created (UTC): {GeneratedSecretKey.CreatedAt:yyyy-MM-dd HH:mm:ss 'UTC'}\n\n"
+            + $"Secret Key:\n{GeneratedSecretKey.SecretKey}\n\n"
+            + $"Keep this file in a secure location. Safe Passage does not store the raw key.\n";
+        await JS.InvokeVoidAsync("safePassageAuthSession.downloadTextFile", $"safepassage-secret-key-{safeUsername}.txt", content);
+        SecretKeyModalStatus = $"Downloaded safepassage-secret-key-{safeUsername}.txt.";
+    }
+
+    private void CloseSecretKeyModal()
+    {
+        IsSecretKeyModalOpen = false;
+        GeneratedSecretKey = null;
+        SecretKeyModalStatus = "";
     }
 }

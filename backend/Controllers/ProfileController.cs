@@ -90,6 +90,57 @@ public sealed class ProfileController(
         return Ok(ToProfile(user));
     }
 
+    [HttpPost("secret-key")]
+    public async Task<ActionResult<AccountSecretKeyResponse>> GenerateSecretKey(CancellationToken cancellationToken)
+    {
+        var user = await GetCurrentUserAsync(cancellationToken);
+        if (user is null) return Unauthorized();
+
+        var rawSecretKey = "sp_sk_" + WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
+        var now = DateTimeOffset.UtcNow;
+
+        user.AccountSecretKeyHash = Hash(rawSecretKey);
+        user.AccountSecretKeyPrefix = rawSecretKey[..12];
+        user.AccountSecretKeyCreatedAt = now;
+
+        dbContext.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            Timestamp = now,
+            Action = "Account secret key generated",
+            Resource = "Profile",
+            Status = ActivityLogStatus.Success
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(new AccountSecretKeyResponse(rawSecretKey, user.AccountSecretKeyPrefix, now));
+    }
+
+    [HttpDelete("secret-key")]
+    public async Task<ActionResult<ProfileResponse>> RevokeSecretKey(CancellationToken cancellationToken)
+    {
+        var user = await GetCurrentUserAsync(cancellationToken);
+        if (user is null) return Unauthorized();
+
+        user.AccountSecretKeyHash = null;
+        user.AccountSecretKeyPrefix = null;
+        user.AccountSecretKeyCreatedAt = null;
+
+        dbContext.ActivityLogs.Add(new ActivityLog
+        {
+            Id = Guid.NewGuid(),
+            UserId = user.Id,
+            Timestamp = DateTimeOffset.UtcNow,
+            Action = "Account secret key revoked",
+            Resource = "Profile",
+            Status = ActivityLogStatus.Success
+        });
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Ok(ToProfile(user));
+    }
+
     [HttpPost("backup-email/request")]
     public async Task<IActionResult> RequestBackupEmail(
         [FromBody] BackupEmailRequest request, CancellationToken cancellationToken)
@@ -224,7 +275,16 @@ public sealed class ProfileController(
     }
 
     private static ProfileResponse ToProfile(User user) =>
-        new(user.FullName ?? user.Username, user.Username, user.Email, user.BackupEmail, user.Role, user.ProfileImageData);
+        new(
+            user.FullName ?? user.Username,
+            user.Username,
+            user.Email,
+            user.BackupEmail,
+            user.Role,
+            user.ProfileImageData,
+            !string.IsNullOrWhiteSpace(user.AccountSecretKeyHash),
+            user.AccountSecretKeyPrefix,
+            user.AccountSecretKeyCreatedAt);
 
     private static bool TryValidateProfileImage(string? imageData, out string error)
     {
@@ -302,5 +362,15 @@ public sealed class ProfileController(
     public sealed record BackupEmailRequest(string? Email);
     public sealed record BackupEmailOtpRequest(string? Code);
     public sealed record BackupEmailLinkRequest(string? Token);
-    public sealed record ProfileResponse(string Name, string Username, string Email, string? BackupEmail, string Role, string? ProfileImageData);
+    public sealed record AccountSecretKeyResponse(string SecretKey, string Prefix, DateTimeOffset CreatedAt);
+    public sealed record ProfileResponse(
+        string Name,
+        string Username,
+        string Email,
+        string? BackupEmail,
+        string Role,
+        string? ProfileImageData,
+        bool HasAccountSecretKey = false,
+        string? AccountSecretKeyPrefix = null,
+        DateTimeOffset? AccountSecretKeyCreatedAt = null);
 }

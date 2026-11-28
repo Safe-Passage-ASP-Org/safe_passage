@@ -775,6 +775,17 @@ namespace SafePassage.Api.Data.Migrations
                         .HasMaxLength(1400000)
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTimeOffset?>("AccountSecretKeyCreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AccountSecretKeyHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AccountSecretKeyPrefix")
+                        .HasMaxLength(24)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
 
