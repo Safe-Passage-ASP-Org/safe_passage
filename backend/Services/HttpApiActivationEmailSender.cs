@@ -144,23 +144,41 @@ public sealed class HttpApiActivationEmailSender(
             ? "Your Safe Passage administrator verification code"
             : "Your Safe Passage sign-in verification code";
         var body = SmtpEmailSender.FormatOtpBody(username, otpCode, lifetimeMinutes, isAdminLogin);
+        var htmlBody = SmtpEmailSender.FormatOtpHtmlBody(username, otpCode, lifetimeMinutes, isAdminLogin, ResolveLogoUrl());
 
         var brevoApiKey = configuration["Brevo:ApiKey"];
         if (!string.IsNullOrWhiteSpace(brevoApiKey))
         {
-            await SendViaBrevoAsync(brevoApiKey, email, username, subject, body, cancellationToken);
+            await SendViaBrevoAsync(brevoApiKey, email, username, subject, body, cancellationToken, htmlBody);
             return;
         }
 
         var resendApiKey = configuration["Resend:ApiKey"];
         if (!string.IsNullOrWhiteSpace(resendApiKey))
         {
-            await SendViaResendAsync(resendApiKey, email, subject, body, cancellationToken);
+            await SendViaResendAsync(resendApiKey, email, subject, body, cancellationToken, htmlBody);
             return;
         }
 
         await new SmtpEmailSender(smtpOptions).SendSignInOtpAsync(
             email, username, otpCode, lifetimeMinutes, isAdminLogin, cancellationToken);
+    }
+
+    private string ResolveLogoUrl()
+    {
+        var explicitLogoUrl = configuration["EmailBranding:LogoUrl"];
+        if (!string.IsNullOrWhiteSpace(explicitLogoUrl))
+            return explicitLogoUrl.Trim();
+
+        var frontendUrl = configuration["Facebook:FrontendUrl"]
+            ?? configuration["GitHub:FrontendUrl"]
+            ?? configuration["GitLab:FrontendUrl"];
+        if (!string.IsNullOrWhiteSpace(frontendUrl)
+            && Uri.TryCreate(frontendUrl.Trim(), UriKind.Absolute, out var uri)
+            && !uri.IsLoopback)
+            return $"{uri.GetLeftPart(UriPartial.Authority)}/favicon.png";
+
+        return "https://safe-passage-web.onrender.com/favicon.png";
     }
 
     private async Task SendViaBrevoAsync(
@@ -169,7 +187,8 @@ public sealed class HttpApiActivationEmailSender(
         string recipientName,
         string subject,
         string textContent,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? htmlContent = null)
     {
         var fromEmail = configuration["Brevo:FromAddress"] ?? smtpOptions.Value.FromAddress;
         var fromName = configuration["Brevo:FromName"] ?? smtpOptions.Value.FromName ?? "Safe Passage";
@@ -178,13 +197,22 @@ public sealed class HttpApiActivationEmailSender(
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.brevo.com/v3/smtp/email");
         request.Headers.Add("api-key", apiKey.Trim());
-        request.Content = JsonContent.Create(new
-        {
-            sender = new { email = fromEmail.Trim(), name = fromName.Trim() },
-            to = new[] { new { email = recipientEmail, name = recipientName } },
-            subject,
-            textContent
-        });
+        request.Content = string.IsNullOrWhiteSpace(htmlContent)
+            ? JsonContent.Create(new
+            {
+                sender = new { email = fromEmail.Trim(), name = fromName.Trim() },
+                to = new[] { new { email = recipientEmail, name = recipientName } },
+                subject,
+                textContent
+            })
+            : JsonContent.Create(new
+            {
+                sender = new { email = fromEmail.Trim(), name = fromName.Trim() },
+                to = new[] { new { email = recipientEmail, name = recipientName } },
+                subject,
+                textContent,
+                htmlContent
+            });
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -199,19 +227,29 @@ public sealed class HttpApiActivationEmailSender(
         string recipientEmail,
         string subject,
         string text,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? html = null)
     {
         var fromEmail = configuration["Resend:FromAddress"] ?? "Safe Passage <onboarding@resend.dev>";
 
         using var request = new HttpRequestMessage(HttpMethod.Post, "https://api.resend.com/emails");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey.Trim());
-        request.Content = JsonContent.Create(new
-        {
-            from = fromEmail.Trim(),
-            to = new[] { recipientEmail },
-            subject,
-            text
-        });
+        request.Content = string.IsNullOrWhiteSpace(html)
+            ? JsonContent.Create(new
+            {
+                from = fromEmail.Trim(),
+                to = new[] { recipientEmail },
+                subject,
+                text
+            })
+            : JsonContent.Create(new
+            {
+                from = fromEmail.Trim(),
+                to = new[] { recipientEmail },
+                subject,
+                text,
+                html
+            });
 
         using var response = await httpClient.SendAsync(request, cancellationToken);
         if (!response.IsSuccessStatusCode)

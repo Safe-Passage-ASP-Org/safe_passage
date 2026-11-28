@@ -159,6 +159,33 @@ public sealed class AdminEmailLoginServiceTests
         Assert.Contains("expires in 10 minutes and can only be used once", userBody);
     }
 
+    [Fact]
+    public void FormatOtpHtmlBody_IncludesBrandingLogoAndEscapesUsername()
+    {
+        var adminHtml = SmtpEmailSender.FormatOtpHtmlBody(
+            "Admin <User>",
+            "123456",
+            7 * 24 * 60,
+            isAdminLogin: true,
+            logoUrl: "https://safe-passage-web.onrender.com/favicon.png");
+        var userHtml = SmtpEmailSender.FormatOtpHtmlBody(
+            "Regular User",
+            "654321",
+            10,
+            isAdminLogin: false);
+
+        Assert.Contains("Safe Passage", adminHtml);
+        Assert.Contains("https://safe-passage-web.onrender.com/favicon.png", adminHtml);
+        Assert.Contains("ADMINISTRATOR ACCESS", adminHtml);
+        Assert.Contains("123456", adminHtml);
+        Assert.Contains("Admin &lt;User&gt;", adminHtml);
+        Assert.DoesNotContain("Admin <User>", adminHtml);
+
+        Assert.Contains("SIGN-IN VERIFICATION", userHtml);
+        Assert.Contains("654321", userHtml);
+        Assert.Contains("single-use verification code", userHtml);
+    }
+
     private sealed class TestFixture : IAsyncDisposable
     {
         private readonly SqliteConnection connection;

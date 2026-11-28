@@ -297,15 +297,19 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
             var subject = isAdminLogin
                 ? "Your Safe Passage administrator verification code"
                 : "Your Safe Passage sign-in verification code";
+            var textBody = FormatOtpBody(username, otpCode, lifetimeMinutes, isAdminLogin);
+            var htmlBody = FormatOtpHtmlBody(username, otpCode, lifetimeMinutes, isAdminLogin);
             using var message = new MailMessage
             {
                 From = string.IsNullOrWhiteSpace(settings.FromName)
                     ? new MailAddress(settings.FromAddress)
                     : new MailAddress(settings.FromAddress, settings.FromName),
                 Subject = subject,
-                Body = FormatOtpBody(username, otpCode, lifetimeMinutes, isAdminLogin),
+                Body = textBody,
                 IsBodyHtml = false
             };
+            message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(textBody, null, "text/plain"));
+            message.AlternateViews.Add(AlternateView.CreateAlternateViewFromString(htmlBody, null, "text/html"));
             message.To.Add(new MailAddress(email));
             using var client = new SmtpClient(settings.Host, settings.Port)
             {
@@ -336,5 +340,105 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
                 ? $"This code expires in {expiry} and can be reused for administrator sign-ins until it expires or a new code is requested.\n"
                 : $"This code expires in {expiry} and can only be used once.\n")
             + "If you did not request this code, ignore this email and review your account activity.\n";
+    }
+
+    internal static string FormatOtpHtmlBody(
+        string username,
+        string otpCode,
+        int lifetimeMinutes,
+        bool isAdminLogin,
+        string? logoUrl = null)
+    {
+        var resolvedLogoUrl = string.IsNullOrWhiteSpace(logoUrl)
+            ? "https://safe-passage-web.onrender.com/favicon.png"
+            : logoUrl.Trim();
+        var expiry = isAdminLogin && lifetimeMinutes == 7 * 24 * 60
+            ? "7 days"
+            : $"{lifetimeMinutes} minutes";
+        var eyebrow = isAdminLogin ? "ADMINISTRATOR ACCESS" : "SIGN-IN VERIFICATION";
+        var heading = isAdminLogin
+            ? "Your administrator verification code"
+            : "Your sign-in verification code";
+        var intro = isAdminLogin
+            ? "Use this 6-digit verification code on the Safe Passage Admin Login page:"
+            : "Use this 6-digit verification code to complete your Safe Passage sign-in:";
+        var validityNote = isAdminLogin
+            ? $"Valid for <strong>{WebUtility.HtmlEncode(expiry)}</strong> &mdash; you can reuse this code for administrator sign-ins until it expires or a new code is requested."
+            : $"Expires in <strong>{WebUtility.HtmlEncode(expiry)}</strong> &mdash; single-use verification code.";
+
+        var encodedName = WebUtility.HtmlEncode(username);
+        var encodedCode = WebUtility.HtmlEncode(otpCode);
+        var encodedLogo = WebUtility.HtmlEncode(resolvedLogoUrl);
+
+        return $$"""
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{{WebUtility.HtmlEncode(heading)}}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f8fafc;font-family:'Inter','Segoe UI',system-ui,-apple-system,sans-serif;color:#0f172a;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#f8fafc;padding:32px 16px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:520px;">
+          <tr>
+            <td align="center" style="padding-bottom:20px;">
+              <table role="presentation" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td style="width:38px;height:38px;border-radius:10px;background-color:#e0f2fe;text-align:center;vertical-align:middle;">
+                    <img src="{{encodedLogo}}" alt="Safe Passage" width="38" height="38" style="display:block;width:38px;height:38px;border-radius:10px;border:0;" />
+                  </td>
+                  <td style="padding-left:11px;font-size:21px;font-weight:700;letter-spacing:-0.5px;color:#0f172a;">
+                    Safe Passage
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+          <tr>
+            <td style="background-color:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:32px;box-shadow:0 12px 32px rgba(15,23,42,0.06);">
+              <p style="margin:0 0 8px;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;color:#0284c7;">
+                {{eyebrow}}
+              </p>
+              <h1 style="margin:0 0 16px;font-size:22px;line-height:1.25;letter-spacing:-0.5px;color:#0f172a;">
+                {{WebUtility.HtmlEncode(heading)}}
+              </h1>
+              <p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#334155;">
+                Hello {{encodedName}},
+              </p>
+              <p style="margin:0 0 24px;font-size:14px;line-height:1.6;color:#64748b;">
+                {{intro}}
+              </p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="margin-bottom:24px;">
+                <tr>
+                  <td align="center" style="background-color:#f8fafc;border:1px solid #bae6fd;border-radius:10px;padding:20px 16px;">
+                    <span style="font-family:'SFMono-Regular',Consolas,'Liberation Mono',Menlo,monospace;font-size:32px;font-weight:700;letter-spacing:8px;color:#0f172a;">
+                      {{encodedCode}}
+                    </span>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin:0 0 20px;padding:12px 14px;background-color:#f0f9ff;border-left:3px solid #0284c7;border-radius:6px;font-size:13px;line-height:1.5;color:#0c4a6e;">
+                {{validityNote}}
+              </p>
+              <p style="margin:0;font-size:12px;line-height:1.6;color:#64748b;">
+                If you did not request this code, ignore this email and review your account activity.
+              </p>
+            </td>
+          </tr>
+          <tr>
+            <td align="center" style="padding-top:18px;font-size:12px;color:#94a3b8;">
+              Safe Passage Identity &amp; Access Security
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+""";
     }
 }
