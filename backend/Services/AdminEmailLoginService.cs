@@ -40,11 +40,11 @@ public sealed class AdminEmailLoginService(
             return false;
 
         var now = DateTimeOffset.UtcNow;
-        return await dbContext.AdminLoginTokens.AnyAsync(
-            token => token.UserId == user.Id
-                && token.UsedAt == null
-                && token.ExpiresAt > now,
-            cancellationToken);
+        var activeExpirations = await dbContext.AdminLoginTokens
+            .Where(token => token.UserId == user.Id && token.UsedAt == null)
+            .Select(token => token.ExpiresAt)
+            .ToListAsync(cancellationToken);
+        return activeExpirations.Any(expiresAt => expiresAt > now);
     }
 
     public Task RequestOtpAsync(string email, CancellationToken cancellationToken) =>
@@ -59,12 +59,11 @@ public sealed class AdminEmailLoginService(
         var now = DateTimeOffset.UtcNow;
         if (!forceResend)
         {
-            var hasActiveOtp = await dbContext.AdminLoginTokens.AnyAsync(
-                token => token.UserId == user.Id
-                    && token.UsedAt == null
-                    && token.ExpiresAt > now,
-                cancellationToken);
-            if (hasActiveOtp) return;
+            var activeExpirations = await dbContext.AdminLoginTokens
+                .Where(token => token.UserId == user.Id && token.UsedAt == null)
+                .Select(token => token.ExpiresAt)
+                .ToListAsync(cancellationToken);
+            if (activeExpirations.Any(expiresAt => expiresAt > now)) return;
         }
 
         await dbContext.AdminLoginTokens
@@ -120,12 +119,13 @@ public sealed class AdminEmailLoginService(
         if (user is null) return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
 
         var now = DateTimeOffset.UtcNow;
-        var otp = await dbContext.AdminLoginTokens
-            .Where(token => token.UserId == user.Id
-                && token.UsedAt == null
-                && token.ExpiresAt > now)
+        var activeTokens = await dbContext.AdminLoginTokens
+            .Where(token => token.UserId == user.Id && token.UsedAt == null)
+            .ToListAsync(cancellationToken);
+        var otp = activeTokens
+            .Where(token => token.ExpiresAt > now)
             .OrderByDescending(token => token.CreatedAt)
-            .FirstOrDefaultAsync(cancellationToken);
+            .FirstOrDefault();
         if (otp is null) return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
 
         var suppliedHash = Convert.FromHexString(HashOtp(normalizedEmail, code.Trim()));
