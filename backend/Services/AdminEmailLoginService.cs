@@ -27,7 +27,6 @@ public sealed class AdminEmailLoginService(
     ILogger<AdminEmailLoginService> logger) : IAdminEmailLoginService
 {
     private static readonly TimeSpan OtpLifetime = TimeSpan.FromDays(7);
-    private const int MaximumFailedAttempts = 5;
 
     public async Task RequestOtpAsync(string email, CancellationToken cancellationToken)
     {
@@ -104,8 +103,7 @@ public sealed class AdminEmailLoginService(
         var otp = await dbContext.AdminLoginTokens
             .Where(token => token.UserId == user.Id
                 && token.UsedAt == null
-                && token.ExpiresAt > now
-                && token.FailedAttempts < MaximumFailedAttempts)
+                && token.ExpiresAt > now)
             .OrderByDescending(token => token.CreatedAt)
             .FirstOrDefaultAsync(cancellationToken);
         if (otp is null) return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
@@ -113,38 +111,7 @@ public sealed class AdminEmailLoginService(
         var suppliedHash = Convert.FromHexString(HashOtp(normalizedEmail, code.Trim()));
         var expectedHash = Convert.FromHexString(otp.TokenHash);
         if (!CryptographicOperations.FixedTimeEquals(suppliedHash, expectedHash))
-        {
-            await dbContext.AdminLoginTokens
-                .Where(token => token.Id == otp.Id
-                    && token.UsedAt == null
-                    && token.ExpiresAt > now
-                    && token.FailedAttempts < MaximumFailedAttempts)
-                .ExecuteUpdateAsync(setters => setters
-                    .SetProperty(token => token.FailedAttempts, token => token.FailedAttempts + 1)
-                    .SetProperty(token => token.UsedAt,
-                        token => token.FailedAttempts >= MaximumFailedAttempts - 1 ? (DateTimeOffset?)now : token.UsedAt),
-                    cancellationToken);
             return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
-        }
-
-        await using var transaction = dbContext.Database.IsRelational()
-            ? await dbContext.Database.BeginTransactionAsync(cancellationToken)
-            : null;
-        var consumed = await dbContext.AdminLoginTokens
-            .Where(token => token.Id == otp.Id
-                && token.UserId == user.Id
-                && token.UsedAt == null
-                && token.ExpiresAt > now
-                && token.FailedAttempts < MaximumFailedAttempts)
-            .ExecuteUpdateAsync(
-                setters => setters.SetProperty(token => token.UsedAt, (DateTimeOffset?)now),
-                cancellationToken);
-        if (consumed != 1)
-        {
-            if (transaction is not null)
-                await transaction.RollbackAsync(CancellationToken.None);
-            return AuthFlowResult<LoginResponse>.Failed(AuthFlowFailure.InvalidCredentials);
-        }
 
         dbContext.ActivityLogs.Add(new ActivityLog
         {
@@ -152,12 +119,10 @@ public sealed class AdminEmailLoginService(
             UserId = user.Id,
             Timestamp = now,
             Action = "Admin Email OTP",
-            Resource = "Single-use email OTP verified; administrator signed in",
+            Resource = "Administrator email OTP verified; administrator signed in",
             Status = ActivityLogStatus.Success
         });
         await dbContext.SaveChangesAsync(cancellationToken);
-        if (transaction is not null)
-            await transaction.CommitAsync(cancellationToken);
 
         var accessToken = jwtTokenService.CreateAccessToken(user);
         return AuthFlowResult<LoginResponse>.Success(new(

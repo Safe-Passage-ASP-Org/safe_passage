@@ -23,7 +23,7 @@
         <p class="signup-subtitle">
             @if (OtpRequested)
             {
-                <span>Enter the one-time code sent to <strong>@EmailAddress</strong>. The code is valid for 7 days and signs you in without mobile approval.</span>
+                <span>Enter the verification code sent to <strong>@EmailAddress</strong>. The code is valid for 7 days, can be reused until it expires, and signs you in without mobile approval.</span>
             }
             else
             {
@@ -103,7 +103,7 @@
         {
             await Api.RequestAdminEmailOtpAsync(EmailAddress.Trim());
             OtpRequested = true;
-            Notice = "If this address belongs to an active administrator, a single-use 6-digit code valid for 7 days has been sent.";
+            Notice = "If this address belongs to an active administrator, a 6-digit verification code valid for 7 days has been sent.";
             StartCountdown();
         }
         catch (Exception exception) { Error = exception.Message; }
@@ -147,7 +147,7 @@
         {
             await Api.RequestAdminEmailOtpAsync(EmailAddress.Trim());
             Code = "";
-            Notice = "If this address belongs to an active administrator, a new single-use verification code valid for 7 days has been sent.";
+            Notice = "If this address belongs to an active administrator, a new verification code valid for 7 days has been sent.";
             StartCountdown();
         }
         catch (Exception exception) { Error = exception.Message; }

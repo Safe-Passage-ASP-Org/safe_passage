@@ -629,7 +629,7 @@ public sealed class AuthController(
         return Accepted(new { message = "If this address belongs to an active administrator, a 6-digit verification code will be sent." });
     }
 
-    /// <summary>Verifies an administrator's single-use 6-digit email OTP and signs them in.</summary>
+    /// <summary>Verifies an administrator's 6-digit email OTP and signs them in.</summary>
     [HttpPost("admin-login/verify-otp")]
     [AllowAnonymous]
     [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]

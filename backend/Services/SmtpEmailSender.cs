@@ -332,7 +332,9 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
                 ? "Use this 6-digit verification code on the Safe Passage Admin Login page:\n\n"
                 : "Use this 6-digit verification code to complete your Safe Passage sign-in:\n\n")
             + $"    {otpCode}\n\n"
-            + $"This code expires in {expiry} and can only be used once.\n"
+            + (isAdminLogin
+                ? $"This code expires in {expiry} and can be reused for administrator sign-ins until it expires or a new code is requested.\n"
+                : $"This code expires in {expiry} and can only be used once.\n")
             + "If you did not request this code, ignore this email and review your account activity.\n";
     }
 }

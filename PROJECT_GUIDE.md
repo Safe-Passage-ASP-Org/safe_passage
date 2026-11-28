@@ -37,7 +37,7 @@ In short, Vercel and the web/mobile clients provide user interfaces; Render runs
 
 1. Open [Safe Passage Admin Login](https://safe-passage-web.onrender.com/admin-login).
 2. Enter the administrator's verified email address and select **Send 6-digit OTP**.
-3. Enter the code from the email. The single-use code remains valid for 7 days.
+3. Enter the code from the email. The code remains valid for 7 days and can be reused until it expires or a new code is requested.
 4. After verification, the administrator portal opens. Admin accounts use **Admin Login**; mobile approval is for regular users.
 
 ## 5. Sign In to the Mobile App
