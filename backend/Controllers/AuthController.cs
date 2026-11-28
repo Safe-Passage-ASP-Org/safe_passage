@@ -82,7 +82,17 @@ public sealed class AuthController(
             }
 
             user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Email.ToUpper() == email.ToUpper(), cancellationToken);
-            if (user is null || !user.IsActive || !user.IsEmailVerified)
+            if (user is null)
+            {
+                await HttpContext.SignOutAsync("gitlab-external");
+                return GitLabError("account_unavailable");
+            }
+            if (!user.IsActive)
+            {
+                await HttpContext.SignOutAsync("gitlab-external");
+                return GitLabError("account_suspended");
+            }
+            if (!user.IsEmailVerified)
             {
                 await HttpContext.SignOutAsync("gitlab-external");
                 return GitLabError("account_unavailable");
@@ -103,7 +113,12 @@ public sealed class AuthController(
                 return GitLabError("account_unavailable");
             }
         }
-        if (!user.IsActive || !user.IsEmailVerified)
+        if (!user.IsActive)
+        {
+            await HttpContext.SignOutAsync("gitlab-external");
+            return GitLabError("account_suspended");
+        }
+        if (!user.IsEmailVerified)
         {
             await HttpContext.SignOutAsync("gitlab-external");
             return GitLabError("account_unavailable");
@@ -116,6 +131,7 @@ public sealed class AuthController(
             var code = result.Failure switch
             {
                 AuthFlowFailure.AdminEmailLoginRequired => "admin_email_required",
+                AuthFlowFailure.AccountSuspended => "account_suspended",
                 AuthFlowFailure.NoActiveMobileDevice => "mfa_device_required",
                 AuthFlowFailure.NotificationFailed => "mfa_unavailable",
                 _ => "sign_in_failed"
@@ -190,7 +206,12 @@ public sealed class AuthController(
                 return FacebookError(string.IsNullOrWhiteSpace(email) ? "email_required" : "account_unavailable");
             }
 
-            if (!user.IsActive || !user.IsEmailVerified)
+            if (!user.IsActive)
+            {
+                await HttpContext.SignOutAsync("facebook-external");
+                return FacebookError("account_suspended");
+            }
+            if (!user.IsEmailVerified)
             {
                 await HttpContext.SignOutAsync("facebook-external");
                 return FacebookError("account_unavailable");
@@ -211,7 +232,12 @@ public sealed class AuthController(
                 return FacebookError("account_unavailable");
             }
         }
-        if (!user.IsActive || !user.IsEmailVerified)
+        if (!user.IsActive)
+        {
+            await HttpContext.SignOutAsync("facebook-external");
+            return FacebookError("account_suspended");
+        }
+        if (!user.IsEmailVerified)
         {
             await HttpContext.SignOutAsync("facebook-external");
             return FacebookError("account_unavailable");
@@ -224,6 +250,7 @@ public sealed class AuthController(
             var code = result.Failure switch
             {
                 AuthFlowFailure.AdminEmailLoginRequired => "admin_email_required",
+                AuthFlowFailure.AccountSuspended => "account_suspended",
                 AuthFlowFailure.NoActiveMobileDevice => "mfa_device_required",
                 AuthFlowFailure.NotificationFailed => "mfa_unavailable",
                 _ => "sign_in_failed"
@@ -275,7 +302,17 @@ public sealed class AuthController(
             }
 
             user = await dbContext.Users.SingleOrDefaultAsync(candidate => candidate.Email.ToUpper() == email.ToUpper(), cancellationToken);
-            if (user is null || !user.IsActive || !user.IsEmailVerified)
+            if (user is null)
+            {
+                await HttpContext.SignOutAsync("github-external");
+                return GitHubError("account_unavailable");
+            }
+            if (!user.IsActive)
+            {
+                await HttpContext.SignOutAsync("github-external");
+                return GitHubError("account_suspended");
+            }
+            if (!user.IsEmailVerified)
             {
                 await HttpContext.SignOutAsync("github-external");
                 return GitHubError("account_unavailable");
@@ -296,7 +333,12 @@ public sealed class AuthController(
                 return GitHubError("account_unavailable");
             }
         }
-        if (!user.IsActive || !user.IsEmailVerified)
+        if (!user.IsActive)
+        {
+            await HttpContext.SignOutAsync("github-external");
+            return GitHubError("account_suspended");
+        }
+        if (!user.IsEmailVerified)
         {
             await HttpContext.SignOutAsync("github-external");
             return GitHubError("account_unavailable");
@@ -309,6 +351,7 @@ public sealed class AuthController(
             var code = result.Failure switch
             {
                 AuthFlowFailure.AdminEmailLoginRequired => "admin_email_required",
+                AuthFlowFailure.AccountSuspended => "account_suspended",
                 AuthFlowFailure.NoActiveMobileDevice => "mfa_device_required",
                 AuthFlowFailure.NotificationFailed => "mfa_unavailable",
                 _ => "sign_in_failed"
@@ -810,7 +853,8 @@ public sealed class AuthController(
         var (statusCode, title, detail) = failure switch
         {
             AuthFlowFailure.InvalidCredentials => (StatusCodes.Status401Unauthorized, "Sign-in failed", "The supplied credentials are invalid."),
-            AuthFlowFailure.AdminEmailLoginRequired => (StatusCodes.Status403Forbidden, "Administrator email OTP required", "Administrator accounts must use Admin Login and enter the 6-digit OTP sent to their verified email address."),
+            AuthFlowFailure.AccountSuspended => (StatusCodes.Status403Forbidden, "Account banned", "This account has been banned or suspended. Contact an administrator for assistance."),
+            AuthFlowFailure.AdminEmailLoginRequired => (StatusCodes.Status403Forbidden, "Administrator email verification required", "Administrator accounts must sign in through Admin Login using a one-time email link, then approve the request on a trusted mobile device."),
             AuthFlowFailure.NoActiveMobileDevice => (StatusCodes.Status409Conflict, "MFA device unavailable", "No active mobile device is registered for this account."),
             AuthFlowFailure.NotificationFailed => (StatusCodes.Status503ServiceUnavailable, "MFA notification unavailable", "The MFA request could not be delivered. Try again later."),
             AuthFlowFailure.InvalidApprovalSignature => (StatusCodes.Status401Unauthorized, "Approval rejected", "The MFA approval could not be validated."),

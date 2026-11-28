@@ -16,6 +16,46 @@ namespace SafePassage.Api.Tests;
 public sealed class AuthFlowServiceTests
 {
     [Fact]
+    public async Task Login_SuspendedUser_ReturnsAccountSuspendedFailure()
+    {
+        await using var dbContext = CreateDbContext();
+        var user = new User
+        {
+            Id = Guid.NewGuid(),
+            Username = "banned-user",
+            Email = "banned@example.com",
+            PasswordHash = new PasswordHasher<User>().HashPassword(null!, "Password123!"),
+            Role = "User",
+            IsActive = false
+        };
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+
+        var service = new AuthFlowService(
+            dbContext,
+            new PasswordHasher<User>(),
+            new TestNotificationService(),
+            new JwtTokenService(new JwtSettings
+            {
+                Issuer = "safe-passage",
+                Audience = "safe-passage-clients",
+                SigningKey = new string('x', 64),
+                AccessTokenMinutes = 60
+            }),
+            new SecurityPolicyEvaluator(dbContext),
+            NullLogger<AuthFlowService>.Instance);
+
+        var result = await service.LoginAsync(new LoginRequest
+        {
+            Username = user.Username,
+            Password = "Password123!"
+        }, CancellationToken.None);
+
+        Assert.Null(result.Response);
+        Assert.Equal(AuthFlowFailure.AccountSuspended, result.Failure);
+    }
+
+    [Fact]
     public void MfaDeviceGroups_AreScopedToAccountWhenDeviceIdIsShared()
     {
         var firstUserGroup = MfaHub.DeviceGroupName(Guid.NewGuid(), "shared-phone");

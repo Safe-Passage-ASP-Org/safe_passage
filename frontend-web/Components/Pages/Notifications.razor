@@ -1,71 +1,199 @@
 @page "/notifications"
 @using SafePassage.Web.Services
+@inject AdminApiClient Api
 @inject AdminNotificationService AdminNotifications
+@inject UserNotificationService UserNotifications
 @implements IDisposable
 
 <PageTitle>Notifications – Safe Passage</PageTitle>
 
 <div class="sp-page-header">
     <h1 class="sp-page-title">Notifications</h1>
-    <p class="sp-page-subtitle">Review items that need administrator attention.</p>
+    <p class="sp-page-subtitle">@(Api.IsAdministrator ? "Review platform activity and send announcements." : "Updates about your account and security.")</p>
 </div>
 
-<div class="notifications-toolbar">
-    <span>@(AdminNotifications.Count?.ToString() ?? "—") pending notifications</span>
-    <button type="button" @onclick="RefreshAsync" disabled="@Refreshing">@(Refreshing ? "Refreshing…" : "Refresh")</button>
-</div>
+@if (Api.IsAdministrator)
+{
+    <section class="sp-card promotion-card" aria-labelledby="promotion-title">
+        <h2 id="promotion-title">Send a promotion or announcement</h2>
+        <p>Choose everyone, a group, or search for an active member. Messages appear in the recipient’s inbox and on their registered mobile devices.</p>
+        <form @onsubmit="SendPromotionAsync" @onsubmit:preventDefault>
+            <label for="promotion-audience">Recipients</label>
+            <select id="promotion-audience" @bind="PromotionAudience">
+                <option value="All">All active users</option>
+                <option value="Group">A group</option>
+                <option value="User">A specific member</option>
+            </select>
+            @if (PromotionAudience == "Group")
+            {
+                <label for="promotion-group-search">Search groups</label>
+                <input id="promotion-group-search" type="search" @bind="GroupSearch" @bind:event="oninput" placeholder="Search group names" />
+                <label for="promotion-group">Group</label>
+                <select id="promotion-group" @bind="SelectedGroupId">
+                    <option value="">Choose a group</option>
+                    @foreach (var group in FilteredGroups)
+                    {
+                        <option value="@group.Id">@group.Name (@group.MemberCount members)</option>
+                    }
+                </select>
+                @if (FilteredGroups.Count == 0)
+                {
+                    <span class="promotion-feedback">No groups match this search.</span>
+                }
+            }
+            else if (PromotionAudience == "User")
+            {
+                <label for="promotion-recipient-search">Search active members</label>
+                <input id="promotion-recipient-search" type="search" @bind="RecipientSearch" @bind:event="oninput" @bind:after="ClearRecipientSelection" placeholder="Search name, username, or email" />
+                <button type="button" class="promotion-search" @onclick="SearchRecipientsAsync" disabled="@SearchingRecipients">@(SearchingRecipients ? "Searching…" : "Search members")</button>
+                <label for="promotion-recipient">Member</label>
+                <select id="promotion-recipient" @bind="SelectedUserId">
+                    <option value="">Choose a member</option>
+                    @foreach (var user in FilteredRecipients)
+                    {
+                        <option value="@user.Id">@(user.FullName ?? user.Username) · @user.Email</option>
+                    }
+                </select>
+                @if (FilteredRecipients.Count == 0 && !string.IsNullOrWhiteSpace(RecipientSearch) && !SearchingRecipients)
+                {
+                    <span class="promotion-feedback">No active members match this search.</span>
+                }
+            }
+            @if (!string.IsNullOrWhiteSpace(AudienceLoadError))
+            {
+                <p class="promotion-feedback error" role="alert">@AudienceLoadError</p>
+            }
+            <label for="promotion-heading">Title</label>
+            <input id="promotion-heading" @bind="PromotionTitle" maxlength="120" required />
+            <label for="promotion-message">Message</label>
+            <textarea id="promotion-message" @bind="PromotionMessage" maxlength="2000" rows="3" required></textarea>
+            <label for="promotion-link">Optional in-app link</label>
+            <input id="promotion-link" @bind="PromotionHref" placeholder="/subscription" />
+            <button type="submit" disabled="@SendingPromotion">@(SendingPromotion ? "Sending…" : "Send to users")</button>
+        </form>
+        @if (!string.IsNullOrWhiteSpace(PromotionFeedback))
+        {
+            <p class="promotion-feedback @(PromotionError ? "error" : "success")" role="@(PromotionError ? "alert" : "status")">@PromotionFeedback</p>
+        }
+    </section>
 
-@if (AdminNotifications.Error is not null)
-{
-    <div class="notifications-error" role="alert">Couldn’t load notifications. <button type="button" @onclick="RefreshAsync">Try again</button></div>
-}
-else if (AdminNotifications.Count is null)
-{
-    <div class="sp-card notifications-state" role="status">Loading notifications…</div>
-}
-else if (AdminNotifications.Items.Count == 0)
-{
-    <div class="sp-card notifications-state">You’re all caught up. There are no pending notifications.</div>
+    <h2 class="notifications-section-title">Items that need administrator attention</h2>
+    <div class="notifications-toolbar">
+        <span>@(AdminNotifications.Count?.ToString() ?? "—") pending items</span>
+        <button type="button" @onclick="RefreshAdminAsync" disabled="@Refreshing">@(Refreshing ? "Refreshing…" : "Refresh")</button>
+    </div>
+    @if (AdminNotifications.Error is not null)
+    {
+        <div class="notifications-error" role="alert">Couldn’t load notifications. <button type="button" @onclick="RefreshAdminAsync">Try again</button></div>
+    }
+    else if (AdminNotifications.Count is null)
+    {
+        <div class="sp-card notifications-state" role="status">Loading notifications…</div>
+    }
+    else if (AdminNotifications.Items.Count == 0)
+    {
+        <div class="sp-card notifications-state">There are no pending review items.</div>
+    }
+    else
+    {
+        <section class="notifications-list" aria-label="Pending admin notifications">
+            @foreach (var item in AdminNotifications.Items)
+            {
+                <a class="sp-card notification-item" href="@item.Href">
+                    <span class="notification-symbol" aria-hidden="true">•</span>
+                    <span class="notification-copy"><small>@item.Category</small><strong>@item.Title</strong><span>@item.Message</span><time datetime="@item.CreatedAt.ToString("O")">@item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy · h:mm tt")</time></span>
+                    <span class="notification-open" aria-hidden="true">Review →</span>
+                </a>
+            }
+        </section>
+    }
 }
 else
 {
-    <section class="notifications-list" aria-label="Pending admin notifications">
-        @foreach (var item in AdminNotifications.Items)
-        {
-            <a class="sp-card notification-item" href="@item.Href">
-                <span class="notification-symbol" aria-hidden="true">•</span>
-                <span class="notification-copy"><small>@item.Category</small><strong>@item.Title</strong><span>@item.Message</span><time datetime="@item.CreatedAt.ToString("O")">@item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy · h:mm tt")</time></span>
-                <span class="notification-open" aria-hidden="true">Review →</span>
-            </a>
-        }
-    </section>
+    <div class="notifications-toolbar">
+        <span>@UserNotifications.UnreadCount unread</span>
+        <div>
+            <button type="button" @onclick="RefreshUserAsync" disabled="@Refreshing">@(Refreshing ? "Refreshing…" : "Refresh")</button>
+            @if (UserNotifications.UnreadCount > 0)
+            {
+                <button type="button" @onclick="MarkAllReadAsync">Mark all read</button>
+            }
+        </div>
+    </div>
+    @if (UserNotifications.Error is not null)
+    {
+        <div class="notifications-error" role="alert">Couldn’t load your notifications. <button type="button" @onclick="RefreshUserAsync">Try again</button></div>
+    }
+    else if (UserNotifications.Items.Count == 0)
+    {
+        <div class="sp-card notifications-state">You’re all caught up. There are no notifications.</div>
+    }
+    else
+    {
+        <section class="notifications-list" aria-label="Your notifications">
+            @foreach (var item in UserNotifications.Items)
+            {
+                <a class="sp-card notification-item @(item.ReadAt is null ? "unread" : "")" href="@(item.Href ?? "/notifications")" @onclick="() => OpenNotificationAsync(item)">
+                    <span class="notification-symbol" aria-hidden="true">•</span>
+                    <span class="notification-copy"><small>@item.Category</small><strong>@item.Title</strong><span>@item.Message</span><time datetime="@item.CreatedAt.ToString("O")">@item.CreatedAt.ToLocalTime().ToString("MMM d, yyyy · h:mm tt")</time></span>
+                    @if (item.ReadAt is null) { <span class="notification-open">Unread</span> }
+                </a>
+            }
+        </section>
+    }
 }
 
 <style>
-    .notifications-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;color:#64748b;font-size:12px}
-    .notifications-toolbar button,.notifications-error button{border:1px solid #cbd5dc;border-radius:5px;padding:8px 11px;background:#fff;color:#334155;font:inherit;cursor:pointer}
-    .notifications-toolbar button:disabled{opacity:.6;cursor:wait}
-    .notifications-error{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:6px;background:#fcecea;color:#9d332b;font-size:13px}
-    .notifications-state{padding:24px;color:#64748b;font-size:13px}
-    .notifications-list{display:grid;gap:10px}
-    .notification-item{display:flex;align-items:center;gap:14px;padding:16px 18px;color:inherit;text-decoration:none;border:1px solid #e2e8f0;border-radius:8px;transition:border-color .15s,transform .15s}
-    .notification-item:hover{border-color:#7fc6bc;transform:translateY(-1px)}
-    .notification-symbol{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border-radius:50%;background:#e5f5ed;color:#087f75;font-size:26px;line-height:1}
-    .notification-copy{display:grid;gap:3px;min-width:0;flex:1}
-    .notification-copy small{color:#087f75;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.45px}
-    .notification-copy strong{font-size:13px}
-    .notification-copy>span{color:#52616b;font-size:12px;overflow-wrap:anywhere}
-    .notification-copy time{margin-top:3px;color:#64748b;font-size:10px}
-    .notification-open{color:#087f75;font-size:11px;font-weight:650;white-space:nowrap}
-    @@media(max-width:560px){.notification-item{align-items:flex-start;padding:14px}.notification-open{display:none}}
+    .promotion-card{display:grid;gap:10px;padding:18px;margin-bottom:24px}.promotion-card h2,.notifications-section-title{margin:0;color:var(--sp-text-primary);font-size:15px}.promotion-card p{color:var(--sp-text-secondary);font-size:12px}.promotion-card form{display:grid;grid-template-columns:1fr;gap:8px}.promotion-card label{font-size:11px;font-weight:650;color:var(--sp-text-secondary)}.promotion-card input,.promotion-card select,.promotion-card textarea{width:100%;padding:9px 10px;border:1px solid var(--sp-topbar-border);border-radius:5px;background:var(--sp-bg-card);color:var(--sp-text-primary);font:inherit;font-size:12px}.promotion-card button,.notifications-toolbar button,.notifications-error button{border:1px solid #cbd5dc;border-radius:5px;padding:8px 11px;background:var(--sp-bg-card);color:var(--sp-text-primary);font:inherit;font-size:12px;cursor:pointer}.promotion-card button{justify-self:start;background:#087f75;border-color:#087f75;color:#fff;font-weight:650}.promotion-card button:disabled{opacity:.6;cursor:wait}.promotion-card .promotion-search{background:var(--sp-bg-card);border-color:var(--sp-topbar-border);color:var(--sp-text-primary)}.promotion-feedback.success{color:#087f75}.promotion-feedback.error{color:#b42318}.notifications-section-title{margin:0 0 12px}.notifications-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;color:#64748b;font-size:12px}.notifications-toolbar>div{display:flex;gap:8px}.notifications-toolbar button:disabled{opacity:.6;cursor:wait}.notifications-error{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:6px;background:#fcecea;color:#9d332b;font-size:13px}.notifications-state{padding:24px;color:#64748b;font-size:13px}.notifications-list{display:grid;gap:10px}.notification-item{display:flex;align-items:center;gap:14px;padding:16px 18px;color:inherit;text-decoration:none;border:1px solid #e2e8f0;border-radius:8px;transition:border-color .15s,transform .15s}.notification-item:hover{border-color:#7fc6bc;transform:translateY(-1px)}.notification-item.unread{border-left:3px solid #087f75;background:color-mix(in srgb,var(--sp-bg-card) 94%,#087f75)}.notification-symbol{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border-radius:50%;background:#e5f5ed;color:#087f75;font-size:26px;line-height:1}.notification-copy{display:grid;gap:3px;min-width:0;flex:1}.notification-copy small{color:#087f75;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.45px}.notification-copy strong{font-size:13px}.notification-copy>span{color:#52616b;font-size:12px;overflow-wrap:anywhere}.notification-copy time{margin-top:3px;color:#64748b;font-size:10px}.notification-open{color:#087f75;font-size:11px;font-weight:650;white-space:nowrap}@@media(max-width:560px){.notification-item{align-items:flex-start;padding:14px}.notification-open{display:none}}
 </style>
 
 @code {
     private bool Refreshing;
+    private bool SendingPromotion;
+    private bool PromotionError;
+    private string PromotionTitle = "";
+    private string PromotionMessage = "";
+    private string PromotionHref = "";
+    private string PromotionAudience = "All";
+    private Guid? SelectedGroupId;
+    private Guid? SelectedUserId;
+    private string RecipientSearch = "";
+    private string GroupSearch = "";
+    private bool SearchingRecipients;
+    private string PromotionFeedback = "";
+    private string AudienceLoadError = "";
+    private List<NotificationRecipient> AudienceUsers = [];
+    private List<NotificationGroup> Groups = [];
+    private List<NotificationGroup> FilteredGroups => Groups
+        .Where(group => string.IsNullOrWhiteSpace(GroupSearch)
+            || group.Name.Contains(GroupSearch.Trim(), StringComparison.OrdinalIgnoreCase))
+        .ToList();
+    private List<NotificationRecipient> FilteredRecipients => AudienceUsers;
 
-    protected override void OnInitialized() => AdminNotifications.Changed += HandleNotificationsChanged;
+    protected override async Task OnInitializedAsync()
+    {
+        AdminNotifications.Changed += HandleChanged;
+        UserNotifications.Changed += HandleChanged;
+        if (Api.IsAdministrator)
+        {
+            try
+            {
+                Groups = await Api.GetNotificationGroupsAsync();
+            }
+            catch (Exception exception)
+            {
+                AudienceLoadError = exception.Message;
+            }
 
-    private async Task RefreshAsync()
+            await RefreshAdminAsync();
+        }
+        else
+        {
+            await RefreshUserAsync();
+        }
+    }
+
+    private async Task RefreshAdminAsync()
     {
         if (Refreshing) return;
         Refreshing = true;
@@ -73,7 +201,84 @@ else
         finally { Refreshing = false; }
     }
 
-    private void HandleNotificationsChanged() => _ = InvokeAsync(StateHasChanged);
+    private async Task RefreshUserAsync()
+    {
+        if (Refreshing) return;
+        Refreshing = true;
+        try { await UserNotifications.RefreshAsync(); }
+        finally { Refreshing = false; }
+    }
 
-    public void Dispose() => AdminNotifications.Changed -= HandleNotificationsChanged;
+    private async Task SendPromotionAsync()
+    {
+        if (SendingPromotion) return;
+        SendingPromotion = true;
+        PromotionFeedback = "";
+        try
+        {
+            var recipients = await Api.SendPromotionAsync(
+                PromotionTitle,
+                PromotionMessage,
+                PromotionHref,
+                PromotionAudience,
+                SelectedGroupId,
+                SelectedUserId);
+            PromotionFeedback = $"Sent to {recipients} active member{(recipients == 1 ? "" : "s")}.";
+            PromotionTitle = "";
+            PromotionMessage = "";
+            PromotionHref = "";
+            PromotionError = false;
+        }
+        catch (Exception exception)
+        {
+            PromotionFeedback = exception.Message;
+            PromotionError = true;
+        }
+        finally { SendingPromotion = false; }
+    }
+
+    private async Task SearchRecipientsAsync()
+    {
+        if (SearchingRecipients) return;
+        if (string.IsNullOrWhiteSpace(RecipientSearch) || RecipientSearch.Trim().Length < 2)
+        {
+            AudienceLoadError = "Enter at least two characters to search for members.";
+            AudienceUsers = [];
+            SelectedUserId = null;
+            return;
+        }
+
+        SearchingRecipients = true;
+        AudienceLoadError = "";
+        SelectedUserId = null;
+        try { AudienceUsers = await Api.SearchNotificationRecipientsAsync(RecipientSearch.Trim()); }
+        catch (Exception exception)
+        {
+            AudienceUsers = [];
+            AudienceLoadError = exception.Message;
+        }
+        finally { SearchingRecipients = false; }
+    }
+
+    private void ClearRecipientSelection()
+    {
+        SelectedUserId = null;
+        AudienceUsers = [];
+        AudienceLoadError = "";
+    }
+
+    private async Task OpenNotificationAsync(UserNotification item)
+    {
+        if (item.ReadAt is null)
+            await UserNotifications.MarkReadAsync(item.Id);
+    }
+
+    private Task MarkAllReadAsync() => UserNotifications.MarkAllReadAsync();
+    private void HandleChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        AdminNotifications.Changed -= HandleChanged;
+        UserNotifications.Changed -= HandleChanged;
+    }
 }

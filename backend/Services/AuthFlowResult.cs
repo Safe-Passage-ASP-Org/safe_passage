@@ -15,6 +15,7 @@ public enum AuthFlowFailure
     SessionExpired,
     InvalidSessionState,
     UserUnavailable,
+    AccountSuspended,
     DeviceUnavailable,
     DeviceSigningKeyNotRegistered,
     SelfApprovalNotAllowed

@@ -26,7 +26,29 @@
 {
     <div class="groups-backdrop" @onclick="CloseModal"><section class="groups-modal" role="dialog" aria-modal="true" aria-labelledby="group-title" @onclick:stopPropagation="true">
         <header><div><small>DIRECTORY GROUPS</small><h2 id="group-title">@(Editing is null ? "Create group" : "Edit group")</h2></div><button aria-label="Close" @onclick="CloseModal">×</button></header>
-        <form @onsubmit="SaveAsync" @onsubmit:preventDefault="true"><label>Name<input required maxlength="120" @bind="Draft.Name" /></label><label>Description<textarea maxlength="1000" rows="3" @bind="Draft.Description"></textarea></label>
+        <form @onsubmit="SaveAsync" @onsubmit:preventDefault="true">
+            <label>Name<input required maxlength="120" @bind="Draft.Name" /></label>
+            <label>Description<textarea maxlength="1000" rows="3" @bind="Draft.Description"></textarea></label>
+            <fieldset class="groups-members">
+                <legend>Members</legend>
+                <p>Active users can be added to this group. Members inherit access from applications assigned to the group; inactive members are shown so you can remove them.</p>
+                @if (DirectoryUsers.Count == 0)
+                {
+                    <p class="groups-members-empty">No directory users available.</p>
+                }
+                else
+                {
+                    <div class="groups-member-list">
+                        @foreach (var user in DirectoryUsers.OrderBy(user => user.Username, StringComparer.OrdinalIgnoreCase))
+                        {
+                            <label class="groups-member-row">
+                                <input type="checkbox" checked="@Draft.MemberUserIds.Contains(user.Id)" @onchange="args => ToggleMember(args, user.Id)" disabled="@(Saving || (!user.IsActive && !Draft.MemberUserIds.Contains(user.Id)))" />
+                                <span>@user.Username<small>@user.Email@if (!user.IsActive) { <span> · Inactive</span> }</small></span>
+                            </label>
+                        }
+                    </div>
+                }
+            </fieldset>
             @if (!string.IsNullOrWhiteSpace(FormError)) { <div class="groups-alert" role="alert">@FormError</div> }
             <footer><button type="button" class="cancel" @onclick="CloseModal" disabled="@Saving">Cancel</button><button type="submit" class="groups-primary" disabled="@Saving">@(Saving ? "Saving…" : "Save group")</button></footer>
         </form>
@@ -36,10 +58,12 @@
 <style>
     .groups-sort{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin:-5px 0 14px;color:#64748b;font-size:12px}.groups-sort select,.groups-sort input{border:1px solid #cbd5dc;border-radius:5px;padding:8px;background:#fff;color:#334155;font:inherit;font-size:12px}.groups-sort input{margin-right:auto;min-width:210px}
     .groups-toolbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;color:#64748b;font-size:12px}.groups-primary{border:0;border-radius:5px;padding:9px 14px;background:#087f75;color:#fff;font-size:13px;font-weight:650;cursor:pointer}.groups-primary:disabled{opacity:.6}.groups-alert,.groups-notice{padding:11px 14px;border-radius:6px;margin-bottom:14px;font-size:13px}.groups-alert{background:#fcecea;color:#9d332b}.groups-notice{background:#edf7f2;color:#087f5b}.groups-card{overflow:hidden}.groups-scroll{overflow:auto}table{width:100%;border-collapse:collapse;min-width:620px}th{text-align:left;background:#f8fafb;color:#64748b;text-transform:uppercase;font-size:10px;letter-spacing:.5px;padding:12px 16px}td{padding:14px 16px;border-top:1px solid #edf0f2;font-size:13px;max-width:420px;overflow-wrap:anywhere}td button{border:0;background:none;color:#087f75;font-size:12px;font-weight:650;cursor:pointer;margin-right:10px}td button.danger{color:#b5473c}td button:disabled{opacity:.5}.groups-state{padding:24px;color:#64748b;font-size:13px}.groups-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:18px;background:#0f172a80}.groups-modal{background:#fff;width:min(100%,450px);max-height:90vh;overflow:auto;border-radius:9px;padding:24px;box-shadow:0 20px 60px #0f172a40}.groups-modal header{display:flex;justify-content:space-between;margin-bottom:20px}.groups-modal header small{font-size:10px;color:#087f75;font-weight:700}.groups-modal h2{font-size:20px;margin:5px 0}.groups-modal header button{border:0;background:none;color:#64748b;font-size:24px;cursor:pointer}.groups-modal form{display:grid;gap:14px}.groups-modal label{display:grid;gap:6px;color:#334155;font-size:12px;font-weight:650}.groups-modal input,.groups-modal textarea{width:100%;border:1px solid #cbd5dc;border-radius:5px;padding:10px;font:inherit;font-size:13px}.groups-modal footer{display:flex;justify-content:flex-end;gap:8px;margin-top:6px}.groups-modal .cancel{border:0;border-radius:5px;background:#f1f5f9;color:#334155;padding:9px 14px}.groups-modal button:disabled{opacity:.6}
+    .groups-members{min-width:0;margin:0;padding:12px;border:1px solid #dce3e8;border-radius:6px}.groups-members legend{padding:0 5px;color:#334155;font-size:12px;font-weight:650}.groups-members>p{margin:0 0 9px;color:#64748b;font-size:11px;line-height:1.5}.groups-members .groups-members-empty{margin:0}.groups-member-list{max-height:190px;overflow:auto;border-top:1px solid #edf0f2}.groups-modal .groups-member-row{display:flex;align-items:center;gap:9px;margin:0;padding:9px 2px;border-bottom:1px solid #edf0f2;cursor:pointer}.groups-modal .groups-member-row input{width:16px;flex:0 0 auto;margin:0;accent-color:#087f75}.groups-member-row span{min-width:0;overflow-wrap:anywhere}.groups-member-row small{display:block;color:#64748b;font-size:10px;font-weight:400}
 </style>
 
 @code {
     private List<AdminGroup> DirectoryGroups = [];
+    private List<AdminUser> DirectoryUsers = [];
     private AdminGroup? Editing;
     private AdminGroupForm Draft = new();
     private bool Loading = true, Busy, Saving, ModalOpen;
@@ -55,9 +79,10 @@
         _ => FilteredGroups.OrderBy(group => group.Name, StringComparer.OrdinalIgnoreCase)
     };
     protected override async Task OnInitializedAsync() => await LoadAsync();
-    private async Task LoadAsync() { Loading = true; Error = ""; try { DirectoryGroups = await Api.GetGroupsAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
+    private async Task LoadAsync() { Loading = true; Error = ""; try { DirectoryGroups = await Api.GetGroupsAsync(); DirectoryUsers = await Api.GetUsersAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Loading = false; } }
     private void OpenCreate() { Editing = null; Draft = new(); FormError = ""; ModalOpen = true; }
-    private void OpenEdit(AdminGroup group) { Editing = group; Draft = new() { Name = group.Name, Description = group.Description }; FormError = ""; ModalOpen = true; }
+    private void OpenEdit(AdminGroup group) { Editing = group; Draft = new() { Name = group.Name, Description = group.Description, MemberUserIds = [.. group.MemberUserIds] }; FormError = ""; ModalOpen = true; }
+    private void ToggleMember(ChangeEventArgs args, Guid userId) { if (args.Value is not bool selected) return; if (selected) { if (!Draft.MemberUserIds.Contains(userId)) Draft.MemberUserIds.Add(userId); } else Draft.MemberUserIds.Remove(userId); }
     private void CloseModal() { if (!Saving) ModalOpen = false; }
     private async Task SaveAsync() { Saving = true; FormError = ""; try { await Api.SaveGroupAsync(Draft, Editing?.Id); ModalOpen = false; Notice = "Group saved."; await LoadAsync(); } catch (Exception ex) { FormError = ex.Message; } finally { Saving = false; } }
     private async Task DeleteAsync(AdminGroup group) { Busy = true; Error = ""; Notice = ""; try { await Api.DeleteGroupAsync(group.Id); Notice = "Group deleted."; await LoadAsync(); } catch (Exception ex) { Error = ex.Message; } finally { Busy = false; } }

@@ -77,6 +77,7 @@ builder.Services.AddScoped<IAuthFlowService, AuthFlowService>();
 builder.Services.AddScoped<ISecurityPolicyEvaluator, SecurityPolicyEvaluator>();
 builder.Services.AddScoped<IApplicationAccessVerificationService, ApplicationAccessVerificationService>();
 builder.Services.AddScoped<INotificationService, MockNotificationService>();
+builder.Services.AddScoped<IUserNotificationPushSender, ExpoUserNotificationPushSender>();
 builder.Services.AddScoped<IDeviceManagementService, DeviceManagementService>();
 builder.Services.AddScoped<PendingDeviceRegistrationService>();
 builder.Services.AddHttpClient<IActivationEmailSender, HttpApiActivationEmailSender>();
@@ -587,6 +588,23 @@ using (var scope = app.Services.CreateScope())
                   ADD COLUMN IF NOT EXISTS "PushToken" text NULL;
                 """;
             postureCmd.ExecuteNonQuery();
+
+            using var notificationCmd = conn.CreateCommand();
+            notificationCmd.CommandText = """
+                CREATE TABLE IF NOT EXISTS "UserNotifications" (
+                    "Id" uuid PRIMARY KEY,
+                    "UserId" uuid NOT NULL REFERENCES "Users" ("Id") ON DELETE CASCADE,
+                    "Category" character varying(64) NOT NULL,
+                    "Title" character varying(120) NOT NULL,
+                    "Message" character varying(2000) NOT NULL,
+                    "Href" character varying(512) NULL,
+                    "CreatedAt" timestamp with time zone NOT NULL,
+                    "ReadAt" timestamp with time zone NULL
+                );
+                CREATE INDEX IF NOT EXISTS "IX_UserNotifications_UserId_CreatedAt"
+                    ON "UserNotifications" ("UserId", "CreatedAt");
+                """;
+            notificationCmd.ExecuteNonQuery();
 
             using var adminLoginTokenCmd = conn.CreateCommand();
             adminLoginTokenCmd.CommandText = """
