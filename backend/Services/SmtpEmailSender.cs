@@ -326,7 +326,7 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
         catch (ArgumentException exception) { throw new EmailDeliveryException("The SMTP configuration contains an invalid address or host.", exception); }
     }
 
-    internal static string FormatOtpBody(string username, string otpCode, int lifetimeMinutes, bool isAdminLogin)
+    public static string FormatOtpBody(string username, string otpCode, int lifetimeMinutes, bool isAdminLogin)
     {
         var expiry = isAdminLogin && lifetimeMinutes == 7 * 24 * 60
             ? "7 days"
@@ -342,7 +342,7 @@ public sealed class SmtpEmailSender(IOptions<SmtpOptions> options) : IActivation
             + "If you did not request this code, ignore this email and review your account activity.\n";
     }
 
-    internal static string FormatOtpHtmlBody(
+    public static string FormatOtpHtmlBody(
         string username,
         string otpCode,
         int lifetimeMinutes,
